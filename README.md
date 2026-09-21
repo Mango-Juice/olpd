@@ -6,7 +6,7 @@
 
 ## 실행
 
-Node.js 22 이상.
+Node.js 22.x (`package.json`의 지원 버전).
 
 ```sh
 npm ci
@@ -36,26 +36,37 @@ npm run dev
 ## 검사
 
 ```sh
-npm run typecheck
 npm test
-npm run build
-npm run eval:jev       # 실제 Jev 호출 비용 발생, .env.local 사용
+npm run build         # 타입 검사(미사용 코드 포함) + 프로덕션 빌드
+npm run typecheck     # 타입 검사만 필요할 때
 npx playwright install chromium
-npx tsx scripts/browser-check.ts  # dev 서버 실행 상태, 실제 AI 플레이
-npx tsx scripts/browser-errors.ts # dev 서버 실행 상태, 통신/저장 실패 경계
-npx tsx scripts/browser-notebook.ts # browser-check의 실제 저장 기록을 사용한 삭제/공유 검사
-npx tsx scripts/browser-v2.ts # 저장 fixture를 이용한 가독성·우선순위·장면별 재생 검사
-npx tsx scripts/browser-priority.ts # 수동 순서 변경과 실제 AI의 같은 상황 충돌 검사
-npx tsx scripts/browser-chronicle.ts # 로컬 저장 fixture로 연혁·재생·별도 보관을 짧게 검사
 ```
 
-브라우저 검사 시 `APP_URL=https://... CHECK_LABEL=production`으로 공개 배포를 검증할 수 있다. 에뮬레이션 및 스크린샷은 `artifacts/`에 남는다. 핵심 규칙의 테스트 해석 fixture는 순수 코어 테스트에서만 쓰며 플레이 경로에는 포함되지 않는다.
+브라우저 검사는 별도 터미널에서 `npm run dev`를 실행한 상태에서 수행한다.
+
+| 명령 | 범위 | 실제 Jev / 선행 조건 |
+| --- | --- | --- |
+| `npm run test:ui` | 가독성·우선순위 표시·장면별 재생 | 합성 저장 fixture, API 키 불필요 |
+| `npm run test:drag` | 데스크톱·모바일 메모 순서 변경 | 합성 저장 fixture, API 키 불필요 |
+| `npm run test:priority` | 우선순위·동일 조건 충돌 거부 | 합성 저장·해석 응답, API 키 불필요 |
+| `npm run test:chronicle` | 연혁·장면 재생·완료 기록 보관 | 합성 저장 fixture, API 키 불필요 |
+| `npm run test:browser` | 튜토리얼부터 클리어까지 | 실제 Jev, 서버 키 필요·호출 비용 발생 |
+| `npm run test:errors` | 통신·저장 오류, IME, 늦은 응답 | 늦은 응답 검사에서 실제 Jev 호출 |
+| `npm run test:priority:live` | 우선순위·실제 해석 결과의 충돌 | 실제 Jev 호출 |
+| `npm run test:notebook` | 삭제 비용·공유·설정 | `test:browser`가 만든 같은 `CHECK_LABEL`의 저장 기록 필요 |
+| `npm run test:guards` | HTTP 입력 가드 | 실제 Jev 호출 |
+| `npm run eval:jev` | 고정 한국어 합성 문장·상황 평가 | 실제 Jev, `.env.local` 필요·호출 비용 발생 |
+
+`test:ui`, `test:drag`, `test:priority`, `test:chronicle`은 `scripts/browser-fixtures.ts`로 검사 데이터를 만들어 과거 `artifacts/` 파일 없이 실행한다. 합성 해석은 자동화 검사에만 사용하며 실제 플레이의 해석 경로에는 포함되지 않는다. 이 검사 성공은 Jev의 실제 해석 정확도 검증과 구분한다.
+
+`APP_URL=https://...`로 대상 주소를 바꿀 수 있다. `CHECK_LABEL`을 지원하는 검사에서는 보고서와 실제 저장 기록의 접두어를 지정한다. 에뮬레이션·보고서·스크린샷은 `artifacts/`에 남는다. `npm run preview`는 빌드된 정적 화면만 제공하며 Node API를 띄우지 않는다.
 
 ## 구조
 
-- `src/game/`: 버전·관찰·방, 순수 판정과 원자적 비용 처리, 저장 검증
+- `src/game/`: 버전·관찰·방, 순수 판정과 원자적 비용 처리, 저장 검증, 연혁·보관함·오디오
 - `src/render/`, `src/components/DungeonCanvas.tsx`: 원본 그래픽과 프레임 단위 재생
 - `src/App.tsx`: 입력/확정, 메모장, 튜토리얼, 결과·공유, 저장/UI 상태
+- `src/components/StageChronicle.tsx`: 생별 연혁과 독립 장면 재생
 - `server/`, `api/`: 요청 검증, Jev, 제한, Vercel Node API
 - `scripts/evaluate.ts`: 고정 한국어 합성 문장 및 상황 평가
 - `docs/`: 아트 출처, API, 평가 결과, 요구사항/검증 맵
@@ -78,4 +89,11 @@ API에는 서버 인스턴스 단위 IP 30회/분 제한과, 배포 프로젝트
 
 저장 파일은 게임/던전/해석 규칙 버전을 포함한다. 향후 규칙 변경 시 버전을 올리고 명시적인 마이그레이션을 제공해야 하며, 저장된 지침을 조용히 다시 해석하지 않는다.
 
-검사 결과와 공개 배포의 관찰 범위는 [검증 기록](docs/verification.md), AI 평가는 [Jev 평가](docs/jev-evaluation-2026-09-21.md)를 참고한다. 여러 장과 최종 보스로 확장하는 이야기는 [스토리 구상](docs/story-concept.md)에 제안 상태로 보관한다.
+검사 결과와 공개 배포의 관찰 범위는 [검증 기록](docs/verification.md), AI 평가는 [Jev 평가](docs/jev-evaluation-2026-09-21.md)를 참고한다. 현재 개발 현황은 [PLAN](PLAN.md), 미구현 확장안은 [스토리 구상](docs/story-concept.md)과 [10장 스테이지 설계](docs/stage-design/README.md)에 구분해 보관한다.
+
+
+## Git 작업
+
+현재 개발 브랜치는 `main`이다. 기능·수정·문서처럼 목적이 다른 변경은 별도 커밋으로 남긴다. 커밋 전에 `git diff --check`와 변경 범위에 맞는 검사를 실행하고, `git diff --cached`로 포함할 파일을 확인한다.
+
+`.env.local`, `.vercel/`, `node_modules/`, `dist/`, `artifacts/`는 추적하지 않는다. 로컬 커밋은 원격 push나 Vercel 배포를 수행하지 않는다.

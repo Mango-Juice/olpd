@@ -1,19 +1,21 @@
-# PLAN.md 구현 및 검증 맵
+# 현재 요구사항과 구현·검증 맵
 
 이 문서는 구현 위치와 실제로 확인한 증거를 연결한다. 테스트 성공과 실기기/사람의 사용성 관찰은 별도이다.
 
-2026-09-22 후속 요청으로 원래 계획의 최신 지침 우선·순서 변경 금지·매회 별도 확정은 대체됐다. 현재는 손잡이 드래그 또는 메모 `···` 메뉴에서 출발 전에 우선순위를 조절하고, 화면 위쪽의 적용 가능한 한 줄을 실행한다. 첫 학습 이후에는 해석 성공 시 기억과 출발을 이어서 처리한다. 아래 이전 검증 맵과 함께 최신 결과는 `docs/verification.md`를 확인한다.
+2026-09-22 후속 요청으로 원래 계획의 최신 지침 우선·순서 변경 금지·매회 별도 확정은 대체됐다. 현재는 손잡이 드래그 또는 메모 `···` 메뉴에서 출발 전에 우선순위를 조절하고, 화면 위쪽의 적용 가능한 한 줄을 실행한다. 첫 학습 이후에는 해석 성공 시 기억과 출발을 이어서 처리한다. 아래 표는 현재 계약이다. 검증 열의 브라우저·공개 배포 결과는 과거 관찰도 포함하며, 날짜별 근거와 최신 로컬 결과는 [검증 기록](verification.md)을 확인한다.
 
-| 계획 요구                                  | 구현                                                | 검증                                                     |
+| 현재 요구                                  | 구현                                                | 검증                                                     |
 | ------------------------------------------ | --------------------------------------------------- | -------------------------------------------------------- |
 | React + TS + Vite + Canvas, HTML 입력/메모 | src/App.tsx, components/DungeonCanvas.tsx, render/* | 타입/빌드, desktop/mobile 스크린샷                       |
 | 원본 용사/환경, 일관된 팔레트와 출처       | render/scene.ts, palette.ts, docs/art-direction.md  | 렌더된 장면 직접 확인                                    |
-| 8개 모션, 사망 유지, 부활, 저FPS 장식 축소 | render/animation.ts, DungeonCanvas                  | 브라우저 실재생, animation 테스트                        |
+| 8개 모션, 사망·부활, 저FPS 장식 축소 | render/animation.ts, DungeonCanvas                  | 브라우저 실재생, animation 테스트                        |
 | 입력/해석/확정/출발, 실제 Jev              | App, server/jev.ts                                  | scripts/browser-check.ts 실제 5회 호출로 처음부터 클리어 |
 | IME Enter, 중복/오래된 응답 무시           | App request id + AbortController + composing        | 브라우저 검증 및 오류 경계 검증                          |
-| 전진 기본값, 최근 우선, 한 행동/80자       | game/core.ts, server/service.ts                     | core/api 테스트                                          |
+| 전진 기본값, 화면 위쪽 우선, 한 행동/80자       | game/core.ts, server/service.ts                     | core/api 테스트                                          |
 | 죽음 1회/1줄, 기회 미누적, 삭제 원자 비용  | game/core.ts                                        | core 테스트, browser 삭제/취소 검증                      |
 | 튜토리얼과 본편 기록 분리/메모 이월        | core startMain, App practice                        | 실제 AI 튜토리얼 완료 후 초기화 확인                     |
+| 순서 변경 무료·조건 집합 충돌 거부 | game/core.ts, App.tsx | core 테스트, 우선순위·드래그 브라우저 검사 |
+| 생별 연혁·장면 재생·완료 기록 보관 | game/history.ts, archive.ts, components/StageChronicle.tsx | history/storage 테스트, 연혁 브라우저 검사 |
 | 8개 방, 여러 판단점, 최종 조합             | game/content.ts                                     | 실제 8개 방 클리어, core 전체 경로 테스트                |
 | 이미 본 이벤트 3배속, 신규 방 일반속도     | core signature + Canvas                             | core 테스트, 이벤트 로그                                 |
 | 숨김/일시정지, 감소모션, 소리 저장         | DungeonCanvas + audio.ts + App                      | 브라우저 설정/정지 검증                                  |
