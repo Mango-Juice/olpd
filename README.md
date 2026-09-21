@@ -1,0 +1,81 @@
+# 죽을 때마다 한 줄 · One Line Per Death
+
+**플레이: https://olpd.vercel.app**
+
+작은 용사에게 자연어 지침을 남기며 탈출하는 웹 게임. React + TypeScript + Vite + Canvas 2D, Node.js API와 실제 TypeSafe Jev를 사용한다.
+
+## 실행
+
+Node.js 22 이상.
+
+```sh
+npm ci
+cp .env.example .env.local
+# .env.local의 TYPESAFE_API_KEY에 발급받은 TypeSafe 키 설정
+npm run dev
+```
+
+`http://localhost:5173`에서 프런트엔드와 API가 같은 주소로 열린다. 키는 서버에서만 읽는다. `VITE_` 접두어를 붙이지 않는다. 키가 없으면 입력 시 복구 가능한 오류를 표시한다. 모킹이나 키워드 기반 해석 대체 경로는 없다.
+
+## 플레이
+
+- 첫 지침만 해석을 함께 확인한다. 이후에는 Enter 한 번으로 해석·기억·출발까지 이어진다.
+- 사망하면 한 줄을 추가하거나 지침을 삭제한 뒤 던전 입구에서 다시 출발한다.
+- 현재 상황에 맞는 메모 중 화면 위쪽 한 줄을 실행한다. 출발 전에 손잡이를 드래그하거나 각 메모의 `···` 메뉴에서 ↑↓로 무료로 순서를 바꾸고 자동 저장한다. 삭제 버튼은 항상 보이며 사망 후 사용할 수 있다. 실제 따른 줄을 강조하며, 적용되는 메모가 없으면 전진한다.
+- 기존 메모와 적용 상황 전체가 같고 행동만 다른 새 메모는 저장 전에 거절한다. 일부 조건만 겹치거나 행동이 같은 경우는 허용하며, 거절해도 작성 기회는 유지된다.
+- 본편 8개 방. 점프·숙이기·샛길 우회를 조합해 마지막 연속 구간을 통과한다.
+- 지우개 2개를 먼저 사용한다. 이후 삭제 한 줄은 +3데스. 점수는 사망·자진 부활 + 삭제 패널티.
+- 장면 안 말풍선, 한 장면씩 보기, 실행 기록, 일시정지, 자동 탭 정지를 지원한다. 새 장면은 4.2초, 이미 본 행동은 1.4초다.
+- 애니메이션 재생 중에는 스테이지별 BGM이 흐른다. 소리·모션 감소 설정을 지원한다. 곡 등록은 [오디오 설계](docs/audio-design.md)를 참고한다.
+- 브라우저 자동 저장. 다른 탭에서 바뀌면 현재 탭을 멈춘다. 손상/비호환 기록은 자동 삭제하지 않는다.
+
+## 로컬 추가 기능: 모험 연혁 (미배포)
+
+클리어 화면의 **우리의 모험 돌아보기**에서 생별 메모 작성·삭제·우선순위 변경·부활·행동 결과를 확인한다. 반복해서 통과한 장면은 접혀 있고, 각 장면을 점수나 진행에 영향 없이 다시 볼 수 있다. 완료한 여정은 별도 IndexedDB 보관함에 한 번 저장하며, 새 도전 이후에도 화면 아래 **지난 모험 기록**에서 연다. 이전 저장 파일은 행동 기록을 복원하고 누락된 메모 변경 이력을 안내한다. 보관 실패 시 현재 클리어 기록을 덮어쓰지 않고 재시도·내보내기를 제공한다.
+
+## 검사
+
+```sh
+npm run typecheck
+npm test
+npm run build
+npm run eval:jev       # 실제 Jev 호출 비용 발생, .env.local 사용
+npx playwright install chromium
+npx tsx scripts/browser-check.ts  # dev 서버 실행 상태, 실제 AI 플레이
+npx tsx scripts/browser-errors.ts # dev 서버 실행 상태, 통신/저장 실패 경계
+npx tsx scripts/browser-notebook.ts # browser-check의 실제 저장 기록을 사용한 삭제/공유 검사
+npx tsx scripts/browser-v2.ts # 저장 fixture를 이용한 가독성·우선순위·장면별 재생 검사
+npx tsx scripts/browser-priority.ts # 수동 순서 변경과 실제 AI의 같은 상황 충돌 검사
+npx tsx scripts/browser-chronicle.ts # 로컬 저장 fixture로 연혁·재생·별도 보관을 짧게 검사
+```
+
+브라우저 검사 시 `APP_URL=https://... CHECK_LABEL=production`으로 공개 배포를 검증할 수 있다. 에뮬레이션 및 스크린샷은 `artifacts/`에 남는다. 핵심 규칙의 테스트 해석 fixture는 순수 코어 테스트에서만 쓰며 플레이 경로에는 포함되지 않는다.
+
+## 구조
+
+- `src/game/`: 버전·관찰·방, 순수 판정과 원자적 비용 처리, 저장 검증
+- `src/render/`, `src/components/DungeonCanvas.tsx`: 원본 그래픽과 프레임 단위 재생
+- `src/App.tsx`: 입력/확정, 메모장, 튜토리얼, 결과·공유, 저장/UI 상태
+- `server/`, `api/`: 요청 검증, Jev, 제한, Vercel Node API
+- `scripts/evaluate.ts`: 고정 한국어 합성 문장 및 상황 평가
+- `docs/`: 아트 출처, API, 평가 결과, 요구사항/검증 맵
+
+게임 코어는 판단 지점에서 생사·비용을 먼저 확정하고 저장한다. Canvas는 확정된 이벤트를 재생한다. 프레임 속도는 판정에 영향을 주지 않는다.
+
+## 배포·운영
+
+Vercel 프로젝트 `olpd`에 Vite와 Node API를 함께 배포한다. 서버 비밀값 `TYPESAFE_API_KEY`를 production/preview 환경에 설정한다. `.env.local`, `.vercel`, 테스트 저장 기록은 Git에서 제외한다. 사이트 및 robots 응답은 noindex/nofollow다.
+
+```sh
+npx vercel link --project olpd --scope <본인 스코프>
+npx vercel env add TYPESAFE_API_KEY production --sensitive
+npx vercel deploy --prod
+```
+
+`AI_ENABLED=false`로 AI 공급자 호출을 중단할 수 있다. Vercel 환경변수 변경 후 재배포해야 적용된다. 긴급 중단이 필요하면 Vercel 방화벽에서 `/api/interpret`를 일시 차단한다. 지침 원문·비밀값은 운영 로그에 남기지 않는다.
+
+API에는 서버 인스턴스 단위 IP 30회/분 제한과, 배포 프로젝트의 Vercel WAF IP 30회/60초 제한을 함께 적용한다. WAF는 고정 윈도와 리전별 카운터이며 전 세계에서 합산되는 비용 상한이 아니다. 호출·토큰·지연·오류 로그와 TypeSafe 사용량을 확인해야 한다. 유료 플랜이나 데이터베이스는 구매하지 않는다.
+
+저장 파일은 게임/던전/해석 규칙 버전을 포함한다. 향후 규칙 변경 시 버전을 올리고 명시적인 마이그레이션을 제공해야 하며, 저장된 지침을 조용히 다시 해석하지 않는다.
+
+검사 결과와 공개 배포의 관찰 범위는 [검증 기록](docs/verification.md), AI 평가는 [Jev 평가](docs/jev-evaluation-2026-09-21.md)를 참고한다. 여러 장과 최종 보스로 확장하는 이야기는 [스토리 구상](docs/story-concept.md)에 제안 상태로 보관한다.

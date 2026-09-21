@@ -1,0 +1,37 @@
+{
+  "name": "one-line-per-death",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch server/dev.ts",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "eval:jev": "tsx --env-file=.env.local scripts/evaluate.ts",
+    "preview": "vite preview --host 0.0.0.0",
+    "test:browser": "tsx scripts/browser-check.ts",
+    "test:errors": "tsx scripts/browser-errors.ts",
+    "test:notebook": "tsx scripts/browser-notebook.ts"
+  },
+  "dependencies": {
+    "@fontsource-variable/noto-sans-kr": "^5.3.0",
+    "@fontsource/gowun-batang": "^5.3.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/node": "^22.18.0",
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": "22.x"
+  }
+}
