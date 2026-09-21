@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import type { Action, ObservationId } from "../src/game/types.ts";
 import { ApiError } from "../server/errors.ts";
 import { interpretWithJev } from "../server/jev.ts";
@@ -11,6 +11,7 @@ import {
 import { getMetrics } from "../server/metrics.ts";
 
 process.env.AI_STRUCTURED_LOGS = "false";
+await mkdir("artifacts", { recursive: true });
 
 type Expected =
   | {

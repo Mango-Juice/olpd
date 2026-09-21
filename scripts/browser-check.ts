@@ -316,14 +316,6 @@ try {
   if ((await state(mp)).instructions.length !== 0)
     throw new Error("New challenge did not reset");
   if (errors.length) throw new Error(errors.join("\n"));
-  const audioEvidenceAfterReload = await page.evaluate(() => {
-    const d = (
-      window as unknown as {
-        __audioEvidence: { starts: number; contexts: AudioContext[] };
-      }
-    ).__audioEvidence;
-    return { starts: d.starts, states: d.contexts.map((c) => c.state) };
-  });
   const result = {
     base,
     checkedAt: new Date().toISOString(),

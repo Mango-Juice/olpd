@@ -1,5 +1,5 @@
 import { chromium, expect } from "@playwright/test";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import {
   newRun,
   addInstruction,
@@ -8,11 +8,10 @@ import {
   retry,
 } from "../src/game/core";
 import { makeSave } from "../src/game/storage";
-import type { SaveData } from "../src/game/types";
+import { createFirstForkDeathSave } from "./browser-fixtures";
 const base = process.env.APP_URL ?? "http://localhost:5173";
-const original = JSON.parse(
-  await readFile("artifacts/production-real-death-save.json", "utf8"),
-) as SaveData;
+await mkdir("artifacts", { recursive: true });
+const original = createFirstForkDeathSave("browser-ui");
 let tutorial = newRun(true);
 const [a, b] = original.state.instructions;
 tutorial = addInstruction(tutorial, a.text, a.interpretation);

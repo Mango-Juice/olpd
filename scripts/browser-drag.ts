@@ -1,12 +1,12 @@
 import { chromium, expect, type Page } from "@playwright/test";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import { createFirstForkDeathSave } from "./browser-fixtures";
 
 const base = process.env.APP_URL ?? "http://localhost:5173";
-const fixture = await readFile(
-  "artifacts/v2-local-real-death-save.json",
-  "utf8",
-);
-const original = JSON.parse(fixture).state;
+await mkdir("artifacts", { recursive: true });
+const originalSave = createFirstForkDeathSave("browser-drag");
+const fixture = JSON.stringify(originalSave);
+const original = originalSave.state;
 const saveKey = "one-line-per-death:save";
 
 type Run = {

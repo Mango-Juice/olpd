@@ -1,44 +1,32 @@
 import { chromium, expect } from "@playwright/test";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import {
   addInstruction,
   deleteInstruction,
   moveInstruction,
-  newRun,
-  practiceDeletion,
-  retry,
   startMain,
-  startRun,
-  step,
 } from "../src/game/core";
 import { makeSave } from "../src/game/storage";
-import type { RunState, SaveData } from "../src/game/types";
+import {
+  createCompletedTutorial,
+  FIXTURE_INSTRUCTIONS,
+  runUntilTerminal,
+} from "./browser-fixtures";
 const base = process.env.APP_URL ?? "http://localhost:5173";
-const original = JSON.parse(
-  await readFile("artifacts/v2-production-real-clear-save.json", "utf8"),
-) as SaveData;
-const notes = original.state.instructions;
-const run = (state: RunState) => {
-  let next = startRun(state.phase === "dead" ? retry(state) : state);
-  while (next.phase === "running") next = step(next);
-  return next;
-};
-let tutorial = newRun(true);
-tutorial = run(
-  addInstruction(tutorial, notes[0].text, notes[0].interpretation),
-);
-tutorial = run(
-  addInstruction(tutorial, notes[1].text, notes[1].interpretation),
-);
-for (let n = 0; n < 3; n++) tutorial = practiceDeletion(tutorial);
-let state = run(startMain(tutorial));
+await mkdir("artifacts", { recursive: true });
+const notes = FIXTURE_INSTRUCTIONS;
+let state = runUntilTerminal(startMain(createCompletedTutorial()));
 state = addInstruction(state, notes[2].text, notes[2].interpretation);
 state = moveInstruction(state, state.instructions[0].id, "up");
 state = moveInstruction(state, state.instructions[1].id, "down");
 state = deleteInstruction(state, state.instructions[1].id);
-state = run(state);
-state = run(addInstruction(state, notes[3].text, notes[3].interpretation));
-state = run(addInstruction(state, notes[4].text, notes[4].interpretation));
+state = runUntilTerminal(state);
+state = runUntilTerminal(
+  addInstruction(state, notes[3].text, notes[3].interpretation),
+);
+state = runUntilTerminal(
+  addInstruction(state, notes[4].text, notes[4].interpretation),
+);
 expect(state.phase).toBe("cleared");
 const save = makeSave(state, {
   writer: "chronicle-smoke",

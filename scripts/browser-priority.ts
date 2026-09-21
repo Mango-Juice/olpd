@@ -1,13 +1,14 @@
 import { chromium, expect } from "@playwright/test";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import { createFirstForkDeathSave } from "./browser-fixtures";
 
 const base = process.env.APP_URL ?? "http://localhost:5173";
 const label = process.env.CHECK_LABEL ?? "v2-local";
-const fixture = await readFile(
-  "artifacts/v2-local-real-death-save.json",
-  "utf8",
-);
-const original = JSON.parse(fixture).state;
+const liveAi = process.env.LIVE_AI?.toLowerCase() === "true";
+await mkdir("artifacts", { recursive: true });
+const originalSave = createFirstForkDeathSave("browser-priority");
+const fixture = JSON.stringify(originalSave);
+const original = originalSave.state;
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 const errors: string[] = [];
@@ -79,6 +80,21 @@ try {
   expect(result.lastEvent.instructionId).toBe(original.instructions[0].id);
 
   await install();
+  if (!liveAi) {
+    await page.route("**/api/interpret", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          action: "advance",
+          appliesTo: ["pit", "bridge", "pitCeilingPath"],
+          uncertainty: 0.05,
+          model: "browser-fixture",
+          rulesVersion: "1",
+        }),
+      });
+    });
+  }
   const before = await page.evaluate(() =>
     localStorage.getItem("one-line-per-death:save"),
   );
@@ -106,6 +122,7 @@ try {
   expect(errors).toEqual([]);
   const report = {
     base,
+    interpretationMode: liveAi ? "live-jev" : "fixture",
     passed: true,
     checks: [
       "no input numbering",
@@ -114,7 +131,7 @@ try {
       "free reordering preserves writing chance and events",
       "manual priority changes actual pit action",
       "priority locked during animation",
-      "actual AI exact-situation conflict rejected before save",
+      `${liveAi ? "live Jev" : "fixture API"} interpretation conflict rejected before save`,
       "conflict preserves draft and writing chance",
     ],
     interpretation,

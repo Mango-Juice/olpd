@@ -1,6 +1,7 @@
-import { writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 const base = process.env.APP_URL ?? "http://localhost:5173";
 const label = process.env.CHECK_LABEL ?? "local";
+await mkdir("artifacts", { recursive: true });
 const cases = [
   {
     text: "앞으로 전진하고 장애물 나오면 점프하고 문이 있으면 열고 ...",

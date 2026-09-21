@@ -1,7 +1,8 @@
 import { chromium, expect } from "@playwright/test";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 const base = process.env.APP_URL ?? "http://localhost:5173";
 const label = process.env.CHECK_LABEL ?? "local";
+await mkdir("artifacts", { recursive: true });
 const deadSave = await readFile(
   `artifacts/${label}-real-death-save.json`,
   "utf8",

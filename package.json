@@ -12,7 +12,13 @@
     "preview": "vite preview --host 0.0.0.0",
     "test:browser": "tsx scripts/browser-check.ts",
     "test:errors": "tsx scripts/browser-errors.ts",
-    "test:notebook": "tsx scripts/browser-notebook.ts"
+    "test:notebook": "tsx scripts/browser-notebook.ts",
+    "test:ui": "tsx scripts/browser-ui.ts",
+    "test:priority": "tsx scripts/browser-priority.ts",
+    "test:priority:live": "LIVE_AI=true tsx scripts/browser-priority.ts",
+    "test:drag": "tsx scripts/browser-drag.ts",
+    "test:chronicle": "tsx scripts/browser-chronicle.ts",
+    "test:guards": "tsx scripts/check-guards.ts"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-kr": "^5.3.0",
