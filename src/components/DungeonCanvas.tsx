@@ -12,7 +12,7 @@ import {
 } from "../render/animation";
 import { renderScene, VIEW_HEIGHT, VIEW_WIDTH } from "../render/scene";
 
-export interface DungeonCanvasProps {
+interface DungeonCanvasProps {
   observation: Observation;
   event: ExecutionEvent | null;
   phase: Phase;
@@ -24,8 +24,6 @@ export interface DungeonCanvasProps {
   onSceneModeChange?: (mode: "entrance" | "action") => void;
   roomName?: string;
 }
-
-interface LiveProps extends DungeonCanvasProps {}
 
 type Playback =
   | { kind: "idle"; elapsed: number; hero: HeroFrame | null }
@@ -51,8 +49,6 @@ type Playback =
       kind: "revive";
       elapsed: number;
       duration: number;
-      from: HeroFrame;
-      observation: Observation;
       next: ExecutionEvent | null;
       cuePlayed: boolean;
       hero: HeroFrame | null;
@@ -60,7 +56,7 @@ type Playback =
 
 export function DungeonCanvas(props: DungeonCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const liveRef = useRef<LiveProps>(props);
+  const liveRef = useRef<DungeonCanvasProps>(props);
   const playbackRef = useRef<Playback>({
     kind: "idle",
     elapsed: 0,
@@ -106,8 +102,6 @@ export function DungeonCanvas(props: DungeonCanvasProps) {
           kind: "revive",
           elapsed: 0,
           duration: props.reducedMotion ? 1050 : 1650,
-          from,
-          observation: OBSERVATIONS[previousEvent.observation],
           next: event,
           cuePlayed: false,
           hero: from,
@@ -143,8 +137,6 @@ export function DungeonCanvas(props: DungeonCanvasProps) {
         kind: "revive",
         elapsed: 0,
         duration: props.reducedMotion ? 1050 : 1650,
-        from,
-        observation: OBSERVATIONS[event.observation],
         next: null,
         cuePlayed: false,
         hero: from,
@@ -280,7 +272,7 @@ export function DungeonCanvas(props: DungeonCanvasProps) {
           playback.cuePlayed = true;
           current.onSound?.("revive");
         }
-        hero = reviveHeroFrame(playback.from, progress);
+        hero = reviveHeroFrame(progress);
         // Retry is a true return to the entrance: the fatal hazard disappears
         // before Moru is summoned, so no corpse or ghost travels across it.
         sceneObservation = OBSERVATIONS.clear;
@@ -333,7 +325,6 @@ export function DungeonCanvas(props: DungeonCanvasProps) {
         observation: sceneObservation,
         phase: current.phase,
         reducedMotion: current.reducedMotion || reducedDecoration,
-        eventActive: playback.kind === "event",
       });
       if (transitionShade > 0) {
         context.fillStyle = `rgba(7, 8, 24, ${transitionShade * 0.72})`;

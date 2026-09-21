@@ -65,13 +65,13 @@ describe("renderer animation contract", () => {
     expect(finalDeath.opacity).toBe(0);
     expect(finalDeath.rotation).toBe(0);
 
-    const revived = reviveHeroFrame(finalDeath, 0.5);
+    const revived = reviveHeroFrame(0.5);
     expect(revived.pose).toBe("revive");
     expect(revived.x).toBe(START_X);
     expect(revived.y).toBeLessThan(FLOOR_Y);
     expect(revived.facing).toBe(1);
 
-    const settled = reviveHeroFrame(finalDeath, 1);
+    const settled = reviveHeroFrame(1);
     expect(settled).toMatchObject({
       x: START_X,
       y: FLOOR_Y,

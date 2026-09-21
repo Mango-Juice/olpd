@@ -1,4 +1,4 @@
-import type { Action, ExecutionEvent, Outcome } from "../game/types";
+import type { Action, ExecutionEvent } from "../game/types";
 
 export type HeroPose =
   "idle" | "walk" | "jump" | "duck" | "detour" | "death" | "revive" | "joy";
@@ -351,7 +351,7 @@ export function idleHeroFrame(timeSeconds: number): HeroFrame {
   };
 }
 
-export function reviveHeroFrame(from: HeroFrame, progress: number): HeroFrame {
+export function reviveHeroFrame(progress: number): HeroFrame {
   const p = clamp(progress);
   const summon = smooth(clamp(p / 0.7));
   const settle = smooth(clamp((p - 0.7) / 0.3));
@@ -367,12 +367,4 @@ export function reviveHeroFrame(from: HeroFrame, progress: number): HeroFrame {
     dust: 0,
     shadow: summon,
   };
-}
-
-export function outcomeTone(outcome: Outcome) {
-  return outcome === "safe"
-    ? "#80d7b6"
-    : outcome === "death"
-      ? "#f3a785"
-      : "#f6c76d";
 }

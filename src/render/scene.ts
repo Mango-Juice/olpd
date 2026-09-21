@@ -5,14 +5,40 @@ import { PALETTE as C } from "./palette";
 export const VIEW_WIDTH = 960;
 export const VIEW_HEIGHT = 500;
 
-export interface SceneFrame {
+interface SceneFrame {
   time: number;
   hero: HeroFrame;
   observation: Observation;
   phase: Phase;
   reducedMotion: boolean;
-  eventActive: boolean;
 }
+
+const BACKDROP_ARCHES = [102, 386, 774] as const;
+const BACKDROP_PILLARS = [23, 272, 889] as const;
+const VINE_LEAVES = [
+  [826, 55, -0.5],
+  [842, 94, 0.35],
+  [827, 135, -0.45],
+  [836, 180, 0.35],
+  [824, 227, -0.4],
+] as const;
+const FLOOR_LEAVES = [
+  [78, 379],
+  [97, 386],
+  [748, 389],
+  [781, 381],
+  [904, 388],
+] as const;
+const COZY_GLOWS = [
+  [64, 394, 1, "#80d7b6"],
+  [89, 396, 0.66, "#f6c76d"],
+  [738, 395, 0.62, "#f3a785"],
+  [924, 394, 0.86, "#80d7b6"],
+] as const;
+const COZY_PLANTS = [
+  [327, 390, 1],
+  [786, 388, -1],
+] as const;
 
 const roundedRect = (
   ctx: CanvasRenderingContext2D,
@@ -100,7 +126,7 @@ function drawBackdrop(
   }
 
   ctx.lineWidth = 11;
-  for (const x of [102, 386, 774]) {
+  for (const x of BACKDROP_ARCHES) {
     const archGlow = ctx.createLinearGradient(x - 100, 160, x + 100, 390);
     archGlow.addColorStop(0, "rgba(112,105,164,.35)");
     archGlow.addColorStop(1, "rgba(44,41,91,.68)");
@@ -121,7 +147,7 @@ function drawBackdrop(
   }
 
   // Broken pillars and moss sit in the middle plane.
-  for (const x of [23, 272, 889]) {
+  for (const x of BACKDROP_PILLARS) {
     ctx.fillStyle = "#302e5b";
     stonePath(ctx, x, 144, 32, 245, 5);
     ctx.fill();
@@ -155,13 +181,7 @@ function drawVines(
   ctx.bezierCurveTo(818, 195, 846 + sway, 224, 826, 274);
   ctx.stroke();
   ctx.fillStyle = C.leaf;
-  for (const [x, y, r] of [
-    [826, 55, -0.5],
-    [842, 94, 0.35],
-    [827, 135, -0.45],
-    [836, 180, 0.35],
-    [824, 227, -0.4],
-  ] as const) {
+  for (const [x, y, r] of VINE_LEAVES) {
     ctx.save();
     ctx.translate(x + sway, y);
     ctx.rotate(r);
@@ -171,13 +191,7 @@ function drawVines(
     ctx.restore();
   }
   ctx.fillStyle = "#477764";
-  for (const [x, y] of [
-    [78, 379],
-    [97, 386],
-    [748, 389],
-    [781, 381],
-    [904, 388],
-  ] as const) {
+  for (const [x, y] of FLOOR_LEAVES) {
     ctx.beginPath();
     ctx.ellipse(x, y, 11, 4, -0.4, 0, Math.PI * 2);
     ctx.fill();
@@ -578,12 +592,7 @@ function drawCozyDetails(
   reducedMotion: boolean,
 ) {
   const pulse = reducedMotion ? 0 : (Math.sin(t * 2.4) + 1) * 0.04;
-  for (const [x, y, s, color] of [
-    [64, 394, 1, "#80d7b6"],
-    [89, 396, 0.66, "#f6c76d"],
-    [738, 395, 0.62, "#f3a785"],
-    [924, 394, 0.86, "#80d7b6"],
-  ] as const) {
+  for (const [x, y, s, color] of COZY_GLOWS) {
     const glow = ctx.createRadialGradient(x, y - 12, 1, x, y - 12, 24 * s);
     glow.addColorStop(0, `${color}${Math.round((0.18 + pulse) * 255)
       .toString(16)
@@ -605,10 +614,7 @@ function drawCozyDetails(
     ctx.fill();
   }
 
-  for (const [x, y, flip] of [
-    [327, 390, 1],
-    [786, 388, -1],
-  ] as const) {
+  for (const [x, y, flip] of COZY_PLANTS) {
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(flip, 1);
