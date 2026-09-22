@@ -1,0 +1,30 @@
+.stage-roadmap { max-width: 1040px; margin: 0 auto; padding: 48px 24px 80px; color: #e8e3d6; }
+.roadmap-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.roadmap-eyebrow { font-size: 11px; letter-spacing: .24em; color: #a4b897; }
+.roadmap-heading h1 { font-family: "Gowun Batang", serif; font-size: clamp(28px, 5vw, 44px); margin: 12px 0; }
+.roadmap-heading p:not(.roadmap-eyebrow), .roadmap-footnote { color: #aaaabb; line-height: 1.8; }
+.roadmap-progress { border-top: 1px solid #363746; padding-top: 24px; margin-top: 28px; color: #c4c3cd; line-height: 1.8; }
+.roadmap-progress span { padding: 0 8px; }
+.roadmap-path { list-style: none; padding: 0; margin: 32px 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 28px; }
+.roadmap-stop { position: relative; display: flex; align-items: flex-start; gap: 14px; min-width: 0; }
+.roadmap-sigil { flex: 0 0 40px; height: 40px; display: grid; place-items: center; border: 1px solid #778b70; border-radius: 50%; color: #d6c58c; background: #252939; font-size: 22px; margin-top: 14px; }
+.roadmap-card { flex: 1; min-width: 0; padding: 20px; border: 1px solid #535c52; border-radius: 14px; background: linear-gradient(130deg, #282e39, #202332); }
+.roadmap-card-meta { display: flex; gap: 12px; flex-wrap: wrap; justify-content: space-between; color: #c4c792; font-size: 10px; letter-spacing: .12em; }
+.roadmap-status { letter-spacing: .04em; }
+.roadmap-card h2 { margin: 12px 0 6px; font-family: "Gowun Batang", serif; font-size: 21px; overflow-wrap: anywhere; }
+.roadmap-card p { color: #b5b6c0; margin: 0 0 18px; font-size: 13px; line-height: 1.7; }
+.roadmap-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.roadmap-actions button { min-height: 42px; }
+.roadmap-card small { display: block; margin-top: 12px; color: #adaeba; line-height: 1.6; }
+.roadmap-stop.is-locked .roadmap-card { border-color: #3e4050; background: #20222e; }
+.roadmap-stop.is-locked .roadmap-sigil { color: #9595a4; border-color: #515361; background: #20222e; }
+.roadmap-stop.is-locked .roadmap-card-meta { color: #b3b3c0; }
+.roadmap-stop.is-complete .roadmap-card { border-color: #817849; }
+.roadmap-footnote { font-size: 12px; }
+@media (max-width: 700px) {
+  .stage-roadmap { padding: 28px 18px 48px; }
+  .roadmap-heading { align-items: flex-start; flex-direction: column; }
+  .roadmap-path { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .roadmap-sigil { flex-basis: 32px; height: 32px; font-size: 18px; }
+  .roadmap-card { padding: 17px; }
+}

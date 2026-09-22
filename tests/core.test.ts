@@ -9,6 +9,7 @@ import {
   placeInstruction,
   retry,
   score,
+  skipTutorial,
   startMain,
   practiceDeletion,
   startRun,
@@ -148,6 +149,43 @@ describe("tutorial and main run", () => {
   it("starts the main dungeon only from completed tutorial practice", () => {
     expect(() => startMain(newRun(true))).toThrow("튜토리얼 연습을 마친 뒤");
     expect(() => startMain(newRun(false))).toThrow("튜토리얼 연습을 마친 뒤");
+  });
+
+  it("skips an in-progress tutorial into a fresh writable main run", () => {
+    let tutorial = addInstruction(
+      newRun(true),
+      "앞으로 전진해",
+      interpretation("advance", ["clear"]),
+    );
+    tutorial = advanceUntilTerminal(startRun(tutorial));
+    const main = skipTutorial(tutorial);
+
+    expect(main.id).not.toBe(tutorial.id);
+    expect(main.tutorial).toBe(false);
+    expect(main.phase).toBe("ready");
+    expect(main.room).toBe(0);
+    expect(main.point).toBe(0);
+    expect(main.instructions).toEqual([]);
+    expect(main.canWrite).toBe(true);
+    expect(main.erasers).toBe(2);
+    expect(main.deaths).toBe(0);
+    expect(main.penaltyDeaths).toBe(0);
+    expect(main.events).toEqual([]);
+    expect(main.lastEvent).toBeNull();
+    expect(main.history).toEqual({
+      version: 1,
+      complete: true,
+      initialInstructions: [],
+      entries: [],
+    });
+    expect(main.revision).toBe(tutorial.revision + 1);
+  });
+
+  it("refuses to skip after the main dungeon has started", () => {
+    const main = newRun(false);
+    expect(() => skipTutorial(main)).toThrow(
+      "진행 중인 튜토리얼에서만 건너뛸 수 있어요.",
+    );
   });
 
   it("uses the highest-priority applicable instruction and includes it in repeat identity", () => {

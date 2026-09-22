@@ -1,0 +1,139 @@
+.play-hints {
+  margin-top: 14px;
+  padding-top: 13px;
+  border-top: 1px solid #ffffff14;
+  color: #aeb5c6;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.play-hints summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #c9d0b7;
+}
+
+.play-hints-content {
+  padding: 8px 0 0 16px;
+}
+
+.play-hints-reveal p,
+.play-hints-reveal ol {
+  margin: 0 0 9px;
+}
+
+.play-hints-reveal ol {
+  padding-left: 20px;
+}
+
+.play-hints-reveal li + li {
+  margin-top: 5px;
+}
+
+.play-hints .subtle {
+  min-height: 32px;
+}
+
+.play-stage-progress {
+  margin: 19px 0 22px;
+  padding: 12px 15px;
+  border: 1px solid #ffffff10;
+  border-radius: 10px;
+  background: #1c1f2c80;
+}
+
+.play-stage-progress-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 11px;
+  color: #848b9e;
+  font-size: 10px;
+  letter-spacing: 1.2px;
+}
+
+.play-stage-progress-heading strong {
+  color: #d7be9a;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.play-stage-progress ol {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(94px, 1fr));
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.play-stage-progress li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: #70788a;
+  font-family: "Gowun Batang", serif;
+  font-size: 11px;
+  line-height: 1.25;
+}
+
+.play-stage-progress li > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.play-stage-progress li small {
+  display: block;
+  margin-bottom: 2px;
+  color: #62697b;
+  font-family: "Noto Sans KR Variable", sans-serif;
+  font-size: 8px;
+}
+
+.play-stage-marker {
+  display: grid;
+  flex: 0 0 21px;
+  width: 21px;
+  height: 21px;
+  place-items: center;
+  border: 1px solid #4b5062;
+  border-radius: 50%;
+  font-family: "Noto Sans KR Variable", sans-serif;
+  font-size: 9px;
+}
+
+.play-stage-progress li.is-complete {
+  color: #9fb590;
+}
+
+.play-stage-progress li.is-complete .play-stage-marker {
+  border-color: #70866b;
+  background: #70866b;
+  color: #171a26;
+}
+
+.play-stage-progress li.is-current {
+  color: #eee6d7;
+}
+
+.play-stage-progress li.is-current .play-stage-marker {
+  border-color: #d8b891;
+  background: #d8b891;
+  color: #2c251e;
+  box-shadow: 0 0 0 4px #d8b89110;
+}
+
+@media (max-width: 800px) {
+  .play-stage-progress ol {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 3px;
+  }
+
+  .play-stage-progress li {
+    flex: 0 0 120px;
+  }
+}

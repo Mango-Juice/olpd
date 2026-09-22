@@ -570,6 +570,19 @@ export function practiceDeletion(state: RunState): RunState {
   return bump(state, { tutorialStep: state.tutorialStep + 1 });
 }
 
+/** Skips any in-progress tutorial and starts a fresh, writable main run. */
+export function skipTutorial(tutorialState: RunState): RunState {
+  if (!tutorialState.tutorial) {
+    throw new Error("진행 중인 튜토리얼에서만 건너뛸 수 있어요.");
+  }
+  const state = newRun(false);
+  return {
+    ...state,
+    canWrite: true,
+    revision: tutorialState.revision + 1,
+  };
+}
+
 /** Starts the scored dungeon with the two instructions actually confirmed in the tutorial. */
 export function startMain(tutorialState: RunState): RunState {
   if (

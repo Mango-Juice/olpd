@@ -1,0 +1,43 @@
+.prologue-guide {
+  margin: 0 0 20px;
+  padding: 18px 20px;
+  border: 1px solid #d0c39f38;
+  border-left: 3px solid #b9caaa;
+  border-radius: 10px;
+  background: linear-gradient(100deg, #28302d 0%, #222635 72%);
+  color: #d9dccf;
+}
+
+.prologue-guide-kicker {
+  margin: 0 0 5px;
+  color: #b9caaa;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 2px;
+}
+
+.prologue-guide h2 {
+  margin: 0 0 10px;
+  font-family: "Gowun Batang", serif;
+  font-size: 19px;
+  font-weight: 400;
+}
+
+.prologue-guide p {
+  margin: 3px 0;
+  color: #c6c9c2;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.prologue-guide .prologue-guide-direction {
+  margin-top: 10px;
+  color: #e6dfca;
+}
+
+@media (max-width: 800px) {
+  .prologue-guide {
+    margin: 17px 4px;
+    padding: 16px;
+  }
+}

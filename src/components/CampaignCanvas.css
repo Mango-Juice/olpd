@@ -1,0 +1,123 @@
+.campaign-scene {
+  margin: 0;
+}
+
+.campaign-scene-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 18px;
+  background: #090b1d;
+  box-shadow: 0 24px 70px rgba(4, 5, 18, .42), inset 0 0 0 1px rgba(184, 220, 222, .12);
+}
+
+.campaign-scene-canvas.is-interactive {
+  cursor: pointer;
+}
+
+.campaign-scene-caption {
+  margin-top: 12px;
+  color: #b8c1cc;
+}
+
+.campaign-scene-prompt {
+  margin: 0;
+  color: #d9dde3;
+}
+
+.campaign-object-picker {
+  margin-top: 8px;
+}
+
+.campaign-object-picker > summary,
+.campaign-scene-observation summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #c9d0b7;
+}
+
+.campaign-object-picker ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.campaign-previous-objects > p {
+  margin: 8px 0 0;
+  color: #aeb1bd;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.campaign-object-picker button,
+.campaign-object-picker span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  box-sizing: border-box;
+  border: 1px solid rgba(184, 220, 222, .24);
+  border-radius: 999px;
+  padding: 7px 11px;
+  background: rgba(17, 19, 47, .78);
+  color: #d9dde3;
+  font: inherit;
+}
+
+.campaign-object-picker button {
+  cursor: pointer;
+}
+
+.campaign-object-picker button[aria-pressed="true"] {
+  border-color: #f6c76d;
+  color: #f6c76d;
+}
+
+.campaign-object-picker button:focus-visible,
+.campaign-object-picker summary:focus-visible,
+.campaign-scene-observation summary:focus-visible {
+  outline: 2px solid #a6c49b;
+  outline-offset: 3px;
+}
+
+.campaign-scene-observation {
+  margin: 14px 2px 0;
+  border-left: 2px solid #627562;
+  padding-left: 14px;
+}
+
+.campaign-scene-observation h2 {
+  margin: 0;
+  color: #f0eddc;
+  font-size: 18px;
+}
+
+.campaign-scene-observation .campaign-observation-context {
+  margin: 0 0 3px;
+  color: #b4c39a;
+  font-size: 12px;
+}
+
+.campaign-scene-observation > p {
+  margin: 5px 0 0;
+  line-height: 1.75;
+}
+
+.campaign-scene-observation details {
+  margin-top: 9px;
+}
+
+.campaign-scene-observation details p {
+  line-height: 1.75;
+}
+
+.campaign-scene-observation ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 9px 0 0;
+  padding: 0;
+  list-style: none;
+}

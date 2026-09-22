@@ -50,7 +50,7 @@ export function logAiCall(event: {
   error: string | null;
 }): void {
   if (process.env.AI_STRUCTURED_LOGS === "false") return;
-  console.info(JSON.stringify({ event: "jev_call", ...event }));
+  console.info(JSON.stringify({ event: event.model.startsWith("jev-") ? "jev_call" : "ai_call", ...event }));
 }
 
 export function logApiError(code: ApiErrorBody["error"]["code"]): void {

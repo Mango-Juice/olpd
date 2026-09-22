@@ -12,10 +12,13 @@ type TimelineRow = { entries: HistoryEntry[]; repeated: boolean };
 
 export default function StageChronicle({
   current,
+  archives,
   settings,
   onClose,
 }: {
   current: StageArchive | null;
+  /** Supplied by the campaign repository; omit for the legacy standalone app. */
+  archives?: StageArchive[];
   settings: Settings;
   onClose: () => void;
 }) {
@@ -24,6 +27,11 @@ export default function StageChronicle({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   useEffect(() => {
+    if (archives) {
+      setRecords(archives);
+      setLoading(false);
+      return;
+    }
     let active = true;
     listStageArchives()
       .then((items) => {
@@ -50,7 +58,7 @@ export default function StageChronicle({
     return () => {
       active = false;
     };
-  }, []);
+  }, [archives]);
   const available =
     current && !records.some((record) => record.id === current.id)
       ? [current, ...records]

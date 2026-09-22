@@ -18,7 +18,9 @@
     "test:priority:live": "LIVE_AI=true tsx scripts/browser-priority.ts",
     "test:drag": "tsx scripts/browser-drag.ts",
     "test:chronicle": "tsx scripts/browser-chronicle.ts",
-    "test:guards": "tsx scripts/check-guards.ts"
+    "test:guards": "tsx scripts/check-guards.ts",
+    "eval:campaign": "tsx --env-file=.env.local scripts/evaluate-campaign-deepseek-live.ts",
+    "test:campaign:browser": "tsx scripts/browser-campaign-deepseek.ts"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-kr": "^5.3.0",

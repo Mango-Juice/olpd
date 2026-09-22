@@ -686,7 +686,7 @@ function drawHeroLoadingSilhouette(
   ctx.restore();
 }
 
-function drawHero(ctx: CanvasRenderingContext2D, hero: HeroFrame, t: number) {
+export function drawHero(ctx: CanvasRenderingContext2D, hero: HeroFrame, t: number) {
   const { x, y, pose, phase, facing, opacity, scale, rotation } = hero;
   ctx.save();
   ctx.globalAlpha = opacity;

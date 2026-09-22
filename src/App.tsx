@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { isInterpretation } from "./game/interpretation";
+import { PrologueGuide } from "./components/PrologueGuide";
 import { DungeonCanvas } from "./components/DungeonCanvas";
 import Modal from "./components/Modal";
+import {
+  PlayComposer,
+  PlayHeader,
+  PlayUtilityActions,
+  PlayHints,
+  PlayIntro,
+  PlayLayout,
+  PlayNotebook,
+  PlayStageProgress,
+} from "./components/PlayChrome";
 import StageChronicle from "./components/StageChronicle";
 import { archiveStage, stageArchive, type StageArchive } from "./game/archive";
 import {
@@ -25,15 +36,24 @@ import {
   practiceDeletion,
   retry,
   score,
+  skipTutorial,
   startMain,
   startRun,
   step,
 } from "./game/core";
-import { loadSave, makeSave, STORAGE_KEY, writeSave } from "./game/storage";
+import {
+  loadSave,
+  makeSave,
+  STORAGE_KEY,
+  writeSave,
+  type StorageResult,
+} from "./game/storage";
 import { playSound, setAudioMuted, unlockAudio } from "./game/audio";
 import { MEMORY_DUNGEON_STAGE_ID, setMusicPlayback } from "./game/music";
 import type {
   Interpretation,
+  Observation,
+  Room,
   RunState,
   SaveData,
   Settings,
@@ -53,8 +73,53 @@ const readBoot = () => {
         error: "저장된 기록을 읽을 수 없어요. 원본은 그대로 보관하고 있습니다.",
       };
 };
-export default function App() {
-  const [boot] = useState(readBoot);
+
+function legacyHints(room: Room, observation: Observation): readonly string[] {
+  const first = `“${room.subtitle}” — 먼저 ${observation.label}의 모양과 안전한 길을 살펴보세요.`;
+  if (observation.sidePath) {
+    return [
+      first,
+      "위와 아래가 함께 막혔다면, 오른편 표지판이 가리키는 다른 길을 떠올려 보세요.",
+      "“위험이 함께 보이면 샛길로 가”처럼 상황과 행동을 한 줄로 이어 보세요.",
+    ];
+  }
+  if (observation.ceilingSpikes) {
+    return [
+      first,
+      "머리 위가 낮을 때는 몸의 높이를 줄이는 행동이 필요해요.",
+      "“낮은 천장이 있으면 숙여”처럼 상황과 행동을 한 줄로 이어 보세요.",
+    ];
+  }
+  if (observation.pit || observation.floorSpikes) {
+    return [
+      first,
+      "발밑의 위험을 그대로 지나가기 어렵다면, 그 위를 넘는 행동을 떠올려 보세요.",
+      `“${observation.label}이 있으면 뛰어”처럼 상황과 행동을 한 줄로 이어 보세요.`,
+    ];
+  }
+  return [
+    first,
+    "지금은 앞을 막는 장애물이 없어요. 용사는 말이 없어도 앞으로 걸어요.",
+    "새 행동을 덧붙이기 전에, 기본 전진으로 지나갈 수 있는지 먼저 확인해 보세요.",
+  ];
+}
+
+export interface LegacyStorageBridge {
+  initial: SaveData | null;
+  save: (data: SaveData) => Promise<StorageResult<void>>;
+  onRoadmap: () => void;
+  onClearedPresentation: () => void;
+  onArchive: () => void;
+}
+
+export interface AppProps {
+  bridge?: LegacyStorageBridge;
+}
+
+export default function App({ bridge }: AppProps = {}) {
+  const [boot] = useState(() =>
+    bridge ? { data: bridge.initial, error: "" } : readBoot(),
+  );
   const [state, setState] = useState<RunState>(
     () => boot.data?.state ?? newRun(true),
   );
@@ -110,6 +175,8 @@ export default function App() {
   const requestId = useRef(0);
   const composing = useRef(false);
   const busy = useRef(false);
+  const saving = useRef(false);
+  const presentedClears = useRef(new Set<string>());
   const notebook = useRef<HTMLDetailsElement>(null);
   const draftRef = useRef("");
   const stepModeRef = useRef(false);
@@ -139,6 +206,7 @@ export default function App() {
     return () => document.removeEventListener("visibilitychange", handler);
   }, []);
   useEffect(() => {
+    if (bridge) return;
     const handler = (e: StorageEvent) => {
       if (e.key === STORAGE_KEY && e.newValue) {
         try {
@@ -159,7 +227,7 @@ export default function App() {
     };
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
-  }, []);
+  }, [bridge]);
   useEffect(() => () => requestRef.current?.controller.abort(), []);
   useEffect(() => setAudioMuted(settings.muted), [settings.muted]);
   useEffect(() => {
@@ -219,7 +287,7 @@ export default function App() {
       });
     }
   }, [state.lastEvent?.id, settings.reducedMotion]);
-  const persist = useCallback((next: RunState) => {
+  const persist = useCallback(async (next: RunState) => {
     if (conflictRef.current) return false;
     let nextBest = bestRef.current;
     if (next.phase === "cleared" && !next.tutorial)
@@ -231,7 +299,21 @@ export default function App() {
       best: nextBest,
       tutorialCompleted: completedRef.current,
     });
-    const saved = writeSave(data, { expected: expected.current });
+    let saved: StorageResult<unknown>;
+    try {
+      saved = bridge
+        ? await bridge.save(data)
+        : writeSave(data, { expected: expected.current });
+    } catch (cause) {
+      saved = {
+        ok: false,
+        error: {
+          code: "write",
+          message: "게임 상태를 저장하지 못했습니다.",
+          cause,
+        },
+      };
+    }
     if (!saved.ok) {
       setStorageError(
         "자동 저장을 완료하지 못했어요. 기록을 내보내거나 저장을 다시 시도해 주세요.",
@@ -240,22 +322,33 @@ export default function App() {
         conflictRef.current = true;
         setConflict(true);
         setPaused(true);
+        requestRef.current?.controller.abort();
+        requestRef.current = null;
+        requestId.current++;
+        setPending(false);
       }
       return false;
     }
-    expected.current = { writer: writer.current, revision: next.revision };
+    if (!bridge)
+      expected.current = { writer: writer.current, revision: next.revision };
     setStorageError("");
     bestRef.current = nextBest;
     setBest(nextBest);
     return true;
-  }, []);
+  }, [bridge]);
   const commit = useCallback(
-    (next: RunState) => {
-      if (conflictRef.current) return false;
-      if (!persist(next)) return false;
-      stateRef.current = next;
-      setState(next);
-      return true;
+    async (next: RunState, afterSave?: () => void | Promise<void>) => {
+      if (conflictRef.current || saving.current) return false;
+      saving.current = true;
+      try {
+        if (!(await persist(next))) return false;
+        await afterSave?.();
+        stateRef.current = next;
+        setState(next);
+        return true;
+      } finally {
+        saving.current = false;
+      }
     },
     [persist],
   );
@@ -266,6 +359,7 @@ export default function App() {
       archivedRuns.current.has(completed.id)
     )
       return true;
+    if (bridge) return true;
     try {
       await archiveStage(
         makeSave(completed, {
@@ -284,7 +378,7 @@ export default function App() {
       );
       return false;
     }
-  }, []);
+  }, [bridge]);
   useEffect(() => {
     if (started && state.phase === "cleared" && !state.tutorial)
       void archiveCleared(state);
@@ -292,6 +386,10 @@ export default function App() {
   const openChronicle = (includeCurrent: boolean) => {
     setPaused(true);
     setMusicPlayback({ stageId: MEMORY_DUNGEON_STAGE_ID, playing: false });
+    if (bridge) {
+      bridge.onArchive();
+      return;
+    }
     setChronicleRecord(
       includeCurrent && stateRef.current.phase === "cleared"
         ? stageArchive(
@@ -306,6 +404,20 @@ export default function App() {
     );
     setShowChronicle(true);
   };
+  const presentCleared = useCallback(
+    (completed: RunState) => {
+      if (
+        !bridge ||
+        completed.tutorial ||
+        completed.phase !== "cleared" ||
+        presentedClears.current.has(completed.id)
+      )
+        return;
+      presentedClears.current.add(completed.id);
+      bridge.onClearedPresentation();
+    },
+    [bridge],
+  );
   const cancelDraft = () => {
     requestRef.current?.controller.abort();
     requestRef.current = null;
@@ -319,77 +431,85 @@ export default function App() {
     draftRef.current = value;
     setDraft(value);
   };
-  const playNext = useCallback(() => {
-    if (conflictRef.current) return;
+  const playNext = useCallback(async () => {
+    if (conflictRef.current) return false;
     const current = stateRef.current;
     if (current.phase !== "running") {
       setAnimating(false);
-      return;
+      return false;
     }
     const next = step(current);
-    if (commit(next)) setAnimating(true);
-    else setAnimating(false);
+    if (await commit(next)) {
+      setAnimating(true);
+      return true;
+    }
+    setAnimating(false);
+    return false;
   }, [commit]);
-  const onPlaybackEnd = useCallback(() => {
+  const onPlaybackEnd = useCallback(async () => {
     const current = stateRef.current;
     if (current.phase === "running") {
       if (stepModeRef.current) {
         setAwaitingNext(true);
         setPaused(true);
-      } else playNext();
+      } else await playNext();
     } else {
       setAnimating(false);
       if (current.phase === "practice")
         playSound("win", settingsRef.current.muted);
+      presentCleared(current);
     }
-  }, [playNext]);
-  const startPlayback = () => {
-    setEditingMemory(null);
-    setDraggedMemory(null);
-    setDropTarget(null);
-    dragRef.current = null;
-    dropRef.current = null;
-    setNotice("");
-    setAwaitingNext(false);
-    setSceneMode("action");
+  }, [playNext, presentCleared]);
+  const startPlayback = async () => {
     let next = stateRef.current;
+    const revivingNext = next.phase === "dead";
     if (next.phase === "dead") {
       next = retry(next);
-      setReviving(true);
-      setSceneMode("entrance");
     }
     next = startRun(next);
-    if (commit(next)) {
+    if (await commit(next)) {
+      setEditingMemory(null);
+      setDraggedMemory(null);
+      setDropTarget(null);
+      dragRef.current = null;
+      dropRef.current = null;
+      setNotice("");
+      setAwaitingNext(false);
+      setReviving(revivingNext);
+      setSceneMode(revivingNext ? "entrance" : "action");
       setPaused(false);
-      playNext();
+      await playNext();
+      return true;
     }
+    return false;
   };
-  const launch = () => {
+  const launch = async () => {
     if (busy.current || pending || conflict) return;
     busy.current = true;
     unlockAudio();
-    cancelDraft();
-    setDraft("");
-    draftRef.current = "";
     try {
-      startPlayback();
+      if (await startPlayback()) {
+        cancelDraft();
+        setDraft("");
+        draftRef.current = "";
+      }
     } finally {
       busy.current = false;
     }
   };
-  const rememberAndGo = (text: string, value: Interpretation) => {
+  const rememberAndGo = async (text: string, value: Interpretation) => {
     const next = addInstruction(stateRef.current, text, value);
-    if (commit(next)) {
+    if (await commit(next)) {
       playSound("write", settingsRef.current.muted);
       setDraft("");
       draftRef.current = "";
       setInterpretation(null);
       setError("");
       setPending(false);
-      startPlayback();
+      await startPlayback();
     }
   };
-  const begin = () => {
+  const begin = async () => {
     unlockAudio();
     if (sharedEntry) {
       const url = new URL(location.href);
@@ -397,7 +517,7 @@ export default function App() {
       history.replaceState(null, "", url);
       setSharedEntry(false);
       if (boot.data) {
-        archiveAndRestart();
+        await archiveAndRestart();
         return;
       }
     }
@@ -405,9 +525,10 @@ export default function App() {
       setPopup("storage");
       return;
     }
+    if (!boot.data && !(await commit(stateRef.current))) return;
     setStarted(true);
-    if (!expected.current) commit(stateRef.current);
-    if (stateRef.current.phase === "running") playNext();
+    if (stateRef.current.phase === "running") await playNext();
+    else presentCleared(stateRef.current);
   };
   const interpret = async (e: FormEvent) => {
     e.preventDefault();
@@ -481,7 +602,7 @@ export default function App() {
         !completedRef.current
       )
         setInterpretation(value);
-      else rememberAndGo(text, value);
+      else await rememberAndGo(text, value);
     } catch (cause) {
       if (id === requestId.current) {
         setError(
@@ -502,11 +623,11 @@ export default function App() {
       }
     }
   };
-  const confirmInstruction = () => {
+  const confirmInstruction = async () => {
     if (!interpretation || busy.current || conflict) return;
     busy.current = true;
     try {
-      rememberAndGo(draft.trim(), interpretation);
+      await rememberAndGo(draft.trim(), interpretation);
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -517,21 +638,37 @@ export default function App() {
       busy.current = false;
     }
   };
-  const changeSettings = (next: Settings) => {
+  const changeSettings = async (next: Settings) => {
+    if (busy.current || conflictRef.current) return;
+    busy.current = true;
+    const previous = settingsRef.current;
     settingsRef.current = next;
-    setSettings(next);
-    commit({ ...stateRef.current, revision: stateRef.current.revision + 1 });
+    try {
+      if (
+        await commit({
+          ...stateRef.current,
+          revision: stateRef.current.revision + 1,
+        })
+      )
+        setSettings(next);
+      else settingsRef.current = previous;
+    } finally {
+      busy.current = false;
+    }
   };
   const erase = async () => {
     if (!deleteId || busy.current || conflict) return;
     busy.current = true;
-    setErasing(true);
-    await new Promise((resolve) =>
-      setTimeout(resolve, settings.reducedMotion ? 0 : 220),
-    );
     try {
       const next = deleteInstruction(stateRef.current, deleteId);
-      if (commit(next)) {
+      if (
+        await commit(next, async () => {
+          setErasing(true);
+          await new Promise((resolve) =>
+            setTimeout(resolve, settings.reducedMotion ? 0 : 220),
+          );
+        })
+      ) {
         setNotice(
           stateRef.current.erasers === 0 &&
             next.penaltyDeaths > state.penaltyDeaths
@@ -556,28 +693,31 @@ export default function App() {
       setPopup(null);
       return;
     }
-    cancelDraft();
-    setDraft("");
-    draftRef.current = "";
-    setAnimating(false);
-    setPaused(false);
-    setNotice("");
-    const next = newRun(true);
-    next.revision = stateRef.current.revision + 1;
-    if (commit(next)) {
-      setStarted(true);
-      setPopup(null);
+    try {
+      const next = newRun(true);
+      next.revision = stateRef.current.revision + 1;
+      if (await commit(next)) {
+        cancelDraft();
+        setDraft("");
+        draftRef.current = "";
+        setAnimating(false);
+        setPaused(false);
+        setNotice("");
+        setStarted(true);
+        setPopup(null);
+      }
+    } finally {
+      busy.current = false;
     }
-    busy.current = false;
   };
-  const enterMain = () => {
+  const enterMain = async () => {
     if (busy.current || conflict) return;
     busy.current = true;
     const previous = completedRef.current;
     try {
       const next = startMain(stateRef.current);
       completedRef.current = true;
-      if (commit(next)) {
+      if (await commit(next)) {
         setTutorialCompleted(true);
         setNotice("가르친 두 줄을 챙겼어요. 이제 진짜 모험을 시작해요.");
       } else completedRef.current = previous;
@@ -590,19 +730,59 @@ export default function App() {
       busy.current = false;
     }
   };
+  const skipPrologue = async () => {
+    if (busy.current || conflictRef.current || !stateRef.current.tutorial)
+      return;
+    busy.current = true;
+    const previous = completedRef.current;
+    cancelDraft();
+    try {
+      const next = skipTutorial(stateRef.current);
+      completedRef.current = true;
+      if (await commit(next)) {
+        setDraft("");
+        draftRef.current = "";
+        setAnimating(false);
+        setAwaitingNext(false);
+        setPaused(false);
+        setReviving(false);
+        setSceneMode("action");
+        setTutorialCompleted(true);
+        setStarted(true);
+        setNotice("프롤로그를 건너뛰었어요. 빈 메모장으로 첫 모험을 시작해요.");
+      } else completedRef.current = previous;
+    } catch (cause) {
+      completedRef.current = previous;
+      setStorageError(
+        cause instanceof Error
+          ? cause.message
+          : "프롤로그를 건너뛰지 못했어요.",
+      );
+    } finally {
+      busy.current = false;
+    }
+  };
   const exportSave = () => {
     let raw = "";
     try {
-      raw =
-        localStorage.getItem(STORAGE_KEY) ??
-        JSON.stringify(
-          makeSave(stateRef.current, {
-            writer: writer.current,
-            settings: settingsRef.current,
-            best: bestRef.current,
-            tutorialCompleted: completedRef.current,
-          }),
-        );
+      raw = bridge
+        ? JSON.stringify(
+            makeSave(stateRef.current, {
+              writer: writer.current,
+              settings: settingsRef.current,
+              best: bestRef.current,
+              tutorialCompleted: completedRef.current,
+            }),
+          )
+        : (localStorage.getItem(STORAGE_KEY) ??
+          JSON.stringify(
+            makeSave(stateRef.current, {
+              writer: writer.current,
+              settings: settingsRef.current,
+              best: bestRef.current,
+              tutorialCompleted: completedRef.current,
+            }),
+          ));
     } catch {
       raw = JSON.stringify(stateRef.current);
     }
@@ -616,6 +796,10 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
   const archiveAndRestart = async () => {
+    if (bridge) {
+      bridge.onRoadmap();
+      return;
+    }
     if (!(await archiveCleared(stateRef.current))) return;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -661,14 +845,19 @@ export default function App() {
   const completedEvents =
     animating && !awaitingNext ? state.events.slice(0, -1) : state.events;
   const canReorder = started && isRest && !pending && !conflict;
-  const changePriority = (id: string, direction: "up" | "down") => {
+  const changePriority = async (id: string, direction: "up" | "down") => {
     if (!canReorder || busy.current) return;
+    busy.current = true;
     const next = moveInstruction(stateRef.current, id, direction);
-    if (next !== stateRef.current && commit(next)) {
-      const text = next.instructions.find((item) => item.id === id)?.text;
-      setPriorityNotice(
-        `“${text}” 우선순위를 ${direction === "up" ? "높였어요" : "낮췄어요"}.`,
-      );
+    try {
+      if (next !== stateRef.current && (await commit(next))) {
+        const text = next.instructions.find((item) => item.id === id)?.text;
+        setPriorityNotice(
+          `“${text}” 우선순위를 ${direction === "up" ? "높였어요" : "낮췄어요"}.`,
+        );
+      }
+    } finally {
+      busy.current = false;
     }
   };
   const startMemoryDrag = (id: string) => {
@@ -707,7 +896,7 @@ export default function App() {
     dropRef.current = target;
     setDropTarget(target);
   };
-  const finishMemoryDrag = (apply: boolean) => {
+  const finishMemoryDrag = async (apply: boolean) => {
     const id = dragRef.current;
     const target = dropRef.current;
     if (apply && canReorder && id && target) {
@@ -717,7 +906,7 @@ export default function App() {
         target.id,
         target.position,
       );
-      if (next !== stateRef.current && commit(next))
+      if (next !== stateRef.current && (await commit(next)))
         setPriorityNotice("메모 우선순위를 바꿨어요.");
     }
     dragRef.current = null;
@@ -758,46 +947,28 @@ export default function App() {
       className={`shell ${keyboard ? "keyboard-open" : ""}`}
       onPointerDown={() => unlockAudio()}
     >
-      <header className="topbar">
-        <div className="brand">
-          <img src="/favicon.svg" alt="" /> ONE LINE PER DEATH
-        </div>
-        <nav className="top-actions" aria-label="게임 설정">
-          <button className="subtle" onClick={() => setPopup("help")}>
-            플레이 안내
-          </button>
-          <button
-            className="icon-button"
-            aria-label={settings.muted ? "소리 켜기" : "소리 끄기"}
-            title={settings.muted ? "소리 켜기" : "소리 끄기"}
-            onClick={() => {
-              unlockAudio();
-              changeSettings({ ...settings, muted: !settings.muted });
-            }}
-          >
-            {settings.muted ? <SoundOff /> : <Sound />}
-          </button>
-          <button
-            className="icon-button"
-            aria-label="설정"
-            onClick={() => setPopup("settings")}
-          >
-            <Gear />
-          </button>
-        </nav>
-      </header>
-      <section className="intro">
-        <div>
-          <span className="eyebrow">A LITTLE HERO. YOUR LITTLE WORDS.</span>
-          <h1>
-            죽을 때마다 <span>한 줄</span>
-          </h1>
-          <p>용사는 다시 태어나고, 당신의 한 줄은 남습니다.</p>
-        </div>
-        <div className="chapter-index">
-          실패가 기억이 되는 곳<small>A DUNGEON OF SMALL LESSONS</small>
-        </div>
-      </section>
+      <PlayHeader
+        actions={
+          <>
+          {bridge && (
+            <button
+              className="subtle"
+              onClick={() => {
+                cancelDraft();
+                bridge.onRoadmap();
+              }}
+            >
+              여정 지도
+            </button>
+          )}
+          <PlayUtilityActions muted={settings.muted}
+            onHelp={() => setPopup("help")}
+            onToggleSound={() => { unlockAudio(); changeSettings({ ...settings, muted: !settings.muted }); }}
+            onSettings={() => setPopup("settings")} />
+          </>
+        }
+      />
+      <PlayIntro />
       {conflict && (
         <div className="banner" role="alert">
           다른 탭에서 기록이 바뀌어 이 탭을 멈췄어요. 최신 기록을 불러오면
@@ -829,7 +1000,8 @@ export default function App() {
           </button>
         </div>
       )}
-      <main className="layout">
+      {!started && state.tutorial && <PrologueGuide />}
+      <PlayLayout>
         <section className="game-panel" aria-label="던전 플레이">
           <div
             className={`scene-frame ${OBSERVATIONS[event?.observation ?? observation.id].sidePath && sceneMode !== "entrance" ? "has-side-path" : ""}`}
@@ -843,11 +1015,22 @@ export default function App() {
                 </span>
                 <h2>{room.name}</h2>
               </div>
-              <span className="chapter-number">
-                {state.tutorial
-                  ? "작은 모험의 시작"
-                  : `${Math.min(displayedRoom + 1, 8)} / 8`}
-              </span>
+              {state.tutorial ? (
+                <button
+                  type="button"
+                  className="subtle"
+                  onClick={skipPrologue}
+                  disabled={conflict}
+                  aria-label="프롤로그 건너뛰기"
+                  style={{ pointerEvents: "auto" }}
+                >
+                  SKIP
+                </button>
+              ) : (
+                <span className="chapter-number">
+                  {Math.min(displayedRoom + 1, 8)} / 8
+                </span>
+              )}
             </div>
             <div className="canvas-holder">
               <DungeonCanvas
@@ -937,11 +1120,12 @@ export default function App() {
               </span>
               {started && (animating || state.phase === "running") ? (
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (awaitingNext) {
-                      setAwaitingNext(false);
-                      setPaused(false);
-                      playNext();
+                      if (await playNext()) {
+                        setAwaitingNext(false);
+                        setPaused(false);
+                      }
                     } else setPaused((x) => !x);
                   }}
                   aria-label={paused ? "다시 재생" : "일시정지"}
@@ -959,13 +1143,14 @@ export default function App() {
                 <input
                   type="checkbox"
                   checked={sceneByScene}
-                  onChange={(e) => {
+                  onChange={async (e) => {
                     setSceneByScene(e.target.checked);
                     stepModeRef.current = e.target.checked;
                     if (!e.target.checked && awaitingNext) {
-                      setAwaitingNext(false);
-                      setPaused(false);
-                      playNext();
+                      if (await playNext()) {
+                        setAwaitingNext(false);
+                        setPaused(false);
+                      }
                     }
                   }}
                 />
@@ -974,10 +1159,11 @@ export default function App() {
               {awaitingNext && (
                 <button
                   className="secondary"
-                  onClick={() => {
-                    setAwaitingNext(false);
-                    setPaused(false);
-                    playNext();
+                  onClick={async () => {
+                    if (await playNext()) {
+                      setAwaitingNext(false);
+                      setPaused(false);
+                    }
                   }}
                 >
                   다음 장면 →
@@ -996,7 +1182,7 @@ export default function App() {
               )}
             </div>
           )}
-          {!started && (
+          {!started && !state.tutorial && (
             <ol className="first-guide">
               <li>
                 <b>01</b>
@@ -1021,34 +1207,28 @@ export default function App() {
               </li>
             </ol>
           )}
-          <div
-            className="journey"
-            aria-label={
-              state.tutorial
-                ? "튜토리얼"
-                : `8개 방 중 ${Math.min(displayedRoom + 1, 8)}번째`
-            }
-          >
-            {ROOMS.map((_, i) => (
-              <span
-                key={i}
-                className={
-                  !state.tutorial
-                    ? i < displayedRoom
-                      ? "done"
-                      : i === displayedRoom
-                        ? "current"
-                        : ""
-                    : i === 0
-                      ? "current"
-                      : ""
-                }
-              />
-            ))}
-          </div>
+          {state.tutorial ? (
+            <div className="journey" aria-label="튜토리얼">
+              {ROOMS.map((_, i) => (
+                <span key={i} className={i === 0 ? "current" : ""} />
+              ))}
+            </div>
+          ) : (
+            <PlayStageProgress
+              chapter={1}
+              stages={ROOMS.map((chapterRoom, index) => ({
+                id: `chapter-1-stage-${index + 1}`,
+                title: chapterRoom.name,
+              }))}
+              currentId={`chapter-1-stage-${Math.min(displayedRoom + 1, ROOMS.length)}`}
+              completedIds={ROOMS.slice(0, displayedRoom).map(
+                (_, index) => `chapter-1-stage-${index + 1}`,
+              )}
+            />
+          )}
           {canCompose && (
             <>
-              <form className="composer" onSubmit={interpret}>
+              <PlayComposer onSubmit={interpret} ariaLabel="이번 생의 한 줄">
                 <label htmlFor="instruction">
                   {state.tutorial && state.instructions.length === 0
                     ? "첫 번째 가르침"
@@ -1152,12 +1332,16 @@ export default function App() {
                     </div>
                   </div>
                 )}
-              </form>
+              </PlayComposer>
               <p className="helper" id="instruction-help">
                 {needsFirstExplanation
                   ? "첫 한 줄은 용사가 어떻게 이해했는지 함께 확인해요."
                   : "Enter ↵ 한 번이면 읽고 바로 출발해요. 기억한 글은 사망 후 지울 수 있어요."}
               </p>
+              <PlayHints
+                hints={legacyHints(room, observation)}
+                resetKey={`${state.tutorial ? "prologue" : displayedRoom}:${observation.id}`}
+              />
             </>
           )}
           {started &&
@@ -1196,7 +1380,9 @@ export default function App() {
           {started && !animating && state.phase === "blocked" && (
             <button
               className="primary wide"
-              onClick={() => commit(abandon(stateRef.current))}
+              onClick={async () => {
+                await commit(abandon(stateRef.current));
+              }}
               disabled={conflict}
             >
               포기하고 부활하기 · +1데스
@@ -1228,9 +1414,11 @@ export default function App() {
                     </p>
                     <button
                       className="secondary"
-                      onClick={() => {
-                        commit(practiceDeletion(stateRef.current));
-                        playSound("erase", settings.muted);
+                      onClick={async () => {
+                        if (
+                          await commit(practiceDeletion(stateRef.current))
+                        )
+                          playSound("erase", settings.muted);
                       }}
                     >
                       이 연습 문장 지우기
@@ -1303,18 +1491,11 @@ export default function App() {
             )}
           </div>
         </section>
-        <details
-          className={`notebook paper ${reviving ? "remembering" : ""}`}
-          ref={notebook}
+        <PlayNotebook
+          count={state.instructions.length}
+          className={reviving ? "remembering" : undefined}
+          notebookRef={notebook}
         >
-          <summary className="notebook-summary">
-            <span>용사의 메모장 · {state.instructions.length}개의 기억</span>
-          </summary>
-          <div className="paper-content">
-            <div className="notebook-heading">
-              <Book />
-              <h2>용사의 메모장</h2>
-            </div>
             <p className="memory-priority">상황이 맞으면 위쪽 메모부터 ↓</p>
             <span className="sr-only" role="status">
               {priorityNotice}
@@ -1504,11 +1685,14 @@ export default function App() {
             <p className="paper-note">
               지우개를 다 쓰면, 한 줄을 지울 때 +{CONFIG.deletionPenalty}데스.
             </p>
-          </div>
-        </details>
-      </main>
+        </PlayNotebook>
+      </PlayLayout>
       <footer className="footer">
-        <span>이 브라우저에 자동 저장됩니다.</span>
+        <span>
+          {bridge
+            ? "진행은 안전하게 자동 저장됩니다."
+            : "이 브라우저에 자동 저장됩니다."}
+        </span>
         <button
           className="subtle"
           onClick={() => openChronicle(state.phase === "cleared")}
@@ -1582,7 +1766,9 @@ export default function App() {
             <li>이미 본 같은 행동은 3배속. 탭을 떠나면 자동으로 멈춰요.</li>
           </ul>
           <p>
-            기록은 이 브라우저에만 저장됩니다. 다른 기기와 동기화되지 않아요.
+            {bridge
+              ? "진행은 여정 기록에 자동 저장됩니다."
+              : "기록은 이 브라우저에만 저장됩니다. 다른 기기와 동기화되지 않아요."}
           </p>
           <button className="primary wide" onClick={() => setPopup(null)}>
             기억했어요
@@ -1651,18 +1837,25 @@ export default function App() {
             </button>
             <button
               className="secondary"
-              onClick={() => {
-                if (persist(stateRef.current)) {
+              onClick={async () => {
+                if (await commit(stateRef.current)) {
                   setPopup(null);
-                  if (stateRef.current.phase === "running") playNext();
+                  if (stateRef.current.phase === "running")
+                    await playNext();
                 }
               }}
             >
               저장 다시 시도
             </button>
-            <button className="secondary" onClick={archiveAndRestart}>
-              원본 별도 보관 후 새 도전
-            </button>
+            {bridge ? (
+              <button className="secondary" onClick={bridge.onRoadmap}>
+                여정 지도로 돌아가기
+              </button>
+            ) : (
+              <button className="secondary" onClick={archiveAndRestart}>
+                원본 별도 보관 후 새 도전
+              </button>
+            )}
           </div>
         </Modal>
       )}
@@ -1740,64 +1933,5 @@ export default function App() {
         </Modal>
       )}
     </div>
-  );
-}
-function Sound() {
-  return (
-    <svg
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-    >
-      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
-      <path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14" />
-    </svg>
-  );
-}
-function SoundOff() {
-  return (
-    <svg
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-    >
-      <path d="M11 5 6 9H3v6h3l5 4V5Z" />
-      <path d="m16 9 6 6m0-6-6 6" />
-    </svg>
-  );
-}
-function Gear() {
-  return (
-    <svg
-      width="17"
-      height="17"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-    >
-      <circle cx="12" cy="12" r="3" />
-      <path d="m9 3-1 3-3 1 1 3-2 2 2 2-1 3 3 1 1 3h6l1-3 3-1-1-3 2-2-2-2 1-3-3-1-1-3Z" />
-    </svg>
-  );
-}
-function Book() {
-  return (
-    <svg
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="#7b8468"
-      strokeWidth="1.3"
-    >
-      <path d="M5 3h13a2 2 0 0 1 2 2v16H6a3 3 0 0 1-3-3V5a2 2 0 0 1 2-2Zm1 0v18M9 8h7m-7 4h5" />
-    </svg>
   );
 }
