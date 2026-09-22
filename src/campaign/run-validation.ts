@@ -104,6 +104,7 @@ export function parseStageRun(value: unknown): StageRun | null {
   const eventIds = new Set<string>();
   for (const event of value.events) {
     if (!record(event) || !name(event.id) || eventIds.has(event.id) || !integer(event.tick) || !integer(event.attempt) || event.attempt < 1 || event.attempt > Number(value.world.attempt) || !(event.instructionId === null || name(event.instructionId)) || !(event.actor === null || event.actor === "hero" || event.actor === "keeper") || !(event.target === null || name(event.target)) || !["safe", "blocked", "clarification", "failure", "observed", "interrupted"].includes(String(event.outcome)) || typeof event.reason !== "string" || !Array.isArray(event.changes) || !event.changes.every((change) => record(change) && name(change.entity) && name(change.property) && (change.before === null || scalar(change.before)) && (change.after === null || scalar(change.after)))) return null;
+    if (event.verb !== undefined && !parsePhysicalAction({ kind: "action", actor: event.actor, target: event.target, verb: event.verb })) return null;
     eventIds.add(event.id);
   }
   return structuredClone(value) as unknown as StageRun;

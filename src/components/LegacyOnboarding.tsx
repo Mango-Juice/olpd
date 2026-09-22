@@ -11,7 +11,16 @@ import {
 } from "../game/onboarding";
 import type { Interpretation, Settings } from "../game/types";
 import { FLOOR_Y, idleHeroFrame } from "../render/animation";
-import { drawHero } from "../render/scene";
+import {
+  LEGACY_EXIT_X,
+  LEGACY_HERO_START_X,
+  legacyDetourTrajectory,
+  legacyDuckTrajectory,
+  legacyGapFallTrajectory,
+  legacyJumpTrajectory,
+  legacyVisibleDetourPoint,
+} from "../render/legacyOnboarding";
+import { drawHero, onHeroSpriteReady, drawDungeonBackdrop, drawDungeonFloor, drawDungeonMasonry } from "../render/scene";
 import {
   PlayComposer,
   PlayHints,
@@ -62,6 +71,92 @@ function conditionLabels(interpretation: Interpretation): string[] {
   return [...new Set(labels)];
 }
 
+function prepareCanvas(
+  canvas: HTMLCanvasElement,
+  logicalWidth: number,
+  logicalHeight: number,
+) {
+  const pixelRatio = Math.min(window.devicePixelRatio || 1, 3);
+  canvas.width = Math.round(logicalWidth * pixelRatio);
+  canvas.height = Math.round(logicalHeight * pixelRatio);
+  const context = canvas.getContext("2d");
+  context?.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+  return context;
+}
+
+function drawCanvasLabel(
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  accent = false,
+) {
+  context.save();
+  context.font = '600 16px "Noto Sans KR", sans-serif';
+  const width = context.measureText(text).width + 24;
+  context.fillStyle = accent ? "#d8ead0e8" : "#171a25dc";
+  context.beginPath();
+  context.roundRect(x, y, width, 32, 9);
+  context.fill();
+  context.fillStyle = accent ? "#273329" : "#eef0e8";
+  context.textBaseline = "middle";
+  context.fillText(text, x + 12, y + 16);
+  context.restore();
+}
+
+function drawVisibleDetour(context: CanvasRenderingContext2D) {
+  context.strokeStyle = "#b8d5bd";
+  context.lineWidth = 8;
+  context.lineCap = "round";
+  context.beginPath();
+  for (let step = 0; step <= 48; step++) {
+    const point = legacyVisibleDetourPoint(step / 48);
+    if (step === 0) context.moveTo(point.x, point.y);
+    else context.lineTo(point.x, point.y);
+  }
+  context.stroke();
+  context.lineCap = "butt";
+  context.fillStyle = "#9fc3a044";
+  for (const progress of [0, 1]) {
+    const point = legacyVisibleDetourPoint(progress);
+    context.beginPath();
+    context.arc(point.x, point.y, 13, 0, Math.PI * 2);
+    context.fill();
+  }
+  drawCanvasLabel(context, "샛길", 310, 320, true);
+}
+
+function drawStageObstacle(
+  context: CanvasRenderingContext2D,
+  stageIndex: number,
+  groundY: number,
+) {
+  if (stageIndex === 1) {
+    context.clearRect(440, groundY - 2, 112, 36);
+    context.fillStyle = "#111423";
+    context.fillRect(440, groundY, 112, 70);
+    context.fillStyle = "#d9b88c";
+    context.fillRect(454, 475, 84, 18);
+    drawCanvasLabel(context, "바닥 틈", 454, 344);
+  } else if (stageIndex === 2) {
+    drawDungeonMasonry(context, 430, 235, 205, groundY - 235);
+    context.save(); context.beginPath();
+    context.moveTo(448, groundY); context.lineTo(448, 335);
+    context.ellipse(533, 335, 85, 10, 0, Math.PI, Math.PI * 2);
+    context.lineTo(618, groundY); context.closePath(); context.clip();
+    drawDungeonBackdrop(context, 0, true);
+    context.restore();
+    context.strokeStyle = "#9289b4"; context.lineWidth = 6;
+    context.beginPath(); context.moveTo(448, groundY); context.lineTo(448, 335);
+    context.ellipse(533, 335, 85, 10, 0, Math.PI, Math.PI * 2);
+    context.lineTo(618, groundY); context.stroke();
+    drawCanvasLabel(context, "낮은 아치", 479, 278);
+  } else if (stageIndex === 3) {
+    drawDungeonMasonry(context, 430, 205, 155, groundY - 205);
+    drawCanvasLabel(context, "막힌 벽", 458, 160);
+  }
+}
+
 function OnboardingCanvas({
   stageIndex,
   presentation,
@@ -76,7 +171,7 @@ function OnboardingCanvas({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const context = canvas.getContext("2d");
+    const context = prepareCanvas(canvas, 960, 500);
     if (!context) return;
     let frame = 0;
     const startedAt = performance.now();
@@ -88,22 +183,10 @@ function OnboardingCanvas({
         : 0;
       const width = 960;
       const height = 500;
-      const groundY = FLOOR_Y + 18;
+      const groundY = FLOOR_Y;
       context.clearRect(0, 0, width, height);
-      const background = context.createLinearGradient(0, 0, 0, height);
-      background.addColorStop(0, "#171a2c");
-      background.addColorStop(1, "#27283b");
-      context.fillStyle = background;
-      context.fillRect(0, 0, width, height);
-
-      context.fillStyle = "#302f43";
-      for (let x = 0; x < width; x += 120) {
-        context.fillRect(x + 3, 80 + ((x / 120) % 2) * 16, 96, 8);
-      }
-      context.fillStyle = "#4a4654";
-      context.fillRect(0, groundY, width, 128);
-      context.fillStyle = "#675e62";
-      context.fillRect(0, groundY, width, 8);
+      drawDungeonBackdrop(context, now / 1000, reducedMotion, width);
+      drawDungeonFloor(context, 0, groundY, width);
 
       const doorX = 790;
       context.fillStyle = "#161a25";
@@ -114,74 +197,80 @@ function OnboardingCanvas({
       context.fillStyle = "#b7cda733";
       context.fillRect(doorX + 8, 278, 70, groundY - 286);
 
-      if (stageIndex === 1) {
-        context.clearRect(440, groundY - 2, 112, 36);
-        context.fillStyle = "#111423";
-        context.fillRect(440, groundY, 112, 70);
-        context.fillStyle = "#d9b88c";
-        context.fillRect(454, 475, 84, 18);
-      } else if (stageIndex === 2) {
-        context.fillStyle = "#504b57";
-        context.fillRect(430, 235, 205, 132);
-        context.fillStyle = "#171a2c";
-        context.fillRect(448, 325, 170, 95);
-        context.strokeStyle = "#746d76";
-        context.lineWidth = 8;
-        context.beginPath();
-        context.arc(533, 324, 85, Math.PI, 0);
-        context.stroke();
-      } else if (stageIndex === 3) {
-        context.fillStyle = "#55505d";
-        context.fillRect(430, 205, 155, 215);
-        context.strokeStyle = "#b8d5bd";
-        context.lineWidth = 8;
-        context.beginPath();
-        context.moveTo(330, 400);
-        context.bezierCurveTo(360, 345, 360, 250, 442, 245);
-        context.bezierCurveTo(555, 238, 642, 330, 742, 400);
-        context.stroke();
-        context.fillStyle = "#9fc3a044";
-        context.beginPath();
-        context.arc(330, 400, 13, 0, Math.PI * 2);
-        context.arc(742, 400, 13, 0, Math.PI * 2);
-        context.fill();
-      }
+      drawCanvasLabel(context, "출구", doorX + 13, 224, true);
+      if (stageIndex === 3) drawVisibleDetour(context);
 
-      let heroX = 166;
+      let heroX = LEGACY_HERO_START_X;
       let heroY = FLOOR_Y;
       let pose = idleHeroFrame(now / 1000).pose;
+      let heroScale = 1;
+      let occludedByWall = false;
       if (presentation?.applied) {
-        if (presentation.action === "advance") {
-          heroX += ratio * (presentation.succeeded ? 590 : stageIndex === 1 ? 260 : 220);
+        if (
+          presentation.succeeded &&
+          stageIndex === 1 &&
+          presentation.action === "jump"
+        ) {
+          const point = legacyJumpTrajectory(ratio);
+          ({ x: heroX, y: heroY, pose, scale: heroScale } = point);
+        } else if (
+          presentation.succeeded &&
+          stageIndex === 2 &&
+          presentation.action === "duck"
+        ) {
+          const point = legacyDuckTrajectory(ratio);
+          ({ x: heroX, y: heroY, pose, scale: heroScale } = point);
+        } else if (
+          presentation.succeeded &&
+          stageIndex === 3 &&
+          presentation.action === "detour"
+        ) {
+          const point = legacyDetourTrajectory(ratio);
+          ({
+            x: heroX,
+            y: heroY,
+            pose,
+            scale: heroScale,
+            occludedByWall,
+          } = point);
+        } else if (
+          !presentation.succeeded &&
+          stageIndex === 1 &&
+          presentation.action === "advance"
+        ) {
+          const point = legacyGapFallTrajectory(ratio);
+          ({ x: heroX, y: heroY, pose, scale: heroScale } = point);
+        } else if (presentation.action === "advance") {
+          heroX +=
+            ratio * (presentation.succeeded ? LEGACY_EXIT_X - heroX : 220);
           pose = "walk";
         } else if (presentation.action === "jump") {
-          heroX += ratio * (presentation.succeeded ? 590 : 235);
+          heroX +=
+            ratio * (presentation.succeeded ? LEGACY_EXIT_X - heroX : 235);
           heroY -= Math.sin(ratio * Math.PI) * 115;
           pose = "jump";
         } else if (presentation.action === "duck") {
-          heroX += ratio * (presentation.succeeded ? 590 : 180);
+          heroX +=
+            ratio * (presentation.succeeded ? LEGACY_EXIT_X - heroX : 180);
           pose = "duck";
         } else if (presentation.action === "detour") {
-          heroX += ratio * (presentation.succeeded ? 590 : 150);
-          heroY -=
-            stageIndex === 3 && presentation.succeeded
-              ? Math.sin(ratio * Math.PI) * 145
-              : 0;
+          heroX +=
+            ratio * (presentation.succeeded ? LEGACY_EXIT_X - heroX : 150);
           pose = "detour";
         }
       }
-      drawHero(
-        context,
-        {
-          ...idleHeroFrame(now / 1000),
-          x: heroX,
-          y: heroY,
-          pose,
-          phase: ratio * 3,
-          dust: presentation?.applied ? 0.35 : 0,
-        },
-        now / 1000,
-      );
+      const heroFrame = {
+        ...idleHeroFrame(now / 1000),
+        x: heroX,
+        y: heroY,
+        pose,
+        scale: heroScale,
+        phase: ratio * 3,
+        dust: presentation?.applied ? 0.35 : 0,
+      };
+      if (occludedByWall) drawHero(context, heroFrame, now / 1000);
+      drawStageObstacle(context, stageIndex, groundY);
+      if (!occludedByWall) drawHero(context, heroFrame, now / 1000);
 
       if (presentation && ratio < 1) {
         frame = requestAnimationFrame(draw);
@@ -189,7 +278,11 @@ function OnboardingCanvas({
     };
 
     frame = requestAnimationFrame(draw);
-    return () => cancelAnimationFrame(frame);
+    const stopWatchingSprite = onHeroSpriteReady(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(draw);
+    });
+    return () => { stopWatchingSprite(); cancelAnimationFrame(frame); };
   }, [presentation, reducedMotion, stageIndex]);
 
   return (
@@ -208,7 +301,7 @@ function StoryHeroCanvas() {
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
+    const context = canvas ? prepareCanvas(canvas, 180, 220) : null;
     if (!canvas || !context) return;
     let frame = 0;
     const draw = (now: number) => {

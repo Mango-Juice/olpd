@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { STAGES } from "../src/campaign/catalog";
 import { makeEntity, makeHero, makeWorld } from "../src/campaign/level";
-import { campaignEntitySignals, layoutCampaignEntities } from "../src/render/campaign-scene";
+import { allStageSegments } from "../src/campaign/level";
+import { resolveStage } from "../src/campaign/registry";
+import {
+  CAMPAIGN_VIEW_HEIGHT,
+  campaignEntitySignals,
+  campaignSceneWidth,
+  hitTestCampaignLayout,
+  layoutCampaignActors,
+  layoutCampaignEntities,
+} from "../src/render/campaign-scene";
 
 describe("campaign scene layout", () => {
   it("keeps previous causal devices out of the current scene without hiding reachable neighboring rooms", () => {
@@ -75,6 +85,99 @@ describe("campaign scene layout", () => {
     }
   });
 
+  it("gives all 68 campaign maps finite collision-free labels inside their intrinsic scene", () => {
+    let sceneCount = 0;
+    for (const summary of STAGES.slice(1)) {
+      const stage = resolveStage(summary.id)!;
+      for (const segment of allStageSegments(stage)) {
+        sceneCount += 1;
+        const world = segment.enter(null);
+        const width = campaignSceneWidth(world);
+        const layouts = layoutCampaignEntities(world);
+        expect(width, segment.id).toBeGreaterThanOrEqual(960);
+        expect(layouts.map((layout) => layout.id), segment.id).toEqual(
+          [...new Set(world.visible)].filter((id) => world.entities[id]
+            && world.entities[id].properties.equipment !== true
+            && !(world.entities[id].properties.causeMapVisible === true
+              && world.entities[id].location.region !== world.actors.hero.location.region)),
+        );
+        for (const layout of layouts) {
+          const values = [layout.anchorX, layout.anchorY, layout.x, layout.y,
+            layout.labelBounds.x, layout.labelBounds.y, layout.labelBounds.width, layout.labelBounds.height];
+          expect(values.every(Number.isFinite), `${segment.id}/${layout.id}`).toBe(true);
+          expect(layout.labelBounds.x, `${segment.id}/${layout.id}`).toBeGreaterThanOrEqual(0);
+          expect(layout.labelBounds.x + layout.labelBounds.width, `${segment.id}/${layout.id}`).toBeLessThanOrEqual(width);
+          expect(layout.labelBounds.y, `${segment.id}/${layout.id}`).toBeGreaterThanOrEqual(0);
+          expect(layout.labelBounds.y + layout.labelBounds.height, `${segment.id}/${layout.id}`).toBeLessThanOrEqual(CAMPAIGN_VIEW_HEIGHT);
+          expect(hitTestCampaignLayout(layouts,
+            layout.labelBounds.x + layout.labelBounds.width / 2,
+            layout.labelBounds.y + layout.labelBounds.height / 2), `${segment.id}/${layout.id}`).toBe(layout.id);
+        }
+        for (let left = 0; left < layouts.length; left++) {
+          for (let right = left + 1; right < layouts.length; right++) {
+            const a = layouts[left].labelBounds;
+            const b = layouts[right].labelBounds;
+            const overlapWidth = Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x);
+            const overlapHeight = Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y);
+            expect(overlapWidth > 1 && overlapHeight > 1,
+              `${segment.id}: ${layouts[left].id} / ${layouts[right].id}`).toBe(false);
+          }
+        }
+      }
+    }
+    expect(sceneCount).toBe(68);
+  });
+
+  it("keeps scene geometry stable when only an actor moves", () => {
+    const world = makeWorld(2, "stable-map", [
+      makeEntity("start", "시작 발판", "stable-map", 0),
+      makeEntity("middle", "중앙 장치", "stable-map", 3),
+      makeEntity("exit", "출구 발판", "stable-map", 8),
+    ]);
+    const beforeWidth = campaignSceneWidth(world);
+    const before = layoutCampaignEntities(world).map(({ id, anchorX, anchorY }) => ({ id, anchorX, anchorY }));
+    const moved = structuredClone(world);
+    moved.actors.hero.location.x = 7;
+    expect(campaignSceneWidth(moved)).toBe(beforeWidth);
+    expect(layoutCampaignEntities(moved).map(({ id, anchorX, anchorY }) => ({ id, anchorX, anchorY }))).toEqual(before);
+    expect(layoutCampaignActors(moved)[0].x).not.toBe(layoutCampaignActors(world)[0].x);
+  });
+
+  it("mounts riders on their support and carried objects on their actor", () => {
+    const world = makeWorld(2, "relations", [
+      makeEntity("raft", "코르크 뗏목", "relations", 2, {
+        movable: true, properties: { kind: "raft", boardable: true },
+      }),
+      makeEntity("bag", "작은 도구 가방", "relations", 7, {
+        movable: true, parent: "hero", properties: { kind: "portable-small" },
+      }),
+    ], makeHero("relations", 2));
+    world.actors.hero.riding = "raft";
+    world.actors.hero.carrying.push("bag");
+    const entities = layoutCampaignEntities(world);
+    const actor = layoutCampaignActors(world)[0];
+    const raft = entities.find((layout) => layout.id === "raft")!;
+    const bag = entities.find((layout) => layout.id === "bag")!;
+    expect(actor.x).toBe(raft.x);
+    expect(actor.y).toBeLessThan(raft.y);
+    expect(bag.relation).toBe("carried");
+    expect(Math.abs(bag.x - actor.x)).toBeLessThan(80);
+    expect(bag.anchorX).toBe(actor.anchorX);
+  });
+
+  it("keeps fixed held controls installed while reserving actor lanes", () => {
+    const world = makeWorld(7, "fixed-hold", [
+      makeEntity("handle", "고정 유지 손잡이", "fixed-hold", 3, { properties: { kind: "hold-handle" } }),
+    ]);
+    world.actors.hero.holding = "handle";
+    world.actors.keeper = { ...makeHero("fixed-hold", 0), id: "keeper", carrying: [] };
+    const handle = layoutCampaignEntities(world)[0];
+    const actors = layoutCampaignActors(world);
+    expect(handle.relation).toBe("world");
+    expect(new Set(actors.map((actor) => actor.x)).size).toBe(2);
+    expect(Math.abs(actors[0].x - actors[1].x)).toBeGreaterThanOrEqual(100);
+  });
+
   it("exposes only declared visual state signals with stable progress and direction cues", () => {
     const lock = makeEntity("lock", "세 박자 잠금판", "signals", 0, {
       properties: {
@@ -94,4 +197,21 @@ describe("campaign scene layout", () => {
     ]);
     expect(campaignEntitySignals(makeEntity("plain", "표식 없는 돌", "signals", 1))).toEqual([]);
   });
+});
+
+it("keeps carried tools and their labels inside ceiling and wall scenes", () => {
+  for (const gravity of ["up", "left", "right"]) {
+    const region = `carry-${gravity}`;
+    const world = makeWorld(5, region, [
+      makeEntity("gravity", "중력 표식", region, 0, { properties: { kind: "room-gravity-marker", gravity, fixedGravity: true } }),
+      makeEntity("tool", "작은 도구", region, 0, { parent: "hero", movable: true, properties: { slot: "small" } }),
+    ]);
+    world.actors.hero.carrying = ["tool"];
+    const tool = layoutCampaignEntities(world).find((item) => item.id === "tool")!;
+    const hero = layoutCampaignActors(world)[0];
+    expect(tool.relation).toBe("carried");
+    if (gravity === "up") expect(tool.y).toBeGreaterThan(hero.y);
+    expect(tool.labelBounds.y).toBeGreaterThanOrEqual(0);
+    expect(tool.labelBounds.y + tool.labelBounds.height).toBeLessThanOrEqual(CAMPAIGN_VIEW_HEIGHT);
+  }
 });

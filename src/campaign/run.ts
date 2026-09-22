@@ -164,7 +164,7 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
     const trace = traces[index];
     const signature = replaySignature(trace.before, action, instructionId);
     const repeated = run.events.some((event) => event.signature === signature && event.outcome === "safe");
-    events.push({ segmentId: trace.before.segmentId, signature, repeated, id: `${run.id}:${run.revision + 1}:${index}`, tick: world.tick, attempt: world.attempt, instructionId, actor: action.actor, target: action.target, outcome: trace.result.outcome === "done" || trace.result.outcome === "progress" ? action.verb === "observe" || action.verb === "remember" ? "observed" : "safe" : trace.result.outcome, reason: trace.result.reason, changes: worldChanges(trace.before, trace.result.world) });
+    events.push({ verb: action.verb, segmentId: trace.before.segmentId, signature, repeated, id: `${run.id}:${run.revision + 1}:${index}`, tick: world.tick, attempt: world.attempt, instructionId, actor: action.actor, target: action.target, outcome: trace.result.outcome === "done" || trace.result.outcome === "progress" ? action.verb === "observe" || action.verb === "remember" ? "observed" : "safe" : trace.result.outcome, reason: trace.result.reason, changes: worldChanges(trace.before, trace.result.world) });
   }
   if (scheduled.interrupted) events.unshift({ segmentId: world.segmentId, id: `${run.id}:${run.revision + 1}:interrupt`, tick: world.tick, attempt: world.attempt, instructionId: scheduled.interrupted, actor: null, target: null, outcome: "interrupted", reason: "더 높은 경계 지침을 먼저 실행하고 중단 지점을 보관했어요.", changes: [] });
   if (scheduled.step?.outcome === "clarification" && instructionId) {

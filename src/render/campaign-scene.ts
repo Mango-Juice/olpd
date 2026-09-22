@@ -1,15 +1,20 @@
-import type { Actor, Entity, EntityId, WorldState } from "../campaign/types";
+import type { Actor, Entity, EntityId, Verb, WorldState } from "../campaign/types";
 import { idleHeroFrame } from "./animation";
 import { PALETTE as C } from "./palette";
-import { drawHero } from "./scene";
+import { drawDungeonBackdrop, drawDungeonFloor, drawHero } from "./scene";
 
 export const CAMPAIGN_VIEW_WIDTH = 960;
 export const CAMPAIGN_VIEW_HEIGHT = 500;
 
 const LEFT = 82;
-const RIGHT = 878;
 const FLOOR = 406;
-const HEIGHT_STEP = 42;
+const HEIGHT_STEP = 48;
+const CEILING = 126;
+const REGION_GAP = 74;
+const SLOT_WIDTH = 154;
+const ACTOR_LANE = 92;
+const SECTION_PADDING = 34;
+const MIN_COLUMN_WIDTH = 120;
 
 export interface CampaignEntityLayout {
   id: EntityId;
@@ -19,6 +24,20 @@ export interface CampaignEntityLayout {
   anchorY: number;
   x: number;
   y: number;
+  rotation: number;
+  labelBounds: { x: number; y: number; width: number; height: number };
+  relation: "world" | "held" | "carried";
+  actorId?: Actor["id"];
+}
+
+export interface CampaignActorLayout {
+  id: Actor["id"];
+  x: number;
+  y: number;
+  anchorX: number;
+  anchorY: number;
+  rotation: number;
+  riding: EntityId | null;
 }
 
 export interface CampaignSceneOptions {
@@ -28,6 +47,9 @@ export interface CampaignSceneOptions {
   time: number;
   reducedMotion: boolean;
   selectedEntityId?: EntityId;
+  previousWorld?: WorldState;
+  transitionProgress?: number;
+  actorVerbs?: Partial<Record<Actor["id"], Verb>>;
 }
 
 const numberProperty = (entity: Entity, key: string, fallback = 0) => {
@@ -43,11 +65,31 @@ const stringProperty = (entity: Entity, key: string) => {
 const booleanProperty = (entity: Entity, key: string) =>
   entity.properties[key] === true;
 
+const SHAPE_ALIASES: Record<string, string> = {
+  "lift": "elevator", "lift-platform": "elevator", "lift-route": "ladder", "gravity-path": "ladder",
+  "obstacle": "rail-pot", "reinforcement-plate": "tray", "hazard-cover": "tray", "floor-route": "footway",
+  "seed-pedestal": "support", "workbench": "support", "story-object": "display-board", "story-prop": "display-board",
+  "inventory-display": "display-board", "inventory-board": "display-board", "ability-board": "display-board", "beam-display": "display-board",
+  "ignition-stand": "fixed-lantern", "light-sensor": "light-sensor", "recovery-net": "net", "seal-chest": "box",
+  "lever": "handle", "hold-plate": "pressure-plate", "wide-hold-bar": "handle", "light-cart": "cart", "rail-rope-handle": "handle",
+  "lens": "scope", "window": "section-model", "axle": "shaft", "passage": "footway", "route": "ladder",
+  "water-vessel": "bottle", "sealed-float": "buoy", "connection-sample": "pipe", "connection-end": "shaft", "connection": "shaft",
+  "safe-alcove": "safe-platform", "console": "display-board", "checkpoint-balcony": "balcony", "step-socket": "support-socket", "rail-box": "box",
+};
+
 const normalizedKind = (entity: Entity) => {
-  const declared = stringProperty(entity, "kind") ?? "object";
+  const rawKind = stringProperty(entity, "kind") ?? "object";
+  const declared = SHAPE_ALIASES[rawKind] ?? rawKind;
   const hint = `${entity.id} ${entity.name}`.toLowerCase();
-  if ((declared === "portable-small" || declared === "portable-large")
+  if ((declared === "portable-small" || declared === "portable-large" || declared === "portable-tool")
     && /평형추|압력추|무게추|이동 추|counterweight/.test(hint)) return "counterweight";
+  if (rawKind === "winch" && /갈고리/.test(entity.name)) return "hook";
+  if (rawKind === "route") return entity.properties.climbable === true || /승강|쇠사슬/.test(entity.name) ? "climb-route" : "footway";
+  if (declared === "portable-tool") {
+    if (/쐐기/.test(hint)) return "wedge";
+    if (/판자|지지물|받침/.test(hint)) return "support";
+    return "handle";
+  }
   if (declared !== "object") return declared;
   if (/갑옷|warden|boss/.test(hint)) return "boss";
   if (/종축|회전축|승강 축|shaft|axis/.test(hint)) return "shaft";
@@ -128,77 +170,231 @@ const visibleEntities = (world: WorldState) => {
   });
 };
 
-function xDomain(world: WorldState, entities: Entity[]): [number, number] {
-  const values = [
-    ...entities.map((entity) => entity.location.x),
-    ...Object.values(world.actors).map((actor) => actor.location.x),
-  ];
-  if (!values.length) return [0, 8];
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  if (max - min < 2) return [min - 1, max + 1];
-  const padding = Math.max(0.45, (max - min) * 0.06);
-  return [min - padding, max + padding];
+type Gravity = "down" | "up" | "left" | "right";
+interface SceneColumn { worldX: number; start: number; width: number; anchorX: number; clusterSize: number; actorLane: number }
+interface SceneRegion {
+  id: string;
+  start: number;
+  end: number;
+  gravity: Gravity;
+  label: string;
+  columns: SceneColumn[];
+}
+interface SceneGeometry { width: number; regions: SceneRegion[] }
+const sceneGeometryCache = new Map<string, SceneGeometry>();
+
+const gravityValue = (value: string | null): Gravity =>
+  value === "up" || value === "left" || value === "right" ? value : "down";
+
+function createSceneGeometry(world: WorldState): SceneGeometry {
+  const entities = visibleEntities(world);
+  const cacheKey = `${world.stageId}:${world.segmentId}:${world.attempt}:${Object.keys(world.actors).sort().join("+")}:${entities.map((entity) => entity.id).sort().join("|")}`;
+  const cached = sceneGeometryCache.get(cacheKey);
+  if (cached) return cached;
+  const regionIds = [...new Set(entities.map((entity) => entity.location.region))];
+  if (!regionIds.length) regionIds.push(world.actors.hero?.location.region ?? world.segmentId);
+  let cursor = LEFT;
+  const regions = regionIds.map((regionId) => {
+    const local = entities.filter((entity) => entity.location.region === regionId);
+    const gravityMarker = local.find((entity) => {
+      const kind = normalizedKind(entity);
+      return typeof entity.properties.gravity === "string"
+        && (kind === "room-gravity-marker" || (kind === "sign" && entity.properties.fixed === true)
+          || entity.properties.fixedGravity === true);
+    });
+    const gravity = gravityValue(gravityMarker ? stringProperty(gravityMarker, "gravity") : null);
+    const label = gravityMarker?.name ?? (regionIds.length > 1 ? `구역 ${regionIds.indexOf(regionId) + 1}` : "");
+    const xValues = [...new Set(local.map((entity) => entity.location.x))].sort((a, b) => a - b);
+    if (!xValues.length) xValues.push(0);
+    if (!xValues.includes(0)) { xValues.push(0); xValues.sort((a, b) => a - b); }
+    const columns: SceneColumn[] = [];
+    let localCursor = cursor + SECTION_PADDING;
+    for (let xIndex = 0; xIndex < xValues.length; xIndex++) {
+      const worldX = xValues[xIndex];
+      const coordinateGroups = new Map<number, number>();
+      for (const entity of local.filter((item) => item.location.x === worldX)) {
+        coordinateGroups.set(entity.location.y, (coordinateGroups.get(entity.location.y) ?? 0) + 1);
+      }
+      const clusterSize = Math.max(1, ...coordinateGroups.values());
+      const actorLane = Math.max(ACTOR_LANE, Object.keys(world.actors).length * 110);
+      const width = Math.max(MIN_COLUMN_WIDTH, actorLane + clusterSize * SLOT_WIDTH);
+      if (xIndex > 0) {
+        const delta = Math.max(1, worldX - xValues[xIndex - 1]);
+        localCursor += (delta - 1) * MIN_COLUMN_WIDTH;
+      }
+      columns.push({ worldX, start: localCursor, width, anchorX: localCursor + width / 2, clusterSize, actorLane });
+      localCursor += width;
+    }
+    const start = cursor;
+    const end = localCursor + SECTION_PADDING;
+    cursor = end + REGION_GAP;
+    return { id: regionId, start, end, gravity, label, columns };
+  });
+  if (regions.length === 1 && regions[0].end + LEFT < CAMPAIGN_VIEW_WIDTH) {
+    const region = regions[0];
+    region.start = LEFT;
+    region.end = CAMPAIGN_VIEW_WIDTH - LEFT;
+    const first = region.columns[0];
+    const last = region.columns.at(-1)!;
+    const firstCenter = region.start + SECTION_PADDING + first.width / 2;
+    const lastCenter = region.end - SECTION_PADDING - last.width / 2;
+    for (let index = 0; index < region.columns.length; index++) {
+      const column = region.columns[index];
+      const amount = region.columns.length <= 1 ? 0.5 : index / (region.columns.length - 1);
+      column.anchorX = firstCenter + (lastCenter - firstCenter) * amount;
+      column.start = column.anchorX - column.width / 2;
+    }
+  }
+  const contentWidth = regions.at(-1)?.end ?? CAMPAIGN_VIEW_WIDTH - LEFT;
+  const geometry = { width: Math.max(CAMPAIGN_VIEW_WIDTH, Math.ceil(contentWidth + LEFT)), regions };
+  sceneGeometryCache.set(cacheKey, geometry);
+  if (sceneGeometryCache.size > 80) sceneGeometryCache.delete(sceneGeometryCache.keys().next().value!);
+  return geometry;
 }
 
-function spreadOffset(index: number, count: number): number {
-  if (count <= 1) return 0;
-  return (index - (count - 1) / 2) * Math.max(24, 70 - count * 6);
+function sceneRegion(geometry: SceneGeometry, regionId: string): SceneRegion {
+  return geometry.regions.find((region) => region.id === regionId) ?? geometry.regions[0];
+}
+
+function projectX(region: SceneRegion, worldX: number): number {
+  const exact = region.columns.find((column) => column.worldX === worldX);
+  if (exact) return exact.anchorX;
+  const right = region.columns.find((column) => column.worldX > worldX);
+  const left = [...region.columns].reverse().find((column) => column.worldX < worldX);
+  if (left && right) {
+    const amount = (worldX - left.worldX) / (right.worldX - left.worldX);
+    return left.anchorX + (right.anchorX - left.anchorX) * amount;
+  }
+  if (left) return Math.min(region.end - SECTION_PADDING, left.anchorX + (worldX - left.worldX) * MIN_COLUMN_WIDTH);
+  if (right) return Math.max(region.start + SECTION_PADDING, right.anchorX - (right.worldX - worldX) * MIN_COLUMN_WIDTH);
+  return (region.start + region.end) / 2;
+}
+
+function projectY(region: SceneRegion, worldY: number): number {
+  if (region.gravity === "up") return CEILING + Math.abs(worldY) * HEIGHT_STEP;
+  if (region.gravity === "left" || region.gravity === "right") return 275 - Math.abs(worldY) * HEIGHT_STEP;
+  return Math.min(FLOOR, Math.max(116, FLOOR - Math.abs(worldY) * HEIGHT_STEP));
+}
+
+function projectAnchor(region: SceneRegion, worldX: number, worldY: number) {
+  if (region.gravity === "left" || region.gravity === "right") {
+    const firstX = region.columns[0]?.worldX ?? 0;
+    const lastX = region.columns.at(-1)?.worldX ?? firstX + 1;
+    const amount = lastX === firstX ? 0.5 : Math.max(0, Math.min(1, (worldX - firstX) / (lastX - firstX)));
+    return {
+      x: region.gravity === "left" ? region.start + 37 : region.end - 27,
+      y: 160 + amount * 205 - Math.abs(worldY) * 20,
+    };
+  }
+  return { x: projectX(region, worldX), y: projectY(region, worldY) };
+}
+
+function actorRotation(gravity: Gravity): number {
+  if (gravity === "up") return Math.PI;
+  if (gravity === "left") return Math.PI / 2;
+  if (gravity === "right") return -Math.PI / 2;
+  return 0;
+}
+
+export function campaignSceneWidth(world: WorldState): number {
+  return createSceneGeometry(world).width;
 }
 
 /** Maps deterministic world coordinates to inspectable screen positions. */
 export function layoutCampaignEntities(
   world: WorldState,
 ): CampaignEntityLayout[] {
-  const entities = visibleEntities(world);
-  const [minX, maxX] = xDomain(world, entities);
-  const range = Math.max(1, maxX - minX);
-  const groups = new Map<string, Entity[]>();
-  for (const entity of entities) {
-    const key = `${entity.location.x}:${entity.location.y}`;
-    const group = groups.get(key) ?? [];
-    group.push(entity);
-    groups.set(key, group);
-  }
-  return entities.map((entity, index) => {
-    const anchorX = LEFT + ((entity.location.x - minX) / range) * (RIGHT - LEFT);
-    const anchorY = Math.min(
-      FLOOR,
-      Math.max(116, FLOOR - entity.location.y * HEIGHT_STEP),
-    );
-    const key = `${entity.location.x}:${entity.location.y}`;
-    const group = groups.get(key) ?? [entity];
-    const groupIndex = group.findIndex((item) => item.id === entity.id);
+  const geometry = createSceneGeometry(world);
+  const base = layoutCampaignEntitiesBase(world, geometry);
+  const actors = layoutActorsWithGeometry(world, geometry, base);
+  const attachedCount = new Map<string, number>();
+  return base.map((layout) => {
+    const actor = Object.values(world.actors).find((item) =>
+      item.carrying.includes(layout.id) || layout.entity.parent === item.id
+      || (item.holding === layout.id && layout.entity.movable));
+    if (!actor || layout.entity.properties.equipment === true) return layout;
+    const actorLayout = actors.find((item) => item.id === actor.id);
+    if (!actorLayout) return layout;
+    const relation = actor.holding === layout.id ? "held" : "carried";
+    const count = attachedCount.get(actor.id) ?? 0;
+    attachedCount.set(actor.id, count + 1);
+    const localX = (actor.id === "hero" ? 1 : -1) * 55;
+    const localY = -27 - count * 46;
+    const cosine = Math.cos(actorLayout.rotation); const sine = Math.sin(actorLayout.rotation);
+    const x = actorLayout.x + cosine * localX - sine * localY;
+    const y = actorLayout.y + sine * localX + cosine * localY;
+    const labelY = actorLayout.rotation === Math.PI ? actorLayout.y + 140 + count * 50
+      : Math.abs(actorLayout.rotation) === Math.PI / 2 ? 24 + count * 50 : actorLayout.y - 170 - count * 50;
+    return { ...layout, x, y, anchorX: actorLayout.anchorX, anchorY: actorLayout.anchorY,
+      labelBounds: { x: Math.max(4, Math.min(geometry.width - 148, x - 72)), y: Math.max(4, Math.min(CAMPAIGN_VIEW_HEIGHT - 50, labelY)), width: 144, height: 46 }, relation, actorId: actor.id };
+  });
+}
+
+function layoutActorsWithGeometry(world: WorldState, geometry: SceneGeometry, layouts: CampaignEntityLayout[]): CampaignActorLayout[] {
+  return Object.values(world.actors).map((actor) => {
+    const region = sceneRegion(geometry, actor.location.region);
+    const anchor = projectAnchor(region, actor.location.x, actor.location.y);
+    const anchorX = anchor.x;
+    const anchorY = anchor.y;
+    const rider = actor.riding ? layouts.find((layout) => layout.id === actor.riding) : null;
+    const colocated = Object.values(world.actors).filter((item) => item.location.region === actor.location.region
+      && item.location.x === actor.location.x && item.location.y === actor.location.y);
+    const actorIndex = colocated.findIndex((item) => item.id === actor.id);
+    const column = region.columns.find((item) => item.worldX === actor.location.x);
+    const sideGravity = region.gravity === "left" || region.gravity === "right";
+    const laneX = region.gravity === "left" || region.gravity === "right"
+      ? anchorX
+      : column ? column.start + 55 + actorIndex * 110 : anchorX + (actorIndex - (colocated.length - 1) / 2) * 110;
     return {
-      id: entity.id,
-      entity,
-      index,
+      id: actor.id,
+      x: rider ? (sideGravity ? rider.anchorX : rider.x) : laneX,
+      y: rider ? (sideGravity ? rider.anchorY : rider.y - 20) : anchorY,
       anchorX,
       anchorY,
-      x: Math.max(38, Math.min(922, anchorX + spreadOffset(groupIndex, group.length))),
-      y: anchorY,
+      rotation: actorRotation(region.gravity),
+      riding: actor.riding,
     };
   });
 }
 
-function mapActor(
-  actor: Actor,
-  world: WorldState,
-  layouts: CampaignEntityLayout[],
-) {
-  const entities = layouts.map((layout) => layout.entity);
-  const [minX, maxX] = xDomain(world, entities);
-  const x = LEFT + ((actor.location.x - minX) / Math.max(1, maxX - minX)) * (RIGHT - LEFT);
-  const sharesGroundObject = actor.id === "hero" && actor.riding === null && layouts.some(({ entity }) => {
-    if (entity.parent !== null || entity.location.region !== actor.location.region
-      || entity.location.x !== actor.location.x || entity.location.y !== actor.location.y) return false;
-    const kind = normalizedKind(entity);
-    return !["platform", "safe-platform", "safe-circle", "water", "channel", "drain", "fog-boundary"].includes(kind);
+export function layoutCampaignActors(world: WorldState): CampaignActorLayout[] {
+  const geometry = createSceneGeometry(world);
+  const layouts = layoutCampaignEntitiesBase(world, geometry);
+  return layoutActorsWithGeometry(world, geometry, layouts);
+}
+
+function layoutCampaignEntitiesBase(world: WorldState, geometry: SceneGeometry): CampaignEntityLayout[] {
+  const entities = visibleEntities(world);
+  const groups = new Map<string, Entity[]>();
+  for (const entity of entities) {
+    const key = `${entity.location.region}:${entity.location.x}:${entity.location.y}`;
+    const group = groups.get(key) ?? [];
+    group.push(entity); groups.set(key, group);
+  }
+  return entities.map((entity, index) => {
+    const region = sceneRegion(geometry, entity.location.region);
+    const anchor = projectAnchor(region, entity.location.x, entity.location.y);
+    const anchorX = anchor.x;
+    const anchorY = anchor.y;
+    const group = groups.get(`${entity.location.region}:${entity.location.x}:${entity.location.y}`) ?? [entity];
+    const groupIndex = group.findIndex((item) => item.id === entity.id);
+    const column = region.columns.find((item) => item.worldX === entity.location.x);
+    const logicalX = projectX(region, entity.location.x);
+    const x = logicalX + (groupIndex - (group.length - 1) / 2) * SLOT_WIDTH + (column?.actorLane ?? ACTOR_LANE) / 2;
+    const labelY = region.gravity === "up" ? anchorY + 52 : anchorY + 10;
+    return { id: entity.id, entity, index, anchorX, anchorY, x, y: anchorY,
+      rotation: actorRotation(region.gravity),
+      labelBounds: { x: x - 72, y: labelY, width: 144, height: 46 }, relation: "world" };
   });
-  return {
-    x: Math.max(46, Math.min(914, x - (sharesGroundObject ? 46 : 0))),
-    y: Math.min(FLOOR, Math.max(116, FLOOR - actor.location.y * HEIGHT_STEP)),
-  };
+}
+
+export function hitTestCampaignLayout(layouts: CampaignEntityLayout[], x: number, y: number): EntityId | null {
+  const label = [...layouts].reverse().find((layout) => {
+    const box = layout.labelBounds;
+    return x >= box.x && x <= box.x + box.width && y >= box.y && y <= box.y + box.height;
+  });
+  if (label) return label.id;
+  return [...layouts].reverse().find((layout) => Math.hypot(layout.x - x, layout.y - 30 - y) <= 48)?.id ?? null;
 }
 
 function roundedRect(
@@ -218,6 +414,7 @@ function drawBackdrop(
   world: WorldState,
   time: number,
   reducedMotion: boolean,
+  geometry: SceneGeometry,
 ) {
   const skies: Record<number, [string, string]> = {
     2: ["#111b38", "#101425"],
@@ -230,29 +427,16 @@ function drawBackdrop(
     9: ["#241b37", "#0d1320"],
     10: ["#321c2d", "#0b0d19"],
   };
-  const [sky, depth] = skies[world.stageId] ?? [C.deep, C.abyss];
-  const gradient = ctx.createLinearGradient(0, 0, 0, CAMPAIGN_VIEW_HEIGHT);
-  gradient.addColorStop(0, sky);
-  gradient.addColorStop(1, depth);
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, CAMPAIGN_VIEW_WIDTH, CAMPAIGN_VIEW_HEIGHT);
-
-  ctx.strokeStyle = "rgba(184,220,222,.12)";
-  ctx.lineWidth = 3;
-  for (let x = 60; x < 960; x += 210) {
-    ctx.beginPath();
-    ctx.moveTo(x, 405);
-    ctx.lineTo(x, 210);
-    ctx.arc(x + 70, 210, 70, Math.PI, 0);
-    ctx.lineTo(x + 140, 405);
-    ctx.stroke();
-  }
+  const [sky] = skies[world.stageId] ?? [C.deep, C.abyss];
+  drawDungeonBackdrop(ctx, time, reducedMotion, geometry.width);
+  ctx.fillStyle = `${sky}40`;
+  ctx.fillRect(0, 0, geometry.width, CAMPAIGN_VIEW_HEIGHT);
 
   if (world.stageId === 2) {
     ctx.strokeStyle = "rgba(184,220,222,.28)";
     ctx.lineWidth = 1.5;
     const offset = reducedMotion ? 0 : (time * 22) % 28;
-    for (let x = -30; x < 1000; x += 31) {
+    for (let x = -30; x < geometry.width + 30; x += 31) {
       ctx.beginPath();
       ctx.moveTo(x + offset, 82);
       ctx.lineTo(x - 8 + offset, 112);
@@ -264,61 +448,128 @@ function drawBackdrop(
     for (let y = 105; y < 390; y += 55) {
       ctx.beginPath();
       ctx.moveTo(40, y);
-      ctx.lineTo(920, y);
+      ctx.lineTo(geometry.width - 40, y);
       ctx.stroke();
     }
   } else if (world.stageId === 4) {
     ctx.strokeStyle = "rgba(246,199,109,.17)";
     ctx.lineWidth = 6;
     ctx.beginPath();
-    ctx.moveTo(30, 344); ctx.lineTo(210, 344); ctx.quadraticCurveTo(250, 344, 250, 304); ctx.lineTo(250, 126);
-    ctx.moveTo(930, 344); ctx.lineTo(750, 344); ctx.quadraticCurveTo(710, 344, 710, 304); ctx.lineTo(710, 126);
+    for (let x = 30; x < geometry.width; x += 420) {
+      ctx.moveTo(x, 344); ctx.lineTo(x + 180, 344); ctx.quadraticCurveTo(x + 220, 344, x + 220, 304); ctx.lineTo(x + 220, 126);
+    }
     ctx.stroke();
   } else if (world.stageId === 5) {
     ctx.strokeStyle = "rgba(128,215,182,.18)";
     ctx.lineWidth = 3;
-    for (const x of [150, 480, 810]) {
+    for (let x = 150; x < geometry.width; x += 330) {
       ctx.beginPath(); ctx.moveTo(x, 96); ctx.bezierCurveTo(x - 60, 180, x + 70, 260, x, 405); ctx.stroke();
     }
     ctx.fillStyle = "rgba(246,199,109,.65)";
-    for (const [x, y, rotation] of [[92, 126, 0], [868, 146, Math.PI], [480, 112, Math.PI / 2]] as const) {
+    for (let x = 92; x < geometry.width; x += 388) {
+      const y = x % 2 ? 126 : 146;
+      const rotation = (x / 388) % 4 * Math.PI / 2;
       ctx.save(); ctx.translate(x, y); ctx.rotate(rotation); ctx.beginPath(); ctx.moveTo(0, -12); ctx.lineTo(9, 6); ctx.lineTo(-9, 6); ctx.closePath(); ctx.fill(); ctx.restore();
     }
   } else if (world.stageId === 6) {
     ctx.fillStyle = "rgba(246,199,109,.08)";
-    for (let x = 55; x < 960; x += 150) ctx.fillRect(x, 122, 88, 8);
+    for (let x = 55; x < geometry.width; x += 150) ctx.fillRect(x, 122, 88, 8);
     ctx.strokeStyle = "rgba(246,199,109,.2)";
     ctx.lineWidth = 2;
-    for (let x = 98; x < 960; x += 150) { ctx.beginPath(); ctx.arc(x, 115, 18, Math.PI, 0); ctx.stroke(); }
+    for (let x = 98; x < geometry.width; x += 150) { ctx.beginPath(); ctx.arc(x, 115, 18, Math.PI, 0); ctx.stroke(); }
   } else if (world.stageId === 7) {
     ctx.strokeStyle = "rgba(199,131,130,.18)";
     ctx.lineWidth = 12;
-    ctx.beginPath(); ctx.moveTo(26, 82); ctx.quadraticCurveTo(150, 180, 62, 402); ctx.moveTo(934, 82); ctx.quadraticCurveTo(810, 180, 898, 402); ctx.stroke();
+    for (let x = 26; x < geometry.width; x += 520) { ctx.beginPath(); ctx.moveTo(x, 82); ctx.quadraticCurveTo(x + 124, 180, x + 36, 402); ctx.stroke(); }
     ctx.strokeStyle = "rgba(246,199,109,.16)"; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(70, 394); ctx.lineTo(890, 394); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(70, 394); ctx.lineTo(geometry.width - 70, 394); ctx.stroke();
   } else if (world.stageId === 8) {
     ctx.fillStyle = "rgba(117,190,190,.08)";
     for (let y = 150; y <= 330; y += 72) {
-      ctx.beginPath(); ctx.ellipse(480, y, 440, 23, 0, 0, Math.PI * 2); ctx.fill();
+      for (let x = 420; x < geometry.width; x += 820) { ctx.beginPath(); ctx.ellipse(x, y, 390, 23, 0, 0, Math.PI * 2); ctx.fill(); }
     }
     ctx.strokeStyle = "rgba(184,220,222,.16)"; ctx.lineWidth = 6;
-    ctx.beginPath(); ctx.moveTo(70, 385); ctx.lineTo(250, 280); ctx.lineTo(420, 385); ctx.lineTo(600, 260); ctx.lineTo(890, 385); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(70, 385); for (let x = 250; x < geometry.width; x += 180) ctx.lineTo(x, x % 360 ? 280 : 385); ctx.stroke();
   } else if (world.stageId === 9) {
     ctx.strokeStyle = "rgba(246,199,109,.23)"; ctx.lineWidth = 9;
-    ctx.beginPath(); ctx.moveTo(480, 92); ctx.lineTo(480, 406); ctx.stroke();
+    for (let x = 380; x < geometry.width; x += 520) { ctx.beginPath(); ctx.moveTo(x, 92); ctx.lineTo(x, 406); ctx.stroke(); }
     ctx.lineWidth = 3;
-    for (let y = 142; y < 390; y += 74) { ctx.beginPath(); ctx.moveTo(430, y); ctx.lineTo(530, y); ctx.stroke(); }
+    for (let y = 142; y < 390; y += 74) { for (let x = 380; x < geometry.width; x += 520) { ctx.beginPath(); ctx.moveTo(x - 50, y); ctx.lineTo(x + 50, y); ctx.stroke(); } }
   } else if (world.stageId === 10) {
     ctx.strokeStyle = "rgba(199,131,130,.2)"; ctx.lineWidth = 10;
-    ctx.beginPath(); ctx.arc(480, 305, 184, Math.PI, 0); ctx.lineTo(664, 406); ctx.moveTo(296, 305); ctx.lineTo(296, 406); ctx.stroke();
+    for (let x = 320; x < geometry.width; x += 640) { ctx.beginPath(); ctx.arc(x, 305, 184, Math.PI, 0); ctx.lineTo(x + 184, 406); ctx.moveTo(x - 184, 305); ctx.lineTo(x - 184, 406); ctx.stroke(); }
     ctx.strokeStyle = "rgba(246,199,109,.22)"; ctx.lineWidth = 3;
-    for (const x of [405, 480, 555]) { ctx.beginPath(); ctx.arc(x, 118, 18, 0, Math.PI * 2); ctx.stroke(); }
+    for (let x = 245; x < geometry.width; x += 75) { ctx.beginPath(); ctx.arc(x, 118, 18, 0, Math.PI * 2); ctx.stroke(); }
   }
 
-  ctx.fillStyle = C.stone;
-  ctx.fillRect(0, FLOOR + 18, CAMPAIGN_VIEW_WIDTH, 82);
-  ctx.fillStyle = C.stoneLight;
-  ctx.fillRect(0, FLOOR + 18, CAMPAIGN_VIEW_WIDTH, 7);
+  const visible = visibleEntities(world);
+  for (const [regionIndex, region] of geometry.regions.entries()) {
+    const previousRegion = geometry.regions[regionIndex - 1];
+    const nextRegion = geometry.regions[regionIndex + 1];
+    const surfaceStart = regionIndex === 0 ? 0
+      : previousRegion.gravity === "down" && region.gravity === "down" ? region.start - REGION_GAP / 2 : region.start;
+    const surfaceEnd = regionIndex === geometry.regions.length - 1 ? geometry.width
+      : nextRegion.gravity === "down" && region.gravity === "down" ? region.end + REGION_GAP / 2 : region.end;
+    if (regionIndex > 0) {
+      ctx.strokeStyle = "rgba(240,237,220,.2)"; ctx.lineWidth = 2; ctx.setLineDash([8, 9]);
+      ctx.beginPath(); ctx.moveTo(region.start - REGION_GAP / 2, 84); ctx.lineTo(region.start - REGION_GAP / 2, 468); ctx.stroke(); ctx.setLineDash([]);
+    }
+    if (region.label) {
+      ctx.fillStyle = "rgba(9,11,29,.7)"; roundedRect(ctx, region.start + 12, 82, Math.min(250, region.end - region.start - 24), 26, 8); ctx.fill();
+      ctx.fillStyle = C.moon; ctx.font = '600 11px "Noto Sans KR", sans-serif'; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.fillText(region.label, region.start + 23, 95);
+    }
+    const local = visible.filter((entity) => entity.location.region === region.id);
+    if (region.gravity === "up") {
+      ctx.fillStyle = C.stone; ctx.fillRect(surfaceStart, 76, surfaceEnd - surfaceStart, 35);
+      ctx.fillStyle = C.stoneLight; ctx.fillRect(surfaceStart, 106, surfaceEnd - surfaceStart, 7);
+    } else if (region.gravity === "left" || region.gravity === "right") {
+      const wallX = region.gravity === "left" ? region.start + 9 : region.end - 27;
+      ctx.fillStyle = C.stone; ctx.fillRect(wallX, 108, 28, 310);
+      ctx.fillStyle = C.stoneLight; ctx.fillRect(region.gravity === "left" ? wallX + 23 : wallX, 108, 5, 310);
+    } else {
+      const hazards = local.filter((entity) => ["water", "current", "water-channel", "gap"].includes(normalizedKind(entity)));
+      const supports = local.filter((entity) => ["platform", "safe-platform", "safe-circle", "exit", "footway", "walkway"].includes(normalizedKind(entity)))
+        .sort((a, b) => a.location.x - b.location.x);
+      const cuts = hazards.map((hazard) => {
+        const startProp = numberProperty(hazard, "rangeStart", Number.NaN);
+        const endProp = numberProperty(hazard, "rangeEnd", Number.NaN);
+        let startX = Number.isFinite(startProp) ? startProp : hazard.location.x - 0.48;
+        let endX = Number.isFinite(endProp) ? endProp : hazard.location.x + 0.48;
+        if (["water", "current", "water-channel"].includes(normalizedKind(hazard))) {
+          const after = supports.find((item) => item.location.x > hazard.location.x);
+          if (after) { startX = hazard.location.x - 0.48; endX = after.location.x - 0.42; }
+          const distance = numberProperty(hazard, "flowDistance", 0);
+          if (distance > 0) { startX = Math.min(startX, hazard.location.x - distance / 2); endX = Math.max(endX, hazard.location.x + distance / 2); }
+        }
+        return { left: projectX(region, startX), right: projectX(region, endX), water: normalizedKind(hazard) !== "gap" };
+      }).sort((a, b) => a.left - b.left);
+      let floorStart = surfaceStart;
+      ctx.fillStyle = C.stone;
+      for (const cut of cuts) {
+        if (cut.left > floorStart) drawDungeonFloor(ctx, floorStart, FLOOR, cut.left - floorStart);
+        floorStart = Math.max(floorStart, cut.right);
+        if (cut.water) {
+          ctx.fillStyle = "rgba(75,145,172,.78)"; ctx.fillRect(cut.left, FLOOR, Math.max(8, cut.right - cut.left), CAMPAIGN_VIEW_HEIGHT - FLOOR);
+          ctx.strokeStyle = "#86c9d1"; ctx.lineWidth = 4; ctx.beginPath();
+          for (let x = cut.left; x <= cut.right; x += 12) { const y = FLOOR + 3 + Math.sin((x + (reducedMotion ? 0 : time * 24)) / 13) * 3; if (x === cut.left) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.stroke();
+          ctx.fillStyle = C.stone;
+        }
+      }
+      if (floorStart < surfaceEnd) drawDungeonFloor(ctx, floorStart, FLOOR, surfaceEnd - floorStart);
+      const solidSegments = [{ left: surfaceStart, right: surfaceEnd }];
+      for (const cut of cuts) {
+        for (let i = solidSegments.length - 1; i >= 0; i--) {
+          const segment = solidSegments[i];
+          if (cut.right <= segment.left || cut.left >= segment.right) continue;
+          solidSegments.splice(i, 1,
+            ...(cut.left > segment.left ? [{ left: segment.left, right: cut.left }] : []),
+            ...(cut.right < segment.right ? [{ left: cut.right, right: segment.right }] : []));
+        }
+      }
+      // drawDungeonFloor already supplies the beveled top edge for every solid segment.
+    }
+  }
 }
 
 function drawConnection(
@@ -337,10 +588,13 @@ function drawConnection(
   const midpoint = (from.x + to.x) / 2;
   ctx.bezierCurveTo(midpoint, from.y + 28, midpoint, to.y + 28, to.x, to.y - 18);
   ctx.stroke();
-  const flow = Math.max(
-    numberProperty(from.entity, "flow", booleanProperty(from.entity, "flowing") ? 1 : 0),
-    numberProperty(to.entity, "flow", booleanProperty(to.entity, "flowing") ? 1 : 0),
-  );
+  const effectiveFlow = (entity: Entity) => {
+    if ((typeof entity.properties.open === "boolean" && entity.properties.open === false)
+      || (typeof entity.properties.flowing === "boolean" && entity.properties.flowing === false)
+      || (typeof entity.properties.active === "boolean" && entity.properties.active === false)) return 0;
+    return numberProperty(entity, "flow", booleanProperty(entity, "flowing") ? 1 : 0);
+  };
+  const flow = Math.max(effectiveFlow(from.entity), effectiveFlow(to.entity));
   if (flow > 0) {
     drawFlowArrow(
       ctx,
@@ -438,6 +692,8 @@ function drawProgressPips(ctx: CanvasRenderingContext2D, entity: Entity) {
 }
 
 function drawDoor(ctx: CanvasRenderingContext2D, entity: Entity) {
+  ctx.save();
+  ctx.scale(1.55, 1.7);
   const open = booleanProperty(entity, "open");
   ctx.lineWidth = 5;
   ctx.strokeRect(-28, -70, 56, 70);
@@ -453,6 +709,7 @@ function drawDoor(ctx: CanvasRenderingContext2D, entity: Entity) {
   if (booleanProperty(entity, "wedged")) {
     ctx.fillStyle = "#c79762"; ctx.beginPath(); ctx.moveTo(-14, 0); ctx.lineTo(2, -13); ctx.lineTo(8, 0); ctx.closePath(); ctx.fill();
   }
+  ctx.restore();
 }
 
 function drawLatch(ctx: CanvasRenderingContext2D, entity: Entity) {
@@ -482,7 +739,7 @@ function drawPinwheel(ctx: CanvasRenderingContext2D, entity: Entity) {
   drawStateRing(ctx, spinning);
 }
 
-function drawGravityDevice(ctx: CanvasRenderingContext2D, entity: Entity, kind: string) {
+function drawGravityDevice(ctx: CanvasRenderingContext2D, entity: Entity, kind: string, rotation = 0) {
   const direction = stringProperty(entity, "gravity") ?? stringProperty(entity, "direction") ?? "down";
   const angles: Record<string, number> = { down: Math.PI, up: 0, left: -Math.PI / 2, right: Math.PI / 2, normal: Math.PI };
   const angle = angles[direction] ?? Math.PI;
@@ -495,7 +752,7 @@ function drawGravityDevice(ctx: CanvasRenderingContext2D, entity: Entity, kind: 
     for (let x = -28; x <= 28; x += 14) { ctx.moveTo(x, -12); ctx.lineTo(x, 6); }
   }
   ctx.stroke();
-  ctx.save(); ctx.translate(0, -38); ctx.rotate(angle);
+  ctx.save(); ctx.translate(0, -38); ctx.rotate(angle - rotation);
   ctx.fillStyle = C.gold; ctx.beginPath(); ctx.moveTo(0, -13); ctx.lineTo(9, 5); ctx.lineTo(3, 3); ctx.lineTo(3, 14); ctx.lineTo(-3, 14); ctx.lineTo(-3, 3); ctx.lineTo(-9, 5); ctx.closePath(); ctx.fill(); ctx.restore();
 }
 
@@ -712,21 +969,24 @@ function drawEntityShape(
   const kind = normalizedKind(entity);
   ctx.save();
   ctx.translate(x, y);
-  if (x !== layout.anchorX) {
+  if (x !== layout.anchorX || y !== layout.anchorY) {
     ctx.strokeStyle = "rgba(184,220,222,.28)";
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([3, 4]);
+    ctx.lineWidth = layout.relation === "world" ? 1.5 : 3;
+    ctx.setLineDash(layout.relation === "world" ? [3, 4] : []);
     ctx.beginPath();
     ctx.moveTo(0, 8);
     ctx.lineTo(layout.anchorX - x, layout.anchorY - y + 8);
     ctx.stroke();
     ctx.setLineDash([]);
   }
+  ctx.save();
+  ctx.rotate(layout.rotation);
   if (selected) {
     ctx.strokeStyle = C.gold;
     ctx.lineWidth = 3;
     ctx.beginPath();
-    ctx.ellipse(0, -21, 37, 45, 0, 0, Math.PI * 2);
+    const door = ["door", "gate", "light-gate", "latched-door", "spring-door", "shutter", "delivery-door"].includes(kind);
+    ctx.ellipse(0, door ? -60 : -21, door ? 50 : 37, door ? 70 : 45, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
 
@@ -744,16 +1004,115 @@ function drawEntityShape(
   ctx.strokeStyle = entity.movable ? C.mint : "rgba(240,237,220,.48)";
   ctx.lineWidth = entity.movable ? 3 : 2;
 
-  if (["door", "gate", "light-gate", "latched-door", "spring-door", "shutter", "delivery-door"].includes(kind)) {
+  if (kind === "winch" || kind === "pulley") {
+    ctx.lineWidth = 4; ctx.strokeRect(-31, -70, 62, 65);
+    ctx.beginPath(); ctx.arc(0, -43, 23, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = "#c89b6b"; ctx.lineWidth = 3;
+    for (const radius of [9, 15, 20]) { ctx.beginPath(); ctx.arc(0, -43, radius, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(20, -43); ctx.lineTo(20, -9); ctx.quadraticCurveTo(21, 5, 8, -2); ctx.stroke();
+    if (kind === "winch") { ctx.strokeStyle = C.gold; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(0, -43); ctx.lineTo(-20, -57); ctx.lineTo(-34, -57); ctx.stroke(); }
+  } else if (kind === "hook") {
+    ctx.strokeStyle = "#c89b6b"; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, -91); ctx.lineTo(0, -61); ctx.stroke();
+    ctx.strokeStyle = "#b8dcde"; ctx.lineWidth = 9; ctx.beginPath(); ctx.moveTo(0, -62); ctx.lineTo(0, -38); ctx.bezierCurveTo(-32, -31, -27, 0, -5, -3); ctx.quadraticCurveTo(17, -6, 14, -27); ctx.stroke();
+  } else if (kind === "anchor") {
+    ctx.fillRect(-12, -52, 24, 47); ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.arc(0, -31, 21, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = C.gold; for (const py of [-48, -9]) { ctx.beginPath(); ctx.arc(0, py, 3, 0, Math.PI * 2); ctx.fill(); }
+  } else if (kind === "support") {
+    roundedRect(ctx, -34, -35, 68, 12, 3); ctx.fill(); ctx.stroke();
+    for (const px of [-25, 19]) { ctx.fillRect(px, -24, 7, 24); ctx.strokeRect(px, -24, 7, 24); }
+  } else if (kind === "display-board") {
+    ctx.fillStyle = "#9d6b45"; roundedRect(ctx, -35, -80, 70, 65, 5); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#d8d4b9"; ctx.fillRect(-28, -73, 56, 50);
+    ctx.strokeStyle = "#627562"; ctx.lineWidth = 3;
+    for (let row = 0; row < 3; row++) { ctx.beginPath(); ctx.moveTo(-19, -61 + row * 13); ctx.lineTo(17, -61 + row * 13); ctx.stroke(); }
+    ctx.fillStyle = "#9d6b45"; ctx.fillRect(-4, -15, 8, 15);
+  } else if (kind === "bottle") {
+    ctx.beginPath(); ctx.moveTo(-10, -68); ctx.lineTo(10, -68); ctx.lineTo(10, -49); ctx.quadraticCurveTo(27, -37, 25, -5); ctx.quadraticCurveTo(0, 6, -25, -5); ctx.quadraticCurveTo(-27, -37, -10, -49); ctx.closePath(); ctx.fill(); ctx.stroke();
+    const water = Math.max(0, Math.min(1, numberProperty(entity, "amount") / Math.max(1, entity.capacity)));
+    ctx.fillStyle = "#4b91ac"; ctx.fillRect(-19, -3 - water * 24, 38, water * 24); ctx.fillStyle = "#c79762"; ctx.fillRect(-12, -72, 24, 9);
+  } else if (kind === "cargo-basket" || kind === "seed-bag") {
+    ctx.beginPath(); ctx.moveTo(-32, -40); ctx.lineTo(32, -40); ctx.lineTo(23, 0); ctx.lineTo(-23, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, -39, 22, Math.PI, Math.PI * 2); ctx.stroke();
+    for (let px = -18; px <= 18; px += 12) { ctx.beginPath(); ctx.moveTo(px, -34); ctx.lineTo(px * .8, -5); ctx.stroke(); }
+  } else if (kind === "cart") {
+    roundedRect(ctx, -37, -28, 74, 16, 4); ctx.fill(); ctx.stroke();
+    for (const px of [-24, 24]) { ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(px, -8, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(33, -23); ctx.lineTo(43, -49); ctx.lineTo(51, -49); ctx.stroke();
+    if (/조명|등불/.test(entity.name)) { ctx.save(); ctx.translate(0, -28); drawLantern(ctx, entity); ctx.restore(); }
+  } else if (kind === "elevator") {
+    ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-36, -120); ctx.lineTo(-36, 0); ctx.lineTo(36, 0); ctx.lineTo(36, -120); ctx.moveTo(-36, -120); ctx.lineTo(36, -120); ctx.stroke();
+    ctx.fillRect(-38, -8, 76, 10); ctx.strokeRect(-38, -8, 76, 10);
+    ctx.strokeStyle = "#c89b6b"; ctx.beginPath(); ctx.moveTo(0, -120); ctx.lineTo(0, -65); ctx.stroke();
+  } else if (kind === "safe-line" || kind === "light-sensor") {
+    ctx.strokeStyle = C.mint; ctx.lineWidth = 3; ctx.setLineDash([6, 5]);
+    ctx.beginPath(); ctx.ellipse(0, -3, 34, kind === "light-sensor" ? 25 : 7, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  } else if (kind === "vent") {
+    roundedRect(ctx, -34, -62, 68, 58, 5); ctx.fill(); ctx.stroke(); ctx.strokeStyle = C.abyss; ctx.lineWidth = 5;
+    for (let py = -51; py < -8; py += 11) { ctx.beginPath(); ctx.moveTo(-25, py); ctx.lineTo(25, py); ctx.stroke(); }
+  } else if (kind === "ruler") {
+    ctx.fillStyle = "#c79762"; ctx.fillRect(-11, -85, 22, 85); ctx.strokeRect(-11, -85, 22, 85);
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 2;
+    for (let py = -75; py < 0; py += 10) { ctx.beginPath(); ctx.moveTo(-11, py); ctx.lineTo(py % 20 ? 0 : 7, py); ctx.stroke(); }
+  } else if (kind === "pressure-gauge") {
+    ctx.fillStyle = "#e0dcc7"; ctx.beginPath(); ctx.arc(0, -40, 30, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    const amount = numberProperty(entity, "reading", numberProperty(entity, "pressure"));
+    const limit = Math.max(1, numberProperty(entity, "opensAt", numberProperty(entity, "requiredPressure", 2)));
+    const needle = -.75 * Math.PI + Math.max(0, Math.min(1, amount / limit)) * 1.5 * Math.PI;
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, -40); ctx.lineTo(Math.cos(needle) * 22, -40 + Math.sin(needle) * 22); ctx.stroke();
+    ctx.fillRect(-5, -10, 10, 10);
+  } else if (kind === "scale") {
+    ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -75); ctx.moveTo(-40, -61); ctx.lineTo(40, -61); ctx.stroke();
+    for (const px of [-30, 30]) { ctx.beginPath(); ctx.moveTo(px, -61); ctx.lineTo(px, -25); ctx.moveTo(px - 15, -25); ctx.quadraticCurveTo(px, -9, px + 15, -25); ctx.stroke(); }
+  } else if (["door", "gate", "light-gate", "latched-door", "spring-door", "shutter", "delivery-door"].includes(kind)) {
     drawDoor(ctx, entity);
   } else if (["latch", "seal", "pin", "locking-pin"].includes(kind)) {
     drawLatch(ctx, entity);
-  } else if (["pinwheel", "wheel", "wind-wheel", "wind-vane", "wind-clock", "vane", "turbine", "water-wheel"].includes(kind)) {
+  } else if (["pinwheel", "wheel", "wind-wheel", "wind-vane", "wind-clock", "vane", "turbine", "water-wheel", "fan"].includes(kind)) {
     drawPinwheel(ctx, entity);
-  } else if (kind === "rail-pot") {
+  } else if (kind === "rail-pot" || kind === "planter") {
     drawPot(ctx, entity);
+    ctx.strokeStyle = C.gold; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-35, -83); ctx.lineTo(35, -83); ctx.stroke();
+  } else if (kind === "sign" || kind === "compass" || kind === "route-marker") {
+    const direction = stringProperty(entity, "gravity") ?? stringProperty(entity, "direction") ?? "up";
+    const angle = direction === "down" ? Math.PI : direction === "left" ? -Math.PI / 2 : direction === "right" ? Math.PI / 2 : 0;
+    ctx.save(); ctx.translate(0, -35); ctx.rotate(angle - layout.rotation); ctx.fillStyle = C.gold; ctx.beginPath();
+    ctx.moveTo(0, -34); ctx.lineTo(18, -10); ctx.lineTo(7, -10); ctx.lineTo(7, 28); ctx.lineTo(-7, 28); ctx.lineTo(-7, -10); ctx.lineTo(-18, -10); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+  } else if (kind === "flag") {
+    const fluttering = booleanProperty(entity, "fluttering") || booleanProperty(entity, "active");
+    ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(-18, 0); ctx.lineTo(-18, -72); ctx.stroke();
+    ctx.fillStyle = fluttering ? C.gold : material[entity.material]; ctx.beginPath(); ctx.moveTo(-16, -68);
+    if (fluttering) { ctx.quadraticCurveTo(8, -80, 31, -64); ctx.quadraticCurveTo(8, -49, -16, -57); }
+    else { ctx.lineTo(28, -68); ctx.lineTo(22, -41); ctx.lineTo(-16, -48); }
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else if (kind === "wedge") {
+    ctx.beginPath(); ctx.moveTo(-32, 0); ctx.lineTo(31, 0); ctx.lineTo(20, -25); ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else if (["hazard", "gravity-hazard"].includes(kind)) {
+    ctx.fillStyle = "#c78382"; ctx.beginPath(); for (let i = 0; i < 5; i++) { const px = -38 + i * 19; ctx.moveTo(px, 0); ctx.lineTo(px + 9, -42); ctx.lineTo(px + 19, 0); } ctx.fill(); ctx.stroke();
+  } else if (kind === "gap") {
+    ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-44, 0); ctx.lineTo(-18, 0); ctx.lineTo(-8, 14); ctx.moveTo(44, 0); ctx.lineTo(18, 0); ctx.lineTo(8, 14); ctx.stroke();
+  } else if (["ladder", "rotating-ladder", "ladder-end", "climb-route", "wall-vine"].includes(kind)) {
+    ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-20, 0); ctx.lineTo(-20, -78); ctx.moveTo(20, 0); ctx.lineTo(20, -78);
+    for (let py = -10; py >= -70; py -= 15) { ctx.moveTo(-20, py); ctx.lineTo(20, py); } ctx.stroke();
+    if (kind.includes("vine") || kind === "climb-route") { ctx.strokeStyle = C.mint; ctx.lineWidth = 2; ctx.beginPath(); ctx.bezierCurveTo(-28, -12, 29, -48, -10, -78); ctx.stroke(); }
+  } else if (kind === "boat") {
+    ctx.beginPath(); ctx.moveTo(-43, -27); ctx.lineTo(43, -27); ctx.lineTo(30, 1); ctx.quadraticCurveTo(0, 15, -30, 1); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, -28); ctx.lineTo(0, -65); ctx.lineTo(25, -42); ctx.lineTo(0, -42); ctx.stroke();
+    if (/점/.test(entity.name)) { ctx.fillStyle = C.gold; for (const px of [-20, 0, 20]) { ctx.beginPath(); ctx.arc(px, -14, 3, 0, Math.PI * 2); ctx.fill(); } }
+    else { ctx.strokeStyle = C.gold; for (const px of [-18, 0, 18]) { ctx.beginPath(); ctx.moveTo(px, -25); ctx.lineTo(px - 6, 0); ctx.stroke(); } }
+  } else if (kind === "season-seed") {
+    ctx.fillStyle = C.gold; ctx.beginPath(); ctx.ellipse(0, -27, 16, 27, -0.45, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = C.mint; ctx.beginPath(); ctx.moveTo(0, -48); ctx.quadraticCurveTo(18, -67, 27, -50); ctx.stroke();
+  } else if (["light-bridge", "spring-bridge", "rotating-bridge"].includes(kind)) {
+    ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-49, -8); ctx.lineTo(49, -8); ctx.stroke();
+    if (kind === "light-bridge") { ctx.strokeStyle = C.gold; ctx.shadowColor = C.gold; ctx.shadowBlur = 10; ctx.beginPath(); ctx.moveTo(-45, -17); ctx.lineTo(45, -17); ctx.stroke(); ctx.shadowBlur = 0; }
+    else if (kind === "spring-bridge") { ctx.lineWidth = 2; for (let px = -38; px < 38; px += 15) { ctx.beginPath(); ctx.arc(px, 0, 8, Math.PI, 0); ctx.stroke(); } }
+    else { ctx.fillStyle = C.gold; ctx.beginPath(); ctx.arc(0, -8, 8, 0, Math.PI * 2); ctx.fill(); }
+  } else if (kind === "section-model") {
+    ctx.lineWidth = 4; for (let level = 0; level < 3; level++) { const py = -level * 24; ctx.strokeRect(-34 + level * 4, py - 22, 68 - level * 8, 20); }
+    ctx.fillStyle = C.gold; ctx.beginPath(); ctx.moveTo(-38, -70); ctx.lineTo(0, -91); ctx.lineTo(38, -70); ctx.closePath(); ctx.fill(); ctx.stroke();
   } else if (kind === "gravity-boundary" || kind === "room-gravity-marker" || kind === "rail-socket" || kind === "rail-carrier" || kind === "rail-stop" || kind === "rail-spur" || kind === "lift-rail") {
-    drawGravityDevice(ctx, entity, kind);
+    drawGravityDevice(ctx, entity, kind, layout.rotation);
   } else if (kind === "lock") {
     drawLock(ctx, entity);
   } else if (kind === "key" || entity.properties.tool === "brass-key") {
@@ -981,8 +1340,7 @@ function drawEntityShape(
 
   if (
     entity.capacity > 0 &&
-    (!entity.location.region.includes("-learn-") || entity.properties.boardable === true) &&
-    (entity.properties.boardable === true || ["box", "raft", "tray"].includes(kind))
+    entity.properties.boardable === true
   ) {
     const pips = Math.min(4, Math.ceil(entity.capacity));
     ctx.fillStyle = C.gold;
@@ -991,27 +1349,50 @@ function drawEntityShape(
       ctx.arc((i - (pips - 1) / 2) * 8, -67, 2.5, 0, Math.PI * 2);
       ctx.fill();
     }
-    if (entity.capacity > 4) {
-      ctx.font = "700 10px sans-serif";
-      ctx.textAlign = "left";
-      ctx.fillText(`×${entity.capacity}`, 19, -67);
-    }
   }
   const direction = stringProperty(entity, "flowDirection");
   const flow = numberProperty(entity, "flow", numberProperty(entity, "flowSpeed", 1));
-  if (direction) drawFlowArrow(ctx, 0, -83, direction, flow);
+  if (direction && entity.properties.open !== false && entity.properties.active !== false
+    && entity.properties.flowing !== false) {
+    ctx.save(); ctx.translate(0, -83); ctx.rotate(-layout.rotation);
+    drawFlowArrow(ctx, 0, 0, direction, flow); ctx.restore();
+  }
 
   drawProgressPips(ctx, entity);
+  ctx.restore();
 
-  ctx.fillStyle = selected ? C.gold : "rgba(240,237,220,.9)";
-  ctx.beginPath();
-  ctx.arc(0, 12, 11, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = C.ink;
-  ctx.font = "700 11px sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(String(layout.index + 1), 0, 12);
+  const words = entity.name.split(/\s+/u);
+  let first = entity.name;
+  let second = "";
+  if (words.length > 1) {
+    let best = 1;
+    let difference = Number.POSITIVE_INFINITY;
+    for (let index = 1; index < words.length; index++) {
+      const left = words.slice(0, index).join(" ");
+      const right = words.slice(index).join(" ");
+      if (Math.abs(left.length - right.length) < difference) { best = index; difference = Math.abs(left.length - right.length); }
+    }
+    first = words.slice(0, best).join(" ");
+    second = words.slice(best).join(" ");
+  } else if (entity.name.length > 8) {
+    const split = Math.ceil(entity.name.length / 2);
+    first = entity.name.slice(0, split); second = entity.name.slice(split);
+  }
+  const box = layout.labelBounds;
+  const bx = box.x - x;
+  const by = box.y - y;
+  ctx.fillStyle = selected ? "rgba(69,55,31,.96)" : "rgba(9,11,29,.9)";
+  ctx.strokeStyle = selected ? C.gold : layout.relation === "world" ? "rgba(184,220,222,.5)" : C.mint;
+  ctx.lineWidth = selected ? 2.5 : 1.5;
+  roundedRect(ctx, bx, by, box.width, box.height, 7); ctx.fill(); ctx.stroke();
+  if (layout.relation !== "world") {
+    ctx.fillStyle = C.mint; ctx.beginPath(); ctx.arc(bx + 9, by + 9, 3.5, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = "#f0eddc";
+  ctx.font = '600 14px "Noto Sans KR", sans-serif';
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(first, bx + box.width / 2, by + (second ? 14 : 23));
+  if (second) ctx.fillText(second, bx + box.width / 2, by + 33);
   ctx.restore();
 }
 
@@ -1051,10 +1432,41 @@ export function renderCampaignScene(
   ctx: CanvasRenderingContext2D,
   options: CampaignSceneOptions,
 ): CampaignEntityLayout[] {
-  const { world, title, displayNumber, time, reducedMotion, selectedEntityId } = options;
-  const layouts = layoutCampaignEntities(world);
-  drawBackdrop(ctx, world, time, reducedMotion);
-
+  const { world, time, reducedMotion, selectedEntityId, actorVerbs = {} } = options;
+  const geometry = createSceneGeometry(world);
+  const progress = reducedMotion ? 1 : Math.max(0, Math.min(1, options.transitionProgress ?? 1));
+  const eased = progress * progress * (3 - 2 * progress);
+  const previous = options.previousWorld?.segmentId === world.segmentId && options.previousWorld.attempt === world.attempt
+    ? options.previousWorld : world;
+  const oldActors = layoutCampaignActors(previous);
+  const finalActors = layoutCampaignActors(world);
+  const actors = finalActors.map((actor) => {
+    const old = oldActors.find((item) => item.id === actor.id) ?? actor;
+    const moved = Math.hypot(actor.x - old.x, actor.y - old.y) > 1;
+    const jump = actorVerbs[actor.id] === "jump" && moved ? Math.sin(progress * Math.PI) * 72 : 0;
+    return {
+      ...actor,
+      x: old.x + (actor.x - old.x) * eased + Math.sin(actor.rotation) * jump,
+      y: old.y + (actor.y - old.y) * eased - Math.cos(actor.rotation) * jump,
+      moved,
+      facing: (actor.x < old.x ? -1 : 1) as 1 | -1,
+    };
+  });
+  const oldLayouts = layoutCampaignEntities(previous);
+  const layouts = layoutCampaignEntities(world).map((layout) => {
+    let dx = 0; let dy = 0;
+    if (layout.relation === "carried" && layout.actorId) {
+      const actor = actors.find((item) => item.id === layout.actorId);
+      const final = finalActors.find((item) => item.id === layout.actorId);
+      if (actor && final) { dx = actor.x - final.x; dy = actor.y - final.y; }
+    } else if (layout.entity.movable && progress < 1) {
+      const old = oldLayouts.find((item) => item.id === layout.id);
+      if (old) { dx = (old.x - layout.x) * (1 - eased); dy = (old.y - layout.y) * (1 - eased); }
+    }
+    return { ...layout, x: layout.x + dx, y: layout.y + dy,
+      labelBounds: { ...layout.labelBounds, x: layout.labelBounds.x + dx, y: layout.labelBounds.y + dy } };
+  });
+  drawBackdrop(ctx, world, time, reducedMotion, geometry);
   const byId = new Map(layouts.map((layout) => [layout.id, layout]));
   const drawnConnections = new Set<string>();
   const connect = (from: CampaignEntityLayout, to: CampaignEntityLayout) => {
@@ -1064,63 +1476,61 @@ export function renderCampaignScene(
     drawConnection(ctx, from, to);
   };
   for (const layout of layouts) {
-    const connectedTo = stringProperty(layout.entity, "connectedTo");
-    for (const id of connectedTo?.split("|") ?? []) {
-      const target = byId.get(id);
-      if (target) connect(layout, target);
+    for (const id of stringProperty(layout.entity, "connectedTo")?.split("|") ?? []) {
+      const target = byId.get(id); if (target) connect(layout, target);
     }
-    const connectedFrom = stringProperty(layout.entity, "connectedFrom");
-    for (const id of connectedFrom?.split("|") ?? []) {
-      const source = byId.get(id);
-      if (source) connect(source, layout);
+    for (const id of stringProperty(layout.entity, "connectedFrom")?.split("|") ?? []) {
+      const source = byId.get(id); if (source) connect(source, layout);
     }
     const parent = layout.entity.parent ? byId.get(layout.entity.parent) : null;
     if (parent) connect(parent, layout);
   }
-  for (const layout of layouts) {
+  for (const layout of layouts.filter((item) => item.relation !== "carried")) {
     drawEntityShape(ctx, layout, layout.id === selectedEntityId);
   }
-
-  const hero = world.actors.hero;
-  if (hero) {
-    const position = mapActor(hero, world, layouts);
-    drawHero(ctx, {
-      ...idleHeroFrame(reducedMotion ? 0 : time),
-      x: position.x,
-      y: position.y,
-      dust: 0,
-      shadow: 0,
-    }, reducedMotion ? 0 : time);
-    if (world.visible.some((id) => world.entities[id]?.properties.equipment === true
-      && world.entities[id]?.parent === "hero")) {
-      drawWornLetter(ctx, position.x, position.y);
+  for (const actor of actors) {
+    const source = world.actors[actor.id];
+    const moving = actor.moved && progress < 1 && !source.riding;
+    const verb = actorVerbs[actor.id];
+    if (!source.riding && !(moving && verb === "jump")) {
+      ctx.save(); ctx.translate(actor.x, actor.y); ctx.rotate(actor.rotation);
+      ctx.fillStyle = "rgba(5,8,20,.25)"; ctx.beginPath(); ctx.ellipse(0, 2, 29, 5, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     }
+    if (actor.id === "hero") {
+      drawHero(ctx, {
+        ...idleHeroFrame(reducedMotion ? 0 : time),
+        x: actor.x, y: actor.y, rotation: actor.rotation,
+        pose: moving ? verb === "jump" ? "jump" : verb === "duck" ? "duck" : "walk" : "idle",
+        phase: progress * 3, facing: actor.facing, dust: 0, shadow: 0,
+      }, reducedMotion ? 0 : time);
+      if (world.visible.some((id) => world.entities[id]?.properties.equipment === true && world.entities[id]?.parent === "hero")) {
+        ctx.save(); ctx.translate(actor.x, actor.y); ctx.rotate(actor.rotation);
+        drawWornLetter(ctx, 0, 0); ctx.restore();
+      }
+    } else {
+      ctx.save(); ctx.translate(actor.x, actor.y); ctx.rotate(actor.rotation);
+      drawKeeper(ctx, 0, 0); ctx.restore();
+    }
+    if (source.holding) {
+      const target = byId.get(source.holding);
+      if (target) {
+        ctx.save(); ctx.strokeStyle = C.gold; ctx.lineWidth = 3;
+        const cosine = Math.cos(actor.rotation); const sine = Math.sin(actor.rotation);
+        const contactX = target.x + sine * 25; const contactY = target.y - cosine * 25;
+        ctx.beginPath(); ctx.moveTo(actor.x + cosine * 23 + sine * 35, actor.y + sine * 23 - cosine * 35); ctx.lineTo(contactX, contactY); ctx.stroke();
+        ctx.fillStyle = C.gold; ctx.beginPath(); ctx.arc(contactX, contactY, 4, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      }
+    }
+    ctx.save(); ctx.fillStyle = actor.id === "hero" ? "#dcebc9" : C.gold;
+    ctx.font = '600 13px "Noto Sans KR", sans-serif'; ctx.textAlign = "center";
+    const sideways = Math.abs(actor.rotation) === Math.PI / 2;
+    const labelY = actor.rotation === Math.PI ? actor.y + 124 : sideways ? actor.y - 57 : actor.y - 116;
+    const labelX = sideways ? actor.x + Math.sign(actor.rotation) * 57 : actor.x;
+    ctx.fillText(actor.id === "hero" ? "용사" : "등지기", labelX, labelY);
+    ctx.restore();
   }
-  const keeper = world.actors.keeper;
-  if (keeper) {
-    const position = mapActor(keeper, world, layouts);
-    drawKeeper(ctx, position.x, position.y);
-  }
-
-  const selected = selectedEntityId
-    ? layouts.find((layout) => layout.id === selectedEntityId)?.entity
-    : null;
-  ctx.fillStyle = "rgba(9,11,29,.82)";
-  ctx.fillRect(0, 0, CAMPAIGN_VIEW_WIDTH, 72);
-  ctx.fillStyle = "#f0eddc";
-  ctx.font = '600 21px "Noto Sans KR", sans-serif';
-  ctx.textAlign = "left";
-  ctx.fillText(title, 28, 31);
-  ctx.fillStyle = C.moon;
-  ctx.font = '12px "Noto Sans KR", sans-serif';
-  ctx.fillText(displayNumber === undefined
-    ? `${world.stageId}장`
-    : `${world.stageId}장 · 스테이지 ${displayNumber}`, 28, 53);
-  ctx.textAlign = "right";
-  ctx.fillText(`시도 ${world.attempt} · 변화 ${world.tick}`, 932, 31);
-  if (selected) {
-    ctx.fillStyle = C.gold;
-    ctx.fillText(`선택 · ${selected.name}`, 932, 53);
+  for (const layout of layouts.filter((item) => item.relation === "carried")) {
+    drawEntityShape(ctx, layout, layout.id === selectedEntityId);
   }
   return layouts;
 }

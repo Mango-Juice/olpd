@@ -172,6 +172,9 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
     catch (error) { setNotice(error instanceof Error ? error.message : "메모를 바꾸지 못했어요."); }
   }
   if (!segment) return <p role="alert">현재 구간을 찾지 못했어요. 저장 원본은 그대로 남아 있어요.</p>;
+  const actorVerbs = Object.fromEntries(run.events.filter((event) =>
+    event.actor && event.verb && event.id.startsWith(`${run.id}:${run.revision}:`) && event.attempt === run.world.attempt && event.segmentId === run.world.segmentId && event.outcome === "safe",
+  ).map((event) => [event.actor, event.verb]));
   const presentedFacts = run.world.facts.flatMap((fact) => {
     const property = formatProperty(run.world, fact.property, fact.value);
     return property ? [{ ...fact, label: property.label, displayValue: property.value }] : [];
@@ -190,7 +193,7 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
     <PlayLayout>
       <section className="game-panel" aria-label="던전 플레이">
         <div className="scene-frame campaign-scene">
-          <CampaignCanvas world={run.world} displayNumber={displayedSegments.indexOf(segment) + 1} title={segment.title} reducedMotion={settings.reducedMotion} paused={paused || run.phase === "bookmark" || run.phase === "cleared"} selectedEntityId={selected} onSelectEntity={setSelected} />
+          <CampaignCanvas world={run.world} actorVerbs={actorVerbs} displayNumber={displayedSegments.indexOf(segment) + 1} title={segment.title} reducedMotion={settings.reducedMotion} paused={paused || run.phase === "bookmark" || run.phase === "cleared"} selectedEntityId={selected} onSelectEntity={setSelected} />
           <p className="campaign-goal"><span>이번 목표</span>{segment.goal}</p>
         </div>
     {!practice ? <PlayStageProgress chapter={stage.id} stages={displayedSegments} currentId={run.world.segmentId} completedIds={[...(run.learning?.completedSegmentIds ?? []), ...run.clearedSegments]} /> : null}

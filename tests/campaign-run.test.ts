@@ -1,3 +1,5 @@
+import { makeEntity, makeWorld } from "../src/campaign/level";
+import { parseStageRun } from "../src/campaign/run-validation";
 import { expect, it } from "vitest";
 import { advanceStage, createStageRun, departStage, rewindStage, type StageDynamics } from "../src/campaign/run";
 import { writeProgram } from "../src/campaign/notebook";
@@ -105,4 +107,18 @@ it("marks identical successful replay for compressed presentation while recomput
   expect(calls).toBe(2);
   expect(first.events[0].repeated).toBe(false);
   expect(again.events[1].repeated).toBe(true);
+});
+
+it("persists optional presentation verbs without breaking older saves", () => {
+  const run = createStageRun("presentation", makeWorld(2, "02-1", [makeEntity("box", "상자", "02-1", 0)]));
+  run.notebook = writeProgram(run.notebook, { version: 2, id: "line", text: "상자를 밀어", model: "fixture", scope: {}, guard: false, body: { kind: "action", actor: "hero", verb: "push", target: "box" } });
+  const next = advanceStage(departStage(run), { ...dynamics, segmentComplete: () => false });
+  expect(next.events[0].verb).toBe("push");
+  expect(parseStageRun(next)).not.toBeNull();
+  const old = structuredClone(next);
+  delete old.events[0].verb;
+  expect(parseStageRun(old)).not.toBeNull();
+  const malformed = structuredClone(next) as unknown as { events: { verb: string }[] };
+  malformed.events[0].verb = "teleport";
+  expect(parseStageRun(malformed)).toBeNull();
 });

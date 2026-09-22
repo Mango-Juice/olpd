@@ -89,6 +89,8 @@ export interface InstructionProgram {
   body: ProgramNode;
 }
 export interface WorldEvent {
+  /** Optional presentation metadata; older saves omit it. Never drives physics. */
+  verb?: Verb;
   id: string;
   /** Presentation may compress repeats, but physics is always recomputed. */
   repeated?: boolean;

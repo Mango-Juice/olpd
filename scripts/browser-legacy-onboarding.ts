@@ -19,10 +19,13 @@ try {
     const step = steps.find((entry) => entry.text === body.text)!;
     await route.fulfill({ json: { ...step, uncertainty: 0, model: "browser-fixture", rulesVersion: RULES_VERSION } });
   });
+  const spriteReady = page.waitForResponse((response) => response.url().endsWith("/art/moru-sprite-sheet-v3.png"));
   await page.goto("http://localhost:5173/");
+  await spriteReady;
   await page.getByRole("button", { name: "이야기 SKIP", exact: true }).click();
   for (const [index, step] of steps.entries()) {
     await expect(page.locator(".play-stage-progress-heading")).toContainText(`1-${index + 1} / 12개`);
+    await page.locator(".legacy-onboarding-canvas").screenshot({ path: `artifacts/legacy-onboarding-map-${index + 1}.png` });
     await page.locator("#onboarding-instruction").fill(step.text);
     await page.getByRole("button", { name: /뜻 확인/, exact: false }).click();
     await expect(page.locator(".legacy-onboarding-interpretation")).toBeVisible();

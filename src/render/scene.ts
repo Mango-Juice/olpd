@@ -167,6 +167,41 @@ function drawBackdrop(
   drawVines(ctx, t, reducedMotion);
 }
 
+/** Shared chapter art: tile the original open dungeon depth without changing its palette or scale. */
+export function drawDungeonBackdrop(ctx: CanvasRenderingContext2D, time: number, reducedMotion: boolean, width = VIEW_WIDTH) {
+  for (let left = 0; left < width; left += VIEW_WIDTH) {
+    ctx.save(); ctx.beginPath(); ctx.rect(left, 0, Math.min(VIEW_WIDTH, width - left), VIEW_HEIGHT); ctx.clip();
+    ctx.translate(left, 0); drawBackdrop(ctx, time, reducedMotion); ctx.restore();
+  }
+}
+
+/** The same stone material for walls and large structural obstacles. */
+export function drawDungeonMasonry(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number) {
+  ctx.save();
+  const stone = ctx.createLinearGradient(x, y, x + width, y + height);
+  stone.addColorStop(0, C.stoneLight); stone.addColorStop(1, C.stone);
+  ctx.fillStyle = stone; ctx.fillRect(x, y, width, height);
+  ctx.beginPath(); ctx.rect(x, y, width, height); ctx.clip();
+  ctx.strokeStyle = "rgba(17,16,48,.35)"; ctx.lineWidth = 2;
+  for (let row = 0; row < Math.ceil(height / 34); row++) {
+    for (let left = x - (row % 2 ? 30 : 0); left < x + width; left += 66) {
+      roundedRect(ctx, left + 3, y + row * 34 + 3, 60, 28, 5); ctx.stroke();
+    }
+  }
+  ctx.fillStyle = "rgba(211,202,229,.25)"; ctx.fillRect(x, y, width, 5); ctx.fillRect(x, y, 4, height);
+  ctx.restore();
+}
+
+/** Original beveled masonry, clipped to a genuine solid stretch of the map. */
+export function drawDungeonFloor(ctx: CanvasRenderingContext2D, left: number, top: number, width: number) {
+  if (width <= 0) return;
+  ctx.save(); ctx.beginPath(); ctx.rect(left, top, width, VIEW_HEIGHT - top); ctx.clip();
+  for (let x = left; x < left + width; x += VIEW_WIDTH) {
+    ctx.save(); ctx.translate(x, top - (FLOOR_Y - 8)); drawFloor(ctx); ctx.restore();
+  }
+  ctx.restore();
+}
+
 function drawVines(
   ctx: CanvasRenderingContext2D,
   t: number,
@@ -659,6 +694,15 @@ function getHeroSheet() {
     heroSheet.src = "/art/moru-sprite-sheet-v3.png";
   }
   return heroSheet;
+}
+
+/** Static canvases redraw once the shared sprite finishes loading. */
+export function onHeroSpriteReady(redraw: () => void): () => void {
+  const sheet = getHeroSheet();
+  if (!sheet) return () => undefined;
+  if (sheet.complete && sheet.naturalWidth > 0) { redraw(); return () => undefined; }
+  sheet.addEventListener("load", redraw, { once: true });
+  return () => sheet.removeEventListener("load", redraw);
 }
 
 function drawHeroLoadingSilhouette(
