@@ -13,7 +13,7 @@ page.on("request", (request) => { if (request.url().includes("/api/") && request
 try {
   await page.goto("http://localhost:5173/?qa=1");
   for (const chapter of STAGES.slice(1)) {
-    await page.locator(".qa-grid section").filter({ has: page.getByRole("heading", { name: chapter.title, exact: true }) }).getByRole("button", { name: "바로 입장", exact: true }).click();
+    await page.locator(".roadmap-stop").filter({ has: page.getByRole("heading", { name: chapter.title, exact: true }) }).getByRole("button", { name: /들어가기|이어 걷기/ }).click();
     await expect(page.locator(".layout > .notebook.paper")).toBeVisible();
     const select = page.getByRole("combobox", { name: "QA 스테이지 선택" });
     const values = await select.locator("option").evaluateAll((items) => items.map((item) => (item as HTMLOptionElement).value));
@@ -29,7 +29,7 @@ try {
     await page.getByRole("button", { name: "QA 장 선택", exact: true }).click();
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator(".qa-grid section").filter({ has: page.getByRole("heading", { name: STAGES[1].title, exact: true }) }).getByRole("button", { name: "이어 하기", exact: true }).click();
+  await page.locator(".roadmap-stop").filter({ has: page.getByRole("heading", { name: STAGES[1].title, exact: true }) }).getByRole("button", { name: /들어가기|이어 걷기/ }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.screenshot({ path: `${directory}/mobile.png`, fullPage: true });
   expect(errors).toEqual([]);

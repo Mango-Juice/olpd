@@ -53,12 +53,6 @@ const previousCauseMapEntities = (world: WorldState) =>
   allVisibleEntities(world).filter((entity) =>
     isPreviousCauseMapEntity(world, entity.id));
 
-function conciseDescription(description: string, fallback: string) {
-  const normalized = description.trim() || fallback;
-  const firstSentence = normalized.match(/^[^.!?。]+[.!?。]/u)?.[0];
-  return firstSentence?.trim() || normalized;
-}
-
 export function CampaignCanvas(props: CampaignCanvasProps) {
   const selectedTitleId = useId();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -215,9 +209,8 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
   const selectedFacts = selected
     ? formatEntityFacts(props.world, selected)
     : [];
-  const selectedDescription = selected
-    ? conciseDescription(selected.description, selected.name)
-    : "";
+  const selectedDescription = selected && selected.description.trim() !== selected.name.trim()
+    ? selected.description.trim() : "";
   const selectedFromPreviousRegion = selected
     ? isPreviousCauseMapEntity(props.world, selected.id)
     : false;
@@ -239,7 +232,7 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
     }
   };
 
-  const ariaState = `${props.title}. 장면에 보이는 물건 ${entities.length}개. 물건 목록을 열어 키보드로 살펴볼 수 있어요.`;
+  const ariaState = `${props.title}. 장면에 보이는 물건 ${entities.length}개. 아래 물건 목록에서 키보드로도 살펴볼 수 있어요.`;
   return (
     <figure className="campaign-scene">
       <div className="campaign-map-heading"><strong>{props.title}</strong><span>{props.world.stageId}장{props.displayNumber === undefined ? "" : ` · 스테이지 ${props.displayNumber}`}</span></div>
@@ -266,8 +259,7 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
       </nav>}
       <figcaption className="campaign-scene-caption">
         <p className="campaign-scene-prompt">궁금한 물건을 눌러 살펴보세요.</p>
-        <details className="campaign-object-picker">
-          <summary>물건 목록 열기 · {entities.length}개</summary>
+        <div className="campaign-object-picker">
           <ol aria-label="장면 속 물건">
             {entities.map((entity) => (
               <li key={entity.id}>
@@ -285,11 +277,10 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
             ))}
           </ol>
           {props.world.entities.letter ? <p>배달할 편지는 몸의 주머니에 있어요. 손과 물건 고리를 쓰지 않아요.</p> : null}
-        </details>
+        </div>
         {previousEntities.length ? (
-          <details className="campaign-object-picker campaign-previous-objects">
-            <summary>이전 스테이지의 장치 상태 · {previousEntities.length}개</summary>
-            <p>이전 구역에서 이어지는 장치예요. 현재 장면의 물건과 구분해 살펴볼 수 있어요.</p>
+          <div className="campaign-object-picker campaign-previous-objects">
+            <p className="campaign-object-group-title">이전 스테이지의 장치 상태 · {previousEntities.length}개</p>
             <ol aria-label="이전 구역의 장치">
               {previousEntities.map((entity) => (
                 <li key={entity.id}>
@@ -306,7 +297,7 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
                 </li>
               ))}
             </ol>
-          </details>
+          </div>
         ) : null}
         <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
           {selected ? `${selected.name} 선택됨` : ""}
@@ -317,16 +308,15 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
               <p className="campaign-observation-context">이전 구역에서 이어진 장치 상태</p>
             ) : null}
             <h2 id={selectedTitleId}>{selected.name}</h2>
-            <p>{selectedDescription}</p>
-            <details>
-              <summary>자세한 성질 보기</summary>
-              {selected.description.trim() && selected.description.trim() !== selectedDescription ? (
-                <p>{selected.description}</p>
-              ) : null}
-              <ul>
-                {selectedFacts.map((fact) => <li key={fact}>{fact}</li>)}
-              </ul>
-            </details>
+            {selectedDescription ? <p>{selectedDescription}</p> : null}
+            <dl className="campaign-entity-facts">
+              {selectedFacts.map((fact) => {
+                const separator = fact.indexOf(" · ");
+                const label = separator < 0 ? "이동" : fact.slice(0, separator);
+                const value = separator < 0 ? fact : fact.slice(separator + 3);
+                return <div key={fact}><dt>{label}</dt><dd>{value}</dd></div>;
+              })}
+            </dl>
           </section>
         ) : null}
       </figcaption>

@@ -2,25 +2,11 @@
 .qa-banner strong { letter-spacing: .12em; font-size: 12px; }
 .qa-banner span { flex: 1; font-size: 13px; min-width: 200px; }
 .qa-banner a { color: inherit; font-size: 13px; }
-.qa-map { max-width: 1100px; margin: 48px auto; padding: 0 24px; }
-.qa-map > p { color: #b7b9c3; }
-.qa-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(240px,1fr)); gap: 16px; margin-top: 28px; }
-.qa-grid section { padding: 24px; border: 1px solid #454653; border-radius: 18px; background: #232631; }
-.qa-grid section > span { color: #b4c99e; font-size: 12px; letter-spacing: .12em; }
-.qa-grid h2 { font-size: 21px; margin: 12px 0; }
-.qa-grid p { color: #b7b9c3; font-size: 13px; }
-.qa-grid button { margin: 4px 6px 0 0; }
-.qa-grid button:disabled { opacity: .4; cursor: not-allowed; }
 .qa-error { padding: 12px 24px; color: #f0b5a5; }
 
-.qa-banner button, .qa-grid button { border: 1px solid #a9bc91; border-radius: 8px; background: #bfcea9; color: #253020; padding: 9px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-.qa-grid button.subtle { background: transparent; color: #d4ddc9; border-color: #59644e; }
-.qa-banner button:hover, .qa-grid button:not(:disabled):hover { filter: brightness(1.08); }
-.qa-banner button:focus-visible, .qa-grid button:focus-visible { outline: 2px solid #eef4df; outline-offset: 3px; }
+.qa-banner button { border: 1px solid #a9bc91; border-radius: 8px; background: #bfcea9; color: #253020; padding: 9px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.qa-banner button:hover { filter: brightness(1.08); }
+.qa-banner button:focus-visible { outline: 2px solid #eef4df; outline-offset: 3px; }
 
 .qa-segment-picker { display: flex; gap: 12px; align-items: center; max-width: 1052px; margin: 16px auto; padding: 0 24px; font-size: 13px; }
 .qa-segment-picker select { min-width: 0; max-width: 100%; padding: 8px 12px; border-radius: 8px; }
-
-.qa-roadmap-tools { max-width: 1080px; margin: -30px auto 50px; padding: 0 24px; color: #b4bfac; }
-.qa-roadmap-tools > summary { cursor: pointer; font-size: 13px; padding: 14px 0; border-top: 1px solid #ffffff20; }
-.qa-roadmap-tools .qa-map { padding-inline: 0; }

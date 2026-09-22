@@ -13,7 +13,7 @@ page.on("request", (request) => { if (request.url().includes("/api/") && request
 try {
   await page.goto("http://localhost:5173/?qa=1");
   for (const chapter of STAGES.slice(1)) {
-    await page.locator(".qa-grid section").filter({ has: page.getByRole("heading", { name: chapter.title, exact: true }) }).getByRole("button", { name: /바로 입장|이어 하기/ }).click();
+    await page.locator(".roadmap-stop").filter({ has: page.getByRole("heading", { name: chapter.title, exact: true }) }).getByRole("button", { name: /들어가기|이어 걷기/ }).click();
     const select = page.getByRole("combobox", { name: "QA 스테이지 선택" });
     const values = await select.locator("option").evaluateAll((items) => items.map((item) => (item as HTMLOptionElement).value));
     for (const [index, value] of values.entries()) {
@@ -27,7 +27,6 @@ try {
       expect(geometry.height).toBeGreaterThan(300);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
       const picker = page.locator(".campaign-object-picker").first();
-      await picker.locator("summary").click();
       const objects = picker.getByRole("button");
       if (await objects.count()) {
         const last = objects.last();
@@ -35,7 +34,6 @@ try {
         await last.click();
         await expect(page.locator(".campaign-scene-observation h2")).toHaveText(name);
       }
-      await picker.locator("summary").click();
       await viewport.evaluate((element) => { element.scrollLeft = 0; });
       await viewport.screenshot({ path: `${directory}/${value}-left.png` });
       if (geometry.scrollWidth > geometry.width + 1) {
@@ -51,7 +49,7 @@ try {
     await page.getByRole("button", { name: "QA 장 선택", exact: true }).click();
   }
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator(".qa-grid section").filter({ has: page.getByRole("heading", { name: STAGES[8].title, exact: true }) }).getByRole("button", { name: /바로 입장|이어 하기/ }).click();
+  await page.locator(".roadmap-stop").filter({ has: page.getByRole("heading", { name: STAGES[8].title, exact: true }) }).getByRole("button", { name: /들어가기|이어 걷기/ }).click();
   await expect(page.locator(".campaign-map-viewport")).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.getByRole("button", { name: "용사 위치", exact: true }).click();

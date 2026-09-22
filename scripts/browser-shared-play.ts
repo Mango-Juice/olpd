@@ -11,7 +11,7 @@ const program = fixtureProgram(testCase)!;
 try {
   await page.goto("http://localhost:5173/?qa=1");
   const openChapter = async (title: string) => {
-    await page.locator(".qa-grid section").filter({ has: page.getByRole("heading", { name: title, exact: true }) }).getByRole("button", { name: "바로 입장", exact: true }).click();
+    await page.locator(".roadmap-stop").filter({ has: page.getByRole("heading", { name: title, exact: true }) }).getByRole("button", { name: /들어가기|이어 걷기/ }).click();
   };
   await openChapter("기억의 던전");
   await expect(page.locator(".topbar .brand")).toHaveText(/ONE LINE PER DEATH/);
@@ -29,13 +29,12 @@ try {
   await expect(page.locator(".topbar .brand")).toHaveText(/ONE LINE PER DEATH/);
   await expect(page.locator(".layout > .notebook.paper")).toBeVisible();
   await expect(page.locator(".play-stage-progress")).toContainText("2-1 / 5개 스테이지");
-  await expect(page.locator(".campaign-object-picker")).not.toHaveAttribute("open");
+  await expect(page.locator(".campaign-object-picker")).toBeVisible();
   await expect(page.locator(".campaign-scene-observation")).toHaveCount(0);
   await expect(page.locator(".play-hints")).not.toHaveAttribute("open");
-  await page.locator(".campaign-object-picker > summary").click();
   await page.locator(".campaign-object-picker button").filter({ hasText: "코르크 상자" }).click();
   await expect(page.locator(".campaign-scene-observation")).toBeVisible();
-  await expect(page.locator(".campaign-scene-observation details")).not.toHaveAttribute("open");
+  await expect(page.locator(".campaign-scene-observation details")).toHaveCount(0);
   await page.locator(".play-hints > summary").click();
   await page.getByRole("button", { name: "볼 곳 알려주기", exact: true }).click();
   await expect(page.locator(".play-hints-reveal li")).toHaveCount(1);
@@ -73,7 +72,7 @@ try {
   await page.screenshot({ path: "artifacts/shared-play-chapter4-next.png", fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload();
-  await page.locator(".qa-grid section").filter({ has: page.getByRole("heading", { name: "비에 잠긴 회랑", exact: true }) }).getByRole("button", { name: "이어 하기", exact: true }).click();
+  await openChapter("비에 잠긴 회랑");
   await expect(page.locator(".play-stage-progress")).toContainText("2-2 / 5개 스테이지");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.screenshot({ path: "artifacts/shared-play-mobile.png", fullPage: true });

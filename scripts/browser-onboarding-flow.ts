@@ -11,7 +11,10 @@ const commands = [
 ];
 try {
   await page.goto("http://localhost:5173/?qa=1");
-  await page.locator(".qa-grid section").filter({ has: page.getByRole("heading", { name: "비에 잠긴 회랑", exact: true }) }).getByRole("button", { name: "바로 입장", exact: true }).click();
+  const openChapter = async (title: string) => {
+    await page.locator(".roadmap-stop").filter({ has: page.getByRole("heading", { name: title, exact: true }) }).getByRole("button", { name: /들어가기|이어 걷기/ }).click();
+  };
+  await openChapter("비에 잠긴 회랑");
   const before = await page.evaluate(async () => (await indexedDB.databases()).map((database) => database.name));
   let requests = 0;
   await page.route("**/api/qa/campaign-interpret", async (route) => {
@@ -39,7 +42,7 @@ try {
     await expect(page.locator(".play-stage-progress-heading")).toContainText(`2-${index + 2} / 8개`, { timeout: 10000 });
     if (index === 0) {
       await page.reload();
-      await page.locator(".qa-grid section").filter({ has: page.getByRole("heading", { name: "비에 잠긴 회랑", exact: true }) }).getByRole("button", { name: "이어 하기", exact: true }).click();
+      await openChapter("비에 잠긴 회랑");
     }
   }
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("one-line-per-death:qa:v1")!)["2"].run.run);

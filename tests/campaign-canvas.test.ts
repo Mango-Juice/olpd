@@ -30,11 +30,11 @@ function renderCanvas(selectedEntityId?: string) {
   }));
 }
 
-describe("campaign canvas progressive disclosure", () => {
-  it("keeps prior cause-map devices in a separate collapsed list", () => {
+describe("campaign canvas direct inspection", () => {
+  it("keeps prior cause-map devices in a separate visible list", () => {
     const html = renderCanvas();
-    const currentList = html.match(/<details class="campaign-object-picker">[\s\S]*?<\/details>/u)?.[0];
-    const previousList = html.match(/<details class="campaign-object-picker campaign-previous-objects">[\s\S]*?<\/details>/u)?.[0];
+    const currentList = html.match(/<div class="campaign-object-picker">[\s\S]*?<\/ol>/u)?.[0];
+    const previousList = html.match(/<div class="campaign-object-picker campaign-previous-objects">[\s\S]*?<\/ol>/u)?.[0];
 
     expect(currentList).toContain("현재 장치");
     expect(currentList).toContain("인접 구역 장치");
@@ -54,4 +54,15 @@ describe("campaign canvas progressive disclosure", () => {
     expect(html).not.toContain("unlistedInternalKey");
     expect(html).not.toContain("causeMapVisible");
   });
+});
+
+it("shows the full description and readable property rows without nested disclosure or repeated names", () => {
+  const world = makeWorld(2, "02-1", [makeEntity("item", "작은 상자", "02-1", 0, { description: "작은 상자" })]);
+  const html = renderToStaticMarkup(createElement(CampaignCanvas, { world, title: "연습", reducedMotion: true, paused: true, selectedEntityId: "item" }));
+  const observation = html.match(/<section class="campaign-scene-observation"[\s\S]*?<\/section>/u)![0];
+  expect(observation.match(/작은 상자/gu)).toHaveLength(1);
+  expect(observation).toContain('<dl class="campaign-entity-facts">');
+  expect(observation).toContain("<dt>재료</dt>");
+  expect(html).not.toContain("<details");
+  expect(html).not.toContain("자세한 성질 보기");
 });

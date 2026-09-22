@@ -1,0 +1,36 @@
+import { chromium, expect } from "@playwright/test";
+import { mkdir, writeFile } from "node:fs/promises";
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, reducedMotion: "reduce" });
+const errors: string[] = []; let calls = 0;
+page.on("pageerror", (error) => errors.push(error.message));
+page.on("request", (request) => { if (request.url().includes("/api/") && request.method() === "POST") calls++; });
+await mkdir("artifacts/inspection-ux", { recursive: true });
+try {
+  await page.goto("http://localhost:5173/?qa=1");
+  await expect(page.locator(".roadmap-stop")).toHaveCount(10);
+  await expect(page.locator(".qa-grid, .qa-map, .qa-roadmap-tools")).toHaveCount(0);
+  await page.getByRole("button", { name: "프롤로그", exact: true }).click();
+  await expect(page.locator("canvas")).toBeVisible();
+  await page.getByRole("button", { name: "QA 장 선택", exact: true }).click();
+  await page.locator(".roadmap-stop").filter({ has: page.getByRole("heading", { name: "비에 잠긴 회랑", exact: true }) }).getByRole("button", { name: /들어가기/ }).click();
+  await page.locator(".campaign-object-picker button").first().click();
+  await expect(page.locator(".campaign-scene-observation h2")).toHaveText("손잡이 달린 코르크 상자");
+  await expect(page.locator(".campaign-scene details")).toHaveCount(0);
+  await expect(page.getByText("자세한 성질 보기", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".campaign-entity-facts dt").filter({ hasText: /^재료$/ })).toBeVisible();
+  await expect(page.locator(".stats")).toHaveText(/∞ 배우는 동안은 수정과 재시작이 무료예요/);
+  await expect(page.locator(".campaign-scene-observation > p")).toHaveCount(0);
+  expect((await page.locator(".campaign-scene-observation").innerText()).match(/손잡이 달린 코르크 상자/g)).toHaveLength(1);
+  expect(await page.locator(".campaign-scene-caption").evaluate((element) => parseFloat(getComputedStyle(element).fontSize))).toBe(13);
+  expect(await page.locator(".campaign-entity-facts dd").first().evaluate((element) => parseFloat(getComputedStyle(element).fontSize))).toBe(13);
+  await page.locator("figure.campaign-scene").screenshot({ path: "artifacts/inspection-ux/desktop.png" });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.locator("figure.campaign-scene").screenshot({ path: "artifacts/inspection-ux/mobile.png" });
+  await page.getByRole("button", { name: "새 QA 시작", exact: true }).click();
+  await expect(page.locator(".play-stage-progress-heading")).toContainText("2-1");
+  expect(errors).toEqual([]); expect(calls).toBe(0);
+  await writeFile("artifacts/inspection-ux/report.json", JSON.stringify({ passed: true, errors, liveCalls: calls, checks: ["direct facts", "compact type", "infinity spacing", "no old QA map", "prologue and reset access", "mobile width"] }, null, 2));
+  console.log("PASS direct object facts, typography, spacing, QA cleanup and mobile; zero AI calls");
+} finally { await browser.close(); }

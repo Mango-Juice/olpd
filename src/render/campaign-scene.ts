@@ -981,14 +981,7 @@ function drawEntityShape(
   }
   ctx.save();
   ctx.rotate(layout.rotation);
-  if (selected) {
-    ctx.strokeStyle = C.gold;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    const door = ["door", "gate", "light-gate", "latched-door", "spring-door", "shutter", "delivery-door"].includes(kind);
-    ctx.ellipse(0, door ? -60 : -21, door ? 50 : 37, door ? 70 : 45, 0, 0, Math.PI * 2);
-    ctx.stroke();
-  }
+
 
   const material: Record<Entity["material"], string> = {
     wood: "#9d6b45",
@@ -1381,8 +1374,8 @@ function drawEntityShape(
   const box = layout.labelBounds;
   const bx = box.x - x;
   const by = box.y - y;
-  ctx.fillStyle = selected ? "rgba(69,55,31,.96)" : "rgba(9,11,29,.9)";
-  ctx.strokeStyle = selected ? C.gold : layout.relation === "world" ? "rgba(184,220,222,.5)" : C.mint;
+  ctx.fillStyle = selected ? "rgba(33,57,46,.97)" : "rgba(9,11,29,.9)";
+  ctx.strokeStyle = selected ? C.mint : layout.relation === "world" ? "rgba(184,220,222,.5)" : C.mint;
   ctx.lineWidth = selected ? 2.5 : 1.5;
   roundedRect(ctx, bx, by, box.width, box.height, 7); ctx.fill(); ctx.stroke();
   if (layout.relation !== "world") {

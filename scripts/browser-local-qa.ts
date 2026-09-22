@@ -20,26 +20,29 @@ try {
   const before = await campaignRecord();
   await page.screenshot({ path: "artifacts/prologue-short-guide.png", fullPage: true });
   await page.goto("http://localhost:5173/?qa=1");
-  await expect(page.getByRole("heading", { name: "어디부터 확인할까요?" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "바로 입장", exact: true })).toHaveCount(11);
-  await expect(page.locator(".qa-grid button:disabled")).toHaveCount(3);
+  await expect(page.getByRole("heading", { name: "편지가 닿을 때까지" })).toBeVisible();
+  await expect(page.locator(".roadmap-stop")).toHaveCount(10);
+  await expect(page.locator(".roadmap-stop.is-locked")).toHaveCount(0);
   await page.screenshot({ path: "artifacts/local-qa-map.png", fullPage: true });
-  const titles = ["프롤로그", "기억의 던전", "비에 잠긴 회랑", "태엽 부엌", "바람 대장간", "뒤집힌 정원", "등불 보관소", "평형 인형극장"];
+  await page.getByRole("button", { name: "프롤로그", exact: true }).click();
+  await expect(page.locator("canvas")).toBeVisible();
+  await page.getByRole("button", { name: "QA 장 선택", exact: true }).click();
+  const titles = ["기억의 던전", "비에 잠긴 회랑", "태엽 부엌", "바람 대장간", "뒤집힌 정원", "등불 보관소", "평형 인형극장"];
   for (const title of titles) {
-    await page.locator(".qa-grid section").filter({ has: page.getByRole("heading", { name: title, exact: true }) }).getByRole("button", { name: "바로 입장", exact: true }).click();
-    await expect(page.locator(".qa-grid")).toHaveCount(0);
+    await page.locator(".roadmap-stop").filter({ has: page.getByRole("heading", { name: title, exact: true }) }).getByRole("button", { name: /들어가기|이어 걷기/ }).click();
+    await expect(page.locator(".storybook-roadmap")).toHaveCount(0);
     await expect(page.locator("canvas")).toBeVisible();
     await page.getByRole("button", { name: "QA 장 선택", exact: true }).click();
   }
   const saved = await page.evaluate(() => localStorage.getItem("one-line-per-death:qa:v1"));
   await page.reload();
-  await expect(page.getByRole("button", { name: "이어 하기", exact: true })).toHaveCount(8);
+  await expect(page.getByRole("button", { name: /이어 걷기/ })).toHaveCount(7);
   expect(await page.evaluate(() => localStorage.getItem("one-line-per-death:qa:v1"))).toBe(saved);
   expect(await campaignRecord()).toBe(before);
   await page.getByRole("link", { name: "일반 플레이로 돌아가기" }).click();
   await expect(page.getByRole("heading", { name: "한 줄이 용사의 길이 됩니다." })).toBeVisible();
   expect(await campaignRecord()).toBe(before);
   expect(errors).toEqual([]);
-  await writeFile("artifacts/local-qa-browser.json", JSON.stringify({ passed: true, testedEntries: titles, unavailable: [8, 9, 10], savedAcrossReload: true, productionRecordUnchanged: true, errors }, null, 2));
-  console.log("PASS: guide, 8 QA entries, unavailable stages, reload persistence, production isolation, no browser errors");
+  await writeFile("artifacts/local-qa-browser.json", JSON.stringify({ passed: true, testedEntries: ["프롤로그", ...titles], savedAcrossReload: true, productionRecordUnchanged: true, errors }, null, 2));
+  console.log("PASS: guide, 8 QA entries, reload persistence, production isolation, no browser errors");
 } finally { await browser.close(); }

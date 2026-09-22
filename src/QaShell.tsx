@@ -92,7 +92,7 @@ export default function QaShell() {
     if (persist(selected, { ...current, run: { kind: "world", run: fresh } })) setPractice(null);
   }
   const back = () => { setSelected(null); setPractice(null); };
-  const header = <aside className="qa-banner" aria-label="로컬 QA 모드"><strong>LOCAL QA</strong><span>모든 구현 장 바로 입장 · 일반 진행과 별도 저장 · 실제 AI 호출</span><button onClick={back}>QA 장 선택</button><a href="/">일반 플레이로 돌아가기</a></aside>;
+  const header = <aside className="qa-banner" aria-label="로컬 QA 모드"><strong>LOCAL QA</strong><span>모든 구현 장 바로 입장 · 일반 진행과 별도 저장 · 실제 AI 호출</span><button onClick={back}>QA 장 선택</button>{selected === null ? <button onClick={() => open(0, false)}>프롤로그</button> : <button onClick={() => open(Number(selected), true)}>새 QA 시작</button>}<a href="/">일반 플레이로 돌아가기</a></aside>;
   let content;
   if (current?.run.kind === "legacy") {
     content = <App key={current.run.save.state.id} bridge={{ initial: current.run.save,
@@ -122,14 +122,7 @@ export default function QaShell() {
           activeRun: saved ? { stageId: stage.id, runId: saved.kind === "legacy" ? saved.save.state.id : saved.run.id } : null };
       }),
     };
-    content = <><StageRoadmap campaign={qaCampaign} qa onSelect={(id) => open(id, false)} onArchive={() => undefined} />
-      <details className="qa-roadmap-tools" open><summary>QA 도구 · 프롤로그와 새 모험 시작</summary><main className="qa-map"><p className="eyebrow">PLAYTEST SANDBOX</p><h1>어디부터 확인할까요?</h1><p>클리어 없이 바로 입장합니다. 다시 열면 QA 메모와 진행을 이어갈 수 있습니다.</p>
-      <div className="qa-grid">{[{ id: 0, title: "프롤로그" }, ...STAGES].map(({ id, title }) => {
-        const available = id < 2 || !!qaStage(id as StageId);
-        return <section key={id}><span>{id === 0 ? "INTRO" : `CHAPTER ${String(id).padStart(2, "0")}`}</span><h2>{title}</h2><p>{available ? "QA 입장 가능" : "미구현 · 입장 불가"}</p>
-          <button disabled={!available} onClick={() => open(id, false)}>{slots[String(id)] ? "이어 하기" : "바로 입장"}</button>
-          {slots[String(id)] && available ? <button className="subtle" onClick={() => open(id, true)}>새 QA 시작</button> : null}</section>;
-      })}</div></main></details></>;
+    content = <StageRoadmap campaign={qaCampaign} qa onSelect={(id) => open(id, false)} onArchive={() => undefined} />;
   }
   return <>{header}{error ? <p className="qa-error" role="alert">{error}</p> : null}{content}</>;
 }
