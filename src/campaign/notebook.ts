@@ -15,9 +15,11 @@ export interface Notebook {
   clarificationId?: string;
   /** Refundable edit charges, keyed by the resulting instruction identity. */
   writeCosts?: Record<string, { erasers: number; bells: number }>;
+  /** Onboarding owns one temporary line whose edits and resets never spend campaign resources. */
+  scratch?: boolean;
 }
-export function createNotebook(firstSegment: string): Notebook {
-  return { instructions: [], canWrite: true, erasers: 2, bells: 0, departed: false, editing: true, visitedBookmarks: [firstSegment] };
+export function createNotebook(firstSegment: string, scratch = false): Notebook {
+  return { instructions: [], canWrite: true, erasers: 2, bells: 0, departed: false, editing: true, visitedBookmarks: [firstSegment], ...(scratch ? { scratch: true } : {}) };
 }
 export function visitBookmark(book: Notebook, segment: string): Notebook {
   if (book.visitedBookmarks.includes(segment)) return book;
@@ -28,7 +30,7 @@ export function departNotebook(book: Notebook): Notebook {
   return { ...book, departed: true, editing: false, canWrite: false };
 }
 export function rewindNotebook(book: Notebook): Notebook {
-  return { ...book, bells: book.bells + 1, canWrite: true, editing: true };
+  return { ...book, bells: book.bells + (book.scratch ? 0 : 1), canWrite: true, editing: true };
 }
 export function clarifyNotebook(book: Notebook, instructionId: string): Notebook {
   if (!book.instructions.some((item) => item.id === instructionId)) throw new Error("확인할 메모를 찾을 수 없어요.");
@@ -53,24 +55,25 @@ export function writeProgram(book: Notebook, program: InstructionProgram, replac
   if (!normalized.text || [...normalized.text].length > CAMPAIGN_INPUT_LIMIT) throw new Error("한 줄은 1~500자로 적어 주세요.");
   const index = replaceId === undefined ? -1 : book.instructions.findIndex((item) => item.id === replaceId);
   if (replaceId !== undefined && index < 0) throw new Error("수정할 메모를 찾을 수 없어요.");
+  if (book.scratch && index < 0 && book.instructions.length > 0) throw new Error("도입에서는 임시 한 줄만 쓸 수 있어요.");
   if (book.instructions.some((item, position) => item.id === program.id && position !== index)) throw new Error("같은 메모가 이미 있어요.");
   const instructions = book.instructions.map((item) => structuredClone(item));
   if (index < 0) instructions.unshift(normalized);
   else instructions[index] = normalized;
-  const cost = index >= 0 && replaceId !== book.clarificationId ? deletionCost(book) : { erasers: book.erasers, bells: book.bells };
+  const cost = book.scratch || index < 0 || replaceId === book.clarificationId ? { erasers: book.erasers, bells: book.bells } : deletionCost(book);
   const writeCosts = { ...book.writeCosts };
   if (replaceId) delete writeCosts[replaceId];
   writeCosts[program.id] = { erasers: book.erasers - cost.erasers, bells: cost.bells - book.bells };
-  return { ...book, ...cost, instructions, writeCosts, clarificationId: undefined, canWrite: false };
+  return { ...book, ...cost, instructions, writeCosts, clarificationId: undefined, canWrite: book.scratch ? true : false };
 }
 export function deleteProgram(book: Notebook, id: string): Notebook {
   assertEditable(book);
   if (!book.instructions.some((item) => item.id === id)) return book;
   if (book.clarificationId && book.clarificationId !== id) throw new Error("뜻을 확인할 메모를 먼저 고치거나 지워 주세요.");
-  const free = book.clarificationId === id;
+  const free = book.scratch || book.clarificationId === id;
   const writeCosts = { ...book.writeCosts };
   delete writeCosts[id];
-  return { ...book, ...(free ? {} : deletionCost(book)), writeCosts, clarificationId: undefined, instructions: book.instructions.filter((item) => item.id !== id) };
+  return { ...book, ...(free ? {} : deletionCost(book)), writeCosts, clarificationId: undefined, canWrite: book.scratch ? true : book.canWrite, instructions: book.instructions.filter((item) => item.id !== id) };
 }
 export function reorderProgram(book: Notebook, id: string, position: number): Notebook {
   assertEditable(book);
@@ -83,6 +86,7 @@ export function reorderProgram(book: Notebook, id: string, position: number): No
 }
 export function copyArchivedProgram(book: Notebook, program: InstructionProgram): Notebook {
   assertEditable(book);
+  if (book.scratch) throw new Error("본편 메모는 도입의 임시 한 줄로 가져올 수 없어요.");
   if (book.departed) throw new Error("보관한 메모는 이 장의 첫 출발 전에만 복사할 수 있어요.");
   if (book.instructions.some((item) => item.id === program.id)) return book;
   return { ...book, instructions: [...book.instructions, structuredClone(program)] };

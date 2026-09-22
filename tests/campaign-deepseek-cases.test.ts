@@ -136,7 +136,7 @@ describe("DeepSeek campaign evaluation corpus", () => {
     expect(testCase.check(flattened)).toBe(false);
   });
 
-  it("allows only a zero-time landing wait immediately before intro dismount", () => {
+  it("accepts proven zero-time state checks without accepting an early arrival wait", () => {
     for (const id of ["intro-exact", "intro-paraphrase", "intro-colloquial"]) {
       const testCase = byId(id);
       const first = id === "intro-exact" ? "place" : "push";
@@ -160,6 +160,15 @@ describe("DeepSeek campaign evaluation corpus", () => {
     }
 
     const exact = byId("intro-exact");
+    const bothWaits = withBody(exact, { kind: "sequence", children: [
+      { kind: "action", actor: "hero", verb: "push", target: "rain-cork", destination: "rain-launch" },
+      { kind: "wait", until: { kind: "property", entity: "rain-cork", property: "afloat", comparison: "eq", value: true, source: "visible" } },
+      { kind: "action", actor: "hero", verb: "board", target: "rain-cork" },
+      { kind: "wait", until: { kind: "property", entity: "rain-cork", property: "landingReachable", comparison: "eq", value: true, source: "visible" } },
+      { kind: "action", actor: "hero", verb: "dismount", target: "rain-cork", destination: "rain-platform" },
+    ] });
+    expect(exact.check(bothWaits)).toBe(true);
+    expect(exact.physics?.(bothWaits)).toMatchObject({ pass: true, detail: { redundantBoundaries: 2 } });
     const wrongWait = (entity: string, name: string): InstructionProgram => withBody(exact, {
       kind: "sequence",
       children: [

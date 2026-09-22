@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeEntity, makeHero, makeWorld } from "../src/campaign/level";
-import { layoutCampaignEntities } from "../src/render/campaign-scene";
+import { campaignEntitySignals, layoutCampaignEntities } from "../src/render/campaign-scene";
 
 describe("campaign scene layout", () => {
   it("keeps previous causal devices out of the current scene without hiding reachable neighboring rooms", () => {
@@ -10,7 +10,7 @@ describe("campaign scene layout", () => {
       makeEntity("neighbor", "옆방 입구", "04-next", 3),
     ]);
     const before = structuredClone(world);
-    expect(layoutCampaignEntities(world).map((item) => item.id)).toEqual(["current", "neighbor", "letter"]);
+    expect(layoutCampaignEntities(world).map((item) => item.id)).toEqual(["current", "neighbor"]);
     expect(world).toEqual(before);
   });
   it("maps physical x and height monotonically into the scene", () => {
@@ -52,5 +52,46 @@ describe("campaign scene layout", () => {
       "gear",
       "oven",
     ]);
+  });
+
+  it("keeps worn equipment on the actor instead of adding a floor target", () => {
+    const world = makeWorld(2, "02-equipment", [
+      makeEntity("box", "코르크 상자", "02-equipment", 0, { properties: { kind: "box" } }),
+    ]);
+    expect(world.visible).toContain("letter");
+    expect(world.entities.letter.properties.equipment).toBe(true);
+    expect(layoutCampaignEntities(world).map((layout) => layout.id)).toEqual(["box"]);
+  });
+
+  it("keeps every public anchor and drawn position finite across campaign chapters", () => {
+    for (let stage = 2; stage <= 10; stage++) {
+      const world = makeWorld(stage as 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10, `chapter-${stage}`, [
+        makeEntity(`left-${stage}`, "왼쪽 장치", `chapter-${stage}`, -12, { location: { region: `chapter-${stage}`, x: -12, y: 0 } }),
+        makeEntity(`high-${stage}`, "높은 장치", `chapter-${stage}`, 48, { location: { region: `chapter-${stage}`, x: 48, y: 6 } }),
+      ]);
+      for (const layout of layoutCampaignEntities(world)) {
+        expect([layout.anchorX, layout.anchorY, layout.x, layout.y].every(Number.isFinite)).toBe(true);
+      }
+    }
+  });
+
+  it("exposes only declared visual state signals with stable progress and direction cues", () => {
+    const lock = makeEntity("lock", "세 박자 잠금판", "signals", 0, {
+      properties: {
+        kind: "lock",
+        open: false,
+        locked: true,
+        safeBeat: 2,
+        requiredTurns: 3,
+        flowDirection: "up",
+      },
+    });
+    expect(campaignEntitySignals(lock)).toEqual([
+      "open:false",
+      "locked:true",
+      "progress:2/3",
+      "direction:up",
+    ]);
+    expect(campaignEntitySignals(makeEntity("plain", "표식 없는 돌", "signals", 1))).toEqual([]);
   });
 });

@@ -1,7 +1,7 @@
 import type { ActionExecutor } from "./program";
 import { executePhysicalAction } from "./physics";
 import type { EnvironmentStep, StageDynamics } from "./run";
-import type { Actor, Entity, StageId, WorldState } from "./types";
+import type { Actor, Entity, PhysicalAction, StageId, WorldState } from "./types";
 
 export interface SegmentDefinition {
   id: string;
@@ -12,6 +12,8 @@ export interface SegmentDefinition {
   /** Entry must preserve physical state when later rooms depend on it. */
   enter: (previous: WorldState | null) => WorldState;
   execute?: ActionExecutor;
+  /** Authored safe-path movement after every applicable instruction has yielded. */
+  idleAction?: (world: WorldState) => PhysicalAction | null;
   advance: (world: WorldState) => EnvironmentStep;
   complete: (world: WorldState) => boolean;
 }
@@ -19,25 +21,38 @@ export interface CampaignStageDefinition {
   id: Exclude<StageId, 1>;
   title: string;
   segments: readonly SegmentDefinition[];
+  /** Required first-play learning cards. Core segment IDs remain stable in `segments`. */
+  onboarding?: readonly SegmentDefinition[];
   practice: SegmentDefinition;
   story: { afterSegment: string; object: string; text: string };
 }
+export function allStageSegments(stage: CampaignStageDefinition): readonly SegmentDefinition[] {
+  return [...(stage.onboarding ?? []), ...stage.segments];
+}
+export function isOnboardingSegment(stage: CampaignStageDefinition, segmentId: string): boolean {
+  return stage.onboarding?.some((segment) => segment.id === segmentId) ?? false;
+}
 export function stageDynamics(stage: CampaignStageDefinition): StageDynamics {
+  const sequence = allStageSegments(stage);
   function segment(world: WorldState): SegmentDefinition {
-    const found = stage.segments.find((item) => item.id === world.segmentId);
+    const found = sequence.find((item) => item.id === world.segmentId);
     if (!found || world.stageId !== stage.id) throw new Error("현재 장과 구간의 세계 정의가 맞지 않아요.");
     return found;
   }
   return {
     execute: (world, action) => (segment(world).execute ?? executePhysicalAction)(world, action),
+    idleAction: (world) => segment(world).idleAction?.(world) ?? null,
     advance: (world) => segment(world).advance(world),
     segmentComplete: (world) => segment(world).complete(world),
     nextSegment: (world) => {
-      const index = stage.segments.findIndex((item) => item.id === world.segmentId);
+      const index = sequence.findIndex((item) => item.id === world.segmentId);
       if (index < 0) throw new Error("다음 구간을 확인할 수 없어요.");
-      const next = stage.segments[index + 1];
+      const next = sequence[index + 1];
       if (!next) return null;
-      const entered = next.enter(world);
+      // Entering core is a hard boundary: onboarding tools, facts, and physical state do not leak.
+      const onboarding = isOnboardingSegment(stage, world.segmentId);
+      const entered = next.enter(onboarding && !isOnboardingSegment(stage, next.id) ? null : world);
+      if (onboarding) return entered;
       const facts = [...world.facts];
       const seen = new Set(facts.map((fact) => JSON.stringify(fact)));
       for (const fact of entered.facts) {
@@ -47,6 +62,7 @@ export function stageDynamics(stage: CampaignStageDefinition): StageDynamics {
       return { ...entered, tick: world.tick, segmentStartedAt: world.tick, attempt: world.attempt, facts };
     },
     sealAfter: (id) => stage.id !== 10 ? null : id === stage.segments[1]?.id ? 1 : id === stage.segments[3]?.id ? 2 : null,
+    isOnboardingSegment: (id) => isOnboardingSegment(stage, id),
   };
 }
 export function makeEntity(id: string, name: string, region: string, x: number, patch: Partial<Entity> = {}): Entity {

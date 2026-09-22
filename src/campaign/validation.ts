@@ -1,6 +1,6 @@
 import { isStageId } from "./catalog";
 import { CAMPAIGN_INPUT_LIMIT } from "./notebook";
-import type { InstructionProgram } from "./types";
+import type { EntityReference, InstructionProgram, PhysicalAction } from "./types";
 
 const verbs = new Set(["move", "jump", "duck", "push", "pull", "place", "take", "release", "open", "close", "turn", "tie", "untie", "board", "dismount", "climb", "pour", "hold", "observe", "remember"]);
 const comparisons = new Set(["eq", "lt", "lte", "gt", "gte"]);
@@ -14,6 +14,18 @@ function name(value: unknown): value is string { return typeof value === "string
 function exact(value: Record<string, unknown>, required: string[], optional: string[] = []): boolean {
   return required.every((key) => Object.hasOwn(value, key)) && Object.keys(value).every((key) => required.includes(key) || optional.includes(key));
 }
+export function parseEntityReference(value: unknown): EntityReference | null {
+  return record(value) && exact(value, ["entity", "property", "source"]) && name(value.entity) && name(value.property) && (value.source === "visible" || value.source === "remembered")
+    ? structuredClone(value) as unknown as EntityReference : null;
+}
+export function parsePhysicalAction(value: unknown): PhysicalAction | null {
+  if (!record(value) || value.kind !== "action" || !exact(value, ["kind", "actor", "verb", "target"], ["destination", "instrument", "amount", "references"]) || (value.actor !== "hero" && value.actor !== "keeper") || !verbs.has(String(value.verb)) || !name(value.target) || (value.destination !== undefined && !name(value.destination)) || (value.instrument !== undefined && !name(value.instrument)) || (value.amount !== undefined && (typeof value.amount !== "number" || !Number.isFinite(value.amount) || value.amount <= 0))) return null;
+  if (value.references !== undefined) {
+    if (!record(value.references) || Object.keys(value.references).length === 0 || !exact(value.references, [], ["target", "destination", "instrument"])) return null;
+    for (const [role, reference] of Object.entries(value.references)) if (!name(value[role]) || parseEntityReference(reference) === null) return null;
+  }
+  return structuredClone(value) as unknown as PhysicalAction;
+}
 /** JSON boundary validation is independent of whether the intended action is physically safe. */
 export function parseProgram(value: unknown): InstructionProgram | null {
   // The generous structural budget is a transport safety boundary, not a per-stage action limit.
@@ -26,7 +38,7 @@ export function parseProgram(value: unknown): InstructionProgram | null {
   }
   function node(input: unknown, depth: number): boolean {
     if (--remaining < 0 || depth > 64 || !record(input)) return false;
-    if (input.kind === "action") return exact(input, ["kind", "actor", "verb", "target"], ["destination", "instrument", "amount"]) && (input.actor === "hero" || input.actor === "keeper") && verbs.has(String(input.verb)) && name(input.target) && (input.destination === undefined || name(input.destination)) && (input.instrument === undefined || name(input.instrument)) && (input.amount === undefined || (typeof input.amount === "number" && Number.isFinite(input.amount) && input.amount > 0));
+    if (input.kind === "action") return parsePhysicalAction(input) !== null;
     if (input.kind === "sequence" || input.kind === "parallel") return exact(input, ["kind", "children"]) && Array.isArray(input.children) && input.children.length > 0 && input.children.every((item) => node(item, depth + 1));
     if (input.kind === "wait") return exact(input, ["kind", "until"]) && predicate(input.until, depth + 1);
     if (input.kind === "until") return exact(input, ["kind", "condition", "body"]) && predicate(input.condition, depth + 1) && record(input.body) && input.body.kind === "action" && node(input.body, depth + 1);

@@ -4,7 +4,7 @@ import { ApiError } from "./errors.js";
 import { enforceRateLimit } from "./rate-limit.js";
 import { parseWorldState } from "../src/campaign/run-validation.js";
 import { resolveStage } from "../src/campaign/registry.js";
-import type { CampaignStageDefinition } from "../src/campaign/level.js";
+import { allStageSegments, type CampaignStageDefinition } from "../src/campaign/level.js";
 import type { Actor, Entity, WorldState } from "../src/campaign/types.js";
 import type { StageId } from "../src/campaign/types.js";
 
@@ -25,7 +25,7 @@ export function campaignContext(body: unknown, stageResolver: CampaignStageResol
   const world = parseWorldState(request.world);
   const stage = stageResolver(request.stageId);
   if (!world || !stage || world.stageId !== request.stageId || world.attempt !== request.attempt) throw new ApiError(400, "input", "현재 장의 세계 상태를 확인하지 못했어요.");
-  const segments = [...stage.segments, stage.practice];
+  const segments = [...allStageSegments(stage), stage.practice];
   if (!segments.some((segment) => segment.id === world.segmentId)) throw new ApiError(400, "input", "현재 장에 없는 구간이에요.");
   const catalog = new Map<string, Entity>();
   const actorCatalog = new Map<string, Actor>();
@@ -43,6 +43,8 @@ export function campaignContext(body: unknown, stageResolver: CampaignStageResol
     entity.material = known.material;
     entity.movable = known.movable;
     entity.reach = known.reach;
+    if (known.propertyOptions) entity.propertyOptions = structuredClone(known.propertyOptions);
+    else delete entity.propertyOptions;
     if (known.properties.kind === "room-gravity-marker" && known.properties.fixedGravity === true) {
       entity.properties.gravity = known.properties.gravity;
       entity.properties.fixedGravity = true;

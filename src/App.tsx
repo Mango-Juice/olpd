@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { isInterpretation } from "./game/interpretation";
 import { PrologueGuide } from "./components/PrologueGuide";
 import { DungeonCanvas } from "./components/DungeonCanvas";
+import { LegacyOnboarding } from "./components/LegacyOnboarding";
 import Modal from "./components/Modal";
 import {
   PlayComposer,
@@ -48,6 +49,15 @@ import {
   writeSave,
   type StorageResult,
 } from "./game/storage";
+import {
+  ONBOARDING_STAGES,
+  attachOnboardingHandoff,
+  createOnboardingProgress,
+  loadOnboardingProgress,
+  progressBelongsToRun,
+  writeOnboardingProgress,
+  type OnboardingProgress,
+} from "./game/onboarding";
 import { playSound, setAudioMuted, unlockAudio } from "./game/audio";
 import { MEMORY_DUNGEON_STAGE_ID, setMusicPlayback } from "./game/music";
 import type {
@@ -104,9 +114,45 @@ function legacyHints(room: Room, observation: Observation): readonly string[] {
   ];
 }
 
+async function interpretOnboardingLine(
+  text: string,
+  signal: AbortSignal,
+): Promise<Interpretation> {
+  const response = await fetch("/api/interpret", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text,
+      dungeonVersion: DUNGEON_VERSION,
+      rulesVersion: RULES_VERSION,
+    }),
+    signal,
+  });
+  if (response.status === 429) {
+    throw new Error("요청이 잠시 몰렸어요. 1분 뒤 다시 시도해 주세요.");
+  }
+  const data = await response.json().catch(() => {
+    throw new Error("해석 서버의 응답을 읽지 못했어요. 잠시 후 다시 시도해 주세요.");
+  });
+  if (!response.ok) {
+    throw new Error(
+      data?.error?.message ?? data?.message ?? "뜻을 확인하지 못했어요.",
+    );
+  }
+  const value: unknown = data?.interpretation ?? data;
+  if (!isInterpretation(value)) {
+    throw new Error("해석 응답이 올바르지 않아요. 다시 시도해 주세요.");
+  }
+  return value;
+}
+
 export interface LegacyStorageBridge {
   initial: SaveData | null;
   save: (data: SaveData) => Promise<StorageResult<void>>;
+  loadOnboarding?: () => OnboardingProgress | null;
+  saveOnboarding?: (
+    progress: OnboardingProgress,
+  ) => Promise<StorageResult<void>>;
   onRoadmap: () => void;
   onClearedPresentation: () => void;
   onArchive: () => void;
@@ -124,6 +170,26 @@ export default function App({ bridge }: AppProps = {}) {
     () => boot.data?.state ?? newRun(true),
   );
   const stateRef = useRef(state);
+  const [onboardingProgress, setOnboardingProgress] =
+    useState<OnboardingProgress | null>(() => {
+      let stored: OnboardingProgress | null = null;
+      try {
+        stored = bridge?.loadOnboarding
+          ? bridge.loadOnboarding()
+          : loadOnboardingProgress();
+      } catch {
+        stored = null;
+      }
+      if (!boot.data) return createOnboardingProgress(state.id);
+      return progressBelongsToRun(stored, state.id) ? stored : null;
+    });
+  const onboardingActive =
+    state.tutorial && onboardingProgress?.ownerRunId === state.id;
+  const [onboardingReady, setOnboardingReady] = useState(
+    () => !onboardingActive || boot.data !== null,
+  );
+  const [onboardingInitAttempt, setOnboardingInitAttempt] = useState(0);
+  const initializingOnboarding = useRef(false);
   const [started, setStarted] = useState(false);
   const [settings, setSettings] = useState<Settings>(
     boot.data?.settings ?? initialSettings,
@@ -234,9 +300,28 @@ export default function App({ bridge }: AppProps = {}) {
     if (showChronicle) return;
     setMusicPlayback({
       stageId: MEMORY_DUNGEON_STAGE_ID,
-      playing: started && animating && !paused && !hidden && !conflict,
+      playing:
+        (started || onboardingActive) &&
+        state.phase !== "cleared" &&
+        !paused &&
+        !hidden &&
+        !conflict,
+      intensity: onboardingActive
+        ? "intro"
+        : state.room >= ROOMS.length - 1
+          ? "climax"
+          : "main",
     });
-  }, [started, animating, paused, hidden, conflict, showChronicle]);
+  }, [
+    started,
+    onboardingActive,
+    state.phase,
+    state.room,
+    paused,
+    hidden,
+    conflict,
+    showChronicle,
+  ]);
   useEffect(
     () => () =>
       setMusicPlayback({ stageId: MEMORY_DUNGEON_STAGE_ID, playing: false }),
@@ -352,6 +437,66 @@ export default function App({ bridge }: AppProps = {}) {
     },
     [persist],
   );
+  const persistOnboarding = useCallback(
+    async (next: OnboardingProgress) => {
+      let saved: StorageResult<void>;
+      try {
+        saved = bridge?.saveOnboarding
+          ? await bridge.saveOnboarding(next)
+          : writeOnboardingProgress(next);
+      } catch (cause) {
+        saved = {
+          ok: false,
+          error: {
+            code: "write",
+            message: "도입 기록을 저장하지 못했어요.",
+            cause,
+          },
+        };
+      }
+      if (!saved.ok) {
+        setStorageError(
+          "정식 도입 기록을 저장하지 못했어요. 현재 장면에서 다시 시도해 주세요.",
+        );
+        return false;
+      }
+      setOnboardingProgress(next);
+      setStorageError("");
+      return true;
+    },
+    [bridge],
+  );
+  useEffect(() => {
+    if (
+      !onboardingActive ||
+      onboardingReady ||
+      boot.data ||
+      !onboardingProgress ||
+      initializingOnboarding.current
+    ) {
+      return;
+    }
+    initializingOnboarding.current = true;
+    void (async () => {
+      try {
+        // The separate onboarding owner record must exist before the fresh
+        // legacy save, otherwise a reload could mistake it for an old save.
+        if (!(await persistOnboarding(onboardingProgress))) return;
+        if (!(await persist(stateRef.current))) return;
+        setOnboardingReady(true);
+      } finally {
+        initializingOnboarding.current = false;
+      }
+    })();
+  }, [
+    boot.data,
+    onboardingActive,
+    onboardingInitAttempt,
+    onboardingProgress,
+    onboardingReady,
+    persist,
+    persistOnboarding,
+  ]);
   const archiveCleared = useCallback(async (completed: RunState) => {
     if (
       completed.phase !== "cleared" ||
@@ -696,13 +841,18 @@ export default function App({ bridge }: AppProps = {}) {
     try {
       const next = newRun(true);
       next.revision = stateRef.current.revision + 1;
-      if (await commit(next)) {
+      const freshOnboarding = createOnboardingProgress(next.id);
+      if (
+        (await persistOnboarding(freshOnboarding)) &&
+        (await commit(next))
+      ) {
         cancelDraft();
         setDraft("");
         draftRef.current = "";
         setAnimating(false);
         setPaused(false);
         setNotice("");
+        setOnboardingReady(true);
         setStarted(true);
         setPopup(null);
       }
@@ -725,6 +875,38 @@ export default function App({ bridge }: AppProps = {}) {
       completedRef.current = previous;
       setStorageError(
         cause instanceof Error ? cause.message : "본편으로 이동하지 못했어요.",
+      );
+    } finally {
+      busy.current = false;
+    }
+  };
+  const completeFormalOnboarding = async (
+    completed: OnboardingProgress,
+  ) => {
+    if (busy.current || conflictRef.current) return;
+    busy.current = true;
+    const previous = completedRef.current;
+    try {
+      const next = skipTutorial(stateRef.current);
+      const handedOff = attachOnboardingHandoff(completed, next.id);
+      if (!(await persistOnboarding(handedOff))) return;
+      completedRef.current = true;
+      if (await commit(next)) {
+        setTutorialCompleted(true);
+        setStarted(true);
+        setPaused(false);
+        setNotice(
+          "네 번의 첫걸음을 마쳤어요. 빈 메모장과 지우개 두 개로 1-5를 시작해요.",
+        );
+      } else {
+        completedRef.current = previous;
+      }
+    } catch (cause) {
+      completedRef.current = previous;
+      setStorageError(
+        cause instanceof Error
+          ? cause.message
+          : "본편으로 이동하지 못했어요. 다시 시도해 주세요.",
       );
     } finally {
       busy.current = false;
@@ -942,6 +1124,116 @@ export default function App({ bridge }: AppProps = {}) {
       );
     }
   };
+  if (onboardingActive && onboardingProgress) {
+    return (
+      <div
+        className={`shell ${keyboard ? "keyboard-open" : ""}`}
+        onPointerDown={() => unlockAudio()}
+      >
+        <PlayHeader
+          actions={
+            <>
+              {bridge && (
+                <button className="subtle" onClick={bridge.onRoadmap}>
+                  여정 지도
+                </button>
+              )}
+              <PlayUtilityActions
+                muted={settings.muted}
+                onHelp={() => setPopup("help")}
+                onToggleSound={() => {
+                  if (!onboardingReady || conflict) return;
+                  unlockAudio();
+                  void changeSettings({
+                    ...settings,
+                    muted: !settings.muted,
+                  });
+                }}
+                onSettings={() => setPopup("settings")}
+              />
+            </>
+          }
+        />
+        <PlayIntro
+          description="이야기를 지나, 네 가지 첫걸음을 몸으로 익혀요."
+          aside={
+            <>
+              기억의 던전 · 정식 도입
+              <small>CHAPTER 1 · STAGE 1–4</small>
+            </>
+          }
+        />
+        {conflict && (
+          <div className="banner" role="alert">
+            다른 창에서 기록이 바뀌었어요. 최신 기록을 불러온 뒤 이어가 주세요.
+          </div>
+        )}
+        {storageError && (
+          <div className="banner" role="alert">{storageError}</div>
+        )}
+        <LegacyOnboarding
+          progress={onboardingProgress}
+          settings={settings}
+          conflict={conflict}
+          ready={onboardingReady}
+          interpret={interpretOnboardingLine}
+          onProgressChange={persistOnboarding}
+          onComplete={completeFormalOnboarding}
+          onRetryInitialization={() =>
+            setOnboardingInitAttempt((attempt) => attempt + 1)
+          }
+        />
+        {popup === "help" && (
+          <Modal title="네 번의 첫걸음" onClose={() => setPopup(null)}>
+            <p>
+              각 장면에서 보이는 목표와 상황을 한 줄로 적으면, 용사가 이해한
+              행동과 조건을 먼저 보여 줍니다.
+            </p>
+            <ul>
+              <li>뜻을 확인한 뒤 움직이기를 눌러 실제 장면에서 실행해요.</li>
+              <li>실패해도 데스나 지우개를 쓰지 않고 같은 자리로 돌아와요.</li>
+              <li>임시 한 줄은 연습 기록에만 남고 본편 메모로 복사되지 않아요.</li>
+            </ul>
+            <button className="primary wide" onClick={() => setPopup(null)}>
+              알겠어요
+            </button>
+          </Modal>
+        )}
+        {popup === "settings" && (
+          <Modal title="작은 모험의 설정" onClose={() => setPopup(null)}>
+            <label>
+              <input
+                type="checkbox"
+                checked={settings.muted}
+                disabled={!onboardingReady || conflict}
+                onChange={(event) =>
+                  void changeSettings({
+                    ...settings,
+                    muted: event.target.checked,
+                  })
+                }
+              />
+              배경음악·효과음 끄기
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={settings.reducedMotion}
+                disabled={!onboardingReady || conflict}
+                onChange={(event) =>
+                  void changeSettings({
+                    ...settings,
+                    reducedMotion: event.target.checked,
+                  })
+                }
+              />
+              움직임과 장식 효과 줄이기
+            </label>
+          </Modal>
+        )}
+      </div>
+    );
+  }
   return (
     <div
       className={`shell ${keyboard ? "keyboard-open" : ""}`}
@@ -1011,7 +1303,7 @@ export default function App({ bridge }: AppProps = {}) {
                 <span className="room-tag">
                   {state.tutorial
                     ? "PROLOGUE · 시작의 방"
-                    : `첫 번째 여정 · DOOR ${String(Math.min(displayedRoom + 1, 8)).padStart(2, "0")}`}
+                    : `첫 번째 여정 · STAGE 1-${Math.min(displayedRoom + 5, 12)}`}
                 </span>
                 <h2>{room.name}</h2>
               </div>
@@ -1028,7 +1320,7 @@ export default function App({ bridge }: AppProps = {}) {
                 </button>
               ) : (
                 <span className="chapter-number">
-                  {Math.min(displayedRoom + 1, 8)} / 8
+                  {Math.min(displayedRoom + 5, 12)} / 12
                 </span>
               )}
             </div>
@@ -1216,14 +1508,25 @@ export default function App({ bridge }: AppProps = {}) {
           ) : (
             <PlayStageProgress
               chapter={1}
-              stages={ROOMS.map((chapterRoom, index) => ({
-                id: `chapter-1-stage-${index + 1}`,
-                title: chapterRoom.name,
-              }))}
-              currentId={`chapter-1-stage-${Math.min(displayedRoom + 1, ROOMS.length)}`}
-              completedIds={ROOMS.slice(0, displayedRoom).map(
-                (_, index) => `chapter-1-stage-${index + 1}`,
-              )}
+              stages={[
+                ...ONBOARDING_STAGES.map((stage) => ({
+                  id: `intro:${stage.id}`,
+                  title: stage.title,
+                })),
+                ...ROOMS.map((chapterRoom, index) => ({
+                  id: `main:${index}`,
+                  title: chapterRoom.name,
+                })),
+              ]}
+              currentId={`main:${Math.min(displayedRoom, ROOMS.length - 1)}`}
+              completedIds={[
+                ...(onboardingProgress?.completedStageIds.map(
+                  (id) => `intro:${id}`,
+                ) ?? []),
+                ...ROOMS.slice(0, displayedRoom).map(
+                  (_, index) => `main:${index}`,
+                ),
+              ]}
             />
           )}
           {canCompose && (
@@ -1685,6 +1988,43 @@ export default function App({ bridge }: AppProps = {}) {
             <p className="paper-note">
               지우개를 다 쓰면, 한 줄을 지울 때 +{CONFIG.deletionPenalty}데스.
             </p>
+            {onboardingProgress?.attempts.length ? (
+              <details className="onboarding-history">
+                <summary>
+                  정식 도입 연습 기록 · {onboardingProgress.attempts.length}번
+                </summary>
+                <p>
+                  아래 문장은 학습 기록이며, 본편에서 따르는 활성 메모와는
+                  별개예요.
+                </p>
+                <ol>
+                  {onboardingProgress.attempts.map((attempt) => (
+                    <li key={attempt.sequence}>
+                      <small>
+                        1-
+                        {ONBOARDING_STAGES.findIndex(
+                          (stage) => stage.id === attempt.stageId,
+                        ) + 1}
+                      </small>{" "}
+                      “{attempt.text}”
+                      <span>
+                        {attempt.applied
+                          ? `${ACTION_LABELS[attempt.action]} · ${attempt.succeeded ? "목표 도달" : "무료 복구"}`
+                          : "조건 불일치 · 실행 안 됨"}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            ) : boot.data && !state.tutorial ? (
+              <details className="onboarding-history">
+                <summary>이전 진행 이어가기 · 정식 도입 면제</summary>
+                <p>
+                  기존 본편 기록을 그대로 이어가며, 플레이하지 않은 도입 완료
+                  연혁은 만들지 않았어요.
+                </p>
+              </details>
+            ) : null}
         </PlayNotebook>
       </PlayLayout>
       <footer className="footer">

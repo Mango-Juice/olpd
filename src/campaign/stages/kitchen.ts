@@ -23,7 +23,9 @@ function entity(
 
 function world(segmentId: string, entities: Entity[], heroX = 0): WorldState {
   const initial = makeWorld(STAGE_ID, segmentId, entities, makeHero(segmentId, heroX));
-  initial.actors.hero.carrying = entities.filter((item) => item.parent === "hero").map((item) => item.id);
+  initial.actors.hero.carrying = Object.values(initial.entities)
+    .filter((item) => item.parent === "hero")
+    .map((item) => item.id);
   return initial;
 }
 
@@ -339,6 +341,11 @@ const risingDough: SegmentDefinition = {
       ])],
     };
   },
+  idleAction: (state) => property(state, "03-3-dough", "size") === 2
+    && property(state, "03-3-dough", "firmness") === "hard"
+    && state.actors.hero.location.x !== state.entities["03-3-exit-ledge"].location.x
+    ? { kind: "action", actor: "hero", verb: "move", target: "03-3-exit-ledge" }
+    : null,
   complete: (state) => state.actors.hero.location.x === 3 && property(state, "03-3-dough", "size") === 2 && property(state, "03-3-dough", "firmness") === "hard",
 };
 

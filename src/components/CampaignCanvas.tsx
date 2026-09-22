@@ -12,6 +12,7 @@ import "./CampaignCanvas.css";
 export interface CampaignCanvasProps {
   world: WorldState;
   title: string;
+  displayNumber?: number;
   reducedMotion: boolean;
   paused: boolean;
   selectedEntityId?: EntityId;
@@ -24,7 +25,7 @@ const allVisibleEntities = (world: WorldState) => {
     if (seen.has(id)) return [];
     seen.add(id);
     const entity = world.entities[id];
-    return entity ? [entity] : [];
+    return entity && entity.properties.equipment !== true ? [entity] : [];
   });
 };
 
@@ -114,6 +115,7 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
       layoutRef.current = renderCampaignScene(context, {
         world: current.world,
         title: current.title,
+        displayNumber: current.displayNumber,
         time: sceneTimeRef.current,
         reducedMotion: current.reducedMotion,
         selectedEntityId: current.selectedEntityId,
@@ -204,6 +206,7 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
               </li>
             ))}
           </ol>
+          {props.world.entities.letter ? <p>배달할 편지는 몸의 주머니에 있어요. 손과 물건 고리를 쓰지 않아요.</p> : null}
         </details>
         {previousEntities.length ? (
           <details className="campaign-object-picker campaign-previous-objects">

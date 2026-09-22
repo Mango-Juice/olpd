@@ -44,13 +44,73 @@ describe("DeepSeek campaign boundary", () => {
     expect(JSON.stringify(trace)).not.toContain("INTERNAL_SENTINEL");
     expect(JSON.stringify(trace)).not.toContain("UNKNOWN_SENTINEL");
     const request = trace[0] as { data: { messages: { content: string }[] } };
-    expect(JSON.parse(request.data.messages[1].content).world.facts).toEqual([]);
+    expect(JSON.parse(request.data.messages[1].content).world.facts).toBeUndefined();
     expect(world).toEqual(before);
   });
   it("leaves a dangerous but explicit pour quantity intact", async () => {
     const body = { kind: "action", actor: "hero", verb: "pour", target: "reach-basin", destination: "reach-barrel", amount: 3 };
     const result = await interpretCampaignWithDeepSeek("물 세 칸을 통에 부어", RAIN_REACH.enter(null), { fetchImpl: fake(envelope(body)) });
     expect(result.program.body).toEqual(body);
+  });
+  it("accepts an observed relation reference without choosing its value at compile time", async () => {
+    const world = RAIN_INTRO.enter(null);
+    world.entities["rain-cork"].properties.connectedTo = "rain-platform";
+    const body = { kind: "sequence", children: [
+      { kind: "action", actor: "hero", verb: "observe", target: "rain-cork" },
+      { kind: "action", actor: "hero", verb: "move", target: "rain-cork", references: { target: { entity: "rain-cork", property: "connectedTo", source: "remembered" } } },
+    ] };
+    const result = await interpretCampaignWithDeepSeek("상자를 보고 연결된 곳으로 가", world, { fetchImpl: fake(envelope(body)) });
+    expect(result.program.body).toEqual(body);
+  });
+  it("accepts a current-attempt remembered relation and a fixed one-stroke pull", async () => {
+    const world = RAIN_INTRO.enter(null);
+    world.entities["rain-cork"].properties.connectedTo = "rain-platform";
+    world.entities["rain-platform"].properties.actuator = true;
+    world.visible = world.visible.filter((id) => id !== "rain-cork");
+    world.facts.push({ entity: "rain-cork", property: "connectedTo", value: "rain-platform", attempt: world.attempt, tick: world.tick });
+    const body = { kind: "action", actor: "hero", verb: "pull", target: "rain-cork", references: { target: { entity: "rain-cork", property: "connectedTo", source: "remembered" } } };
+    const result = await interpretCampaignWithDeepSeek("기억한 연결의 손잡이를 한 번 당겨", world, { fetchImpl: fake(envelope(body)) });
+    expect(result.program.body).toEqual(body);
+  });
+  it("treats a validated reference as authoritative over its literal transport placeholder", async () => {
+    const world = RAIN_INTRO.enter(null);
+    world.entities["rain-cork"].properties.connectedTo = "rain-platform";
+    const resolved = { kind: "action", actor: "hero", verb: "move", target: "not-a-real-compiled-answer", references: { target: { entity: "rain-cork", property: "connectedTo", source: "visible" } } };
+    const result = await interpretCampaignWithDeepSeek("상자에 연결된 곳으로 가", world, { fetchImpl: fake(envelope(resolved)) });
+    expect(result.program.body).toEqual({ ...resolved, target: "rain-cork" });
+  });
+  it.each([
+    ["unobserved memory", { kind: "action", actor: "hero", verb: "move", target: "rain-cork", references: { target: { entity: "rain-cork", property: "connectedTo", source: "remembered" } } }],
+    ["hidden relation", { kind: "action", actor: "hero", verb: "move", target: "rain-cork", references: { target: { entity: "rain-cork", property: "kind", source: "visible" } } }],
+    ["fixed pull destination", { kind: "action", actor: "hero", verb: "pull", target: "rain-cork", destination: "rain-platform" }],
+    ["fixed push destination", { kind: "action", actor: "hero", verb: "push", target: "rain-cork", destination: "rain-platform" }],
+  ])("rejects invalid reference provenance or fixed pull shape: %s", async (_name, body) => {
+    const world = RAIN_INTRO.enter(null);
+    world.entities["rain-cork"].properties.connectedTo = "rain-platform";
+    world.entities["rain-cork"].properties.actuator = true;
+    const fetchImpl = fake(envelope(body));
+    await expect(interpretCampaignWithDeepSeek("관계를 따라가", world, { fetchImpl })).rejects.toMatchObject({ code: "uncertain" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+  it("does not treat a parallel sibling observation as prior evidence", async () => {
+    const world = RAIN_INTRO.enter(null);
+    world.entities["rain-cork"].properties.connectedTo = "rain-platform";
+    const body = { kind: "parallel", children: [
+      { kind: "action", actor: "hero", verb: "observe", target: "rain-cork" },
+      { kind: "action", actor: "hero", verb: "move", target: "rain-cork", references: { target: { entity: "rain-cork", property: "connectedTo", source: "remembered" } } },
+    ] };
+    await expect(interpretCampaignWithDeepSeek("보는 동안 연결된 곳으로 가", world, { fetchImpl: fake(envelope(body)) })).rejects.toMatchObject({ code: "uncertain" });
+  });
+  it("distinguishes an ongoing hold-until from a one-shot release after an event", async () => {
+    const world = RAIN_INTRO.enter(null);
+    const condition = { kind: "property", entity: "rain-cork", property: "afloat", comparison: "eq", value: true, source: "visible" };
+    const release = { kind: "action", actor: "hero", verb: "release", target: "rain-cork" };
+    const invalid = { kind: "until", condition, body: release };
+    await expect(interpretCampaignWithDeepSeek("상자가 뜨면 놓아", world, { fetchImpl: fake(envelope(invalid)) })).rejects.toMatchObject({ code: "uncertain" });
+    const afterEvent = { kind: "sequence", children: [{ kind: "wait", until: condition }, release] };
+    await expect(interpretCampaignWithDeepSeek("상자가 뜨면 놓아", world, { fetchImpl: fake(envelope(afterEvent)) })).resolves.toMatchObject({ program: { body: afterEvent } });
+    const maintained = { kind: "until", condition, body: { ...release, verb: "hold" } };
+    await expect(interpretCampaignWithDeepSeek("상자가 뜰 때까지 잡아", world, { fetchImpl: fake(envelope(maintained)) })).resolves.toMatchObject({ program: { body: maintained } });
   });
   it.each([
     ["unknown entity", { ...action, target: "invented" }],
@@ -136,4 +196,14 @@ describe("DeepSeek campaign boundary", () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
+});
+
+it("supplies public future state vocabulary and rejects invented condition tokens", async () => {
+  const world = RAIN_INTRO.enter(null);
+  world.entities["rain-cork"].properties.phase = "extended";
+  world.entities["rain-cork"].propertyOptions = { phase: ["extended", "retracted"] };
+  const wait = { kind: "wait", until: { kind: "property", entity: "rain-cork", property: "phase", comparison: "eq", value: "retracted", source: "visible" } };
+  const result = await interpretCampaignWithDeepSeek("몸 안으로 거둘 때까지 기다려", world, { fetchImpl: fake(envelope(wait)) });
+  expect(result.program.body).toEqual(wait);
+  await expect(interpretCampaignWithDeepSeek("기다려", world, { fetchImpl: fake(envelope({ ...wait, until: { ...wait.until, value: "made-up-phase" } })) })).rejects.toMatchObject({ code: "uncertain" });
 });

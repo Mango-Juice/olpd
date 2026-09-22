@@ -19,10 +19,17 @@ function segment(id: string): SegmentDefinition {
 }
 
 function execute(definition: SegmentDefinition, state: WorldState, physicalAction: PhysicalAction): WorldState {
-  const result = definition.execute?.(state, physicalAction);
-  if (!result) throw new Error(`${definition.id} has no executor`);
-  expect(result.outcome, result.reason).toBe("done");
-  return result.world;
+  let current = state;
+  for (let boundary = 0; boundary < 20; boundary += 1) {
+    const result = definition.execute?.(current, physicalAction);
+    if (!result) throw new Error(`${definition.id} has no executor`);
+    if (result.outcome === "done") return result.world;
+    expect(result.outcome, result.reason).toBe("progress");
+    expect(definition.id).toBe("04-4");
+    expect(["move", "jump", "duck"]).toContain(physicalAction.verb);
+    current = advance(definition, result.world);
+  }
+  throw new Error(`${definition.id} did not finish ${physicalAction.verb}:${physicalAction.target}`);
 }
 
 function advance(definition: SegmentDefinition, state: WorldState, count = 1): WorldState {
@@ -206,7 +213,16 @@ describe("continuous wind-forge StageRun", () => {
 
     const fourth = segment("04-4");
     for (const target of ["04-4-pin", "04-4-bridge-end", "04-4-net", "04-4-exit"]) {
-      expect(fourth.execute?.(fourth.enter(null), action("move", target))?.outcome).toBe("failure");
+      let state = fourth.enter(null);
+      let outcome = "progress";
+      for (let boundary = 0; boundary < 10 && outcome === "progress"; boundary += 1) {
+        const result = fourth.execute?.(state, action("move", target));
+        if (!result) throw new Error("04-4 has no executor");
+        outcome = result.outcome;
+        state = outcome === "progress" ? fourth.advance(result.world).world : result.world;
+      }
+      expect(outcome).toBe("failure");
+      expect(state.actors.hero.location.x).toBe(5);
     }
 
     const fifth = segment("04-5");
@@ -357,6 +373,29 @@ describe("04-3 thermal contraction", () => {
 });
 
 describe("04-4 persistent pressure and bridge", () => {
+  it("persists the pressure room, routing room, bridge approach, and bridge edge instead of teleporting", () => {
+    const definition = segment("04-4");
+    let state = definition.enter(null);
+    const toApproach = action("move", "04-4-approach");
+    const routingBoundary = definition.execute?.(state, toApproach);
+    expect(routingBoundary?.outcome).toBe("progress");
+    expect(routingBoundary?.world.actors.hero.location.x).toBe(3);
+    expect(JSON.parse(JSON.stringify(routingBoundary?.world))).toEqual(routingBoundary?.world);
+    state = definition.advance(routingBoundary!.world).world;
+    const approachBoundary = definition.execute?.(state, toApproach);
+    expect(approachBoundary?.outcome).toBe("done");
+    expect(approachBoundary?.world.actors.hero.location.x).toBe(5);
+
+    state = act(definition, definition.enter(null), action("turn", "04-4-pressure", { amount: 1 }));
+    state = execute(definition, state, toApproach);
+    state = act(definition, state, action("open", "04-4-vent"));
+    const ontoBridge = definition.execute?.(state, action("move", "04-4-exit"));
+    expect(ontoBridge?.outcome).toBe("progress");
+    expect(ontoBridge?.world.actors.hero.location.x).toBe(7);
+    const restored = JSON.parse(JSON.stringify(ontoBridge!.world)) as WorldState;
+    expect(definition.execute?.(restored, action("move", "04-4-exit"))?.outcome).toBe("done");
+  });
+
   it("releases the pin at sufficient pressure, then lowers the cause with the local vent", () => {
     const definition = segment("04-4");
     let state = act(definition, definition.enter(null), action("turn", "04-4-pressure", { amount: 1 }));
@@ -401,9 +440,15 @@ describe("04-4 persistent pressure and bridge", () => {
   it("cannot teleport past an unextended or unstable bridge and resumes deterministically", () => {
     const definition = segment("04-4");
     const initial = definition.enter(null);
-    expect(definition.execute?.(initial, action("move", "04-4-exit"))?.outcome).toBe("failure");
+    let approach = definition.execute?.(initial, action("move", "04-4-exit"));
+    expect(approach?.outcome).toBe("progress");
+    approach = definition.execute?.(definition.advance(approach!.world).world, action("move", "04-4-exit"));
+    expect(approach?.outcome).toBe("progress");
+    expect(definition.execute?.(definition.advance(approach!.world).world, action("move", "04-4-exit"))?.outcome).toBe("failure");
     const windy = act(definition, initial, action("turn", "04-4-pressure", { amount: 2 }));
-    expect(definition.execute?.(windy, action("move", "04-4-exit"))?.outcome).toBe("failure");
+    let windyApproach = definition.execute?.(windy, action("move", "04-4-exit"));
+    windyApproach = definition.execute?.(definition.advance(windyApproach!.world).world, action("move", "04-4-exit"));
+    expect(definition.execute?.(definition.advance(windyApproach!.world).world, action("move", "04-4-exit"))?.outcome).toBe("failure");
 
     const restored = JSON.parse(JSON.stringify(windy)) as WorldState;
     expect(definition.advance(restored)).toEqual(definition.advance(windy));

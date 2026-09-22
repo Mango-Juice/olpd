@@ -1,6 +1,8 @@
 # 죽을 때마다 한 줄 · One Line Per Death
 
-**플레이: https://olpd.vercel.app**
+**배포된 기존 버전: https://olpd.vercel.app**
+
+아래 10장·80스테이지 캠페인은 로컬 구현 상태다. 이번 작업에서는 배포하지 않았다. [구현·검증 기록](docs/campaign-implementation.md)을 참고한다.
 
 작은 용사에게 자연어 지침을 남기며 탈출하는 웹 게임. React + TypeScript + Vite + Canvas 2D, Node.js API를 사용한다. 프롤로그·1장은 TypeSafe Jev, 2장 이후 캠페인은 DeepSeek V4.1 Flash(`deepseek-flash`)로 지침을 해석한다.
 
@@ -15,21 +17,21 @@ cp .env.example .env.local
 npm run dev
 ```
 
-`http://localhost:5173`에서 프런트엔드와 API가 같은 주소로 열린다. 키는 서버에서만 읽는다. `VITE_` 접두어를 붙이지 않는다. 키가 없으면 입력 시 복구 가능한 오류를 표시한다. 모킹이나 키워드 기반 해석 대체 경로는 없다.
+`http://localhost:5173`에서 프런트엔드와 API가 같은 주소로 열린다. 키는 서버에서만 읽는다. `VITE_` 접두어를 붙이지 않는다. 키가 없으면 입력 시 복구 가능한 오류를 표시한다. 실제 플레이에 모킹이나 키워드 기반 해석 대체 경로는 없다.
 
 캠페인 해석은 기본 non-thinking(`CAMPAIGN_DEEPSEEK_THINKING=disabled`), 요청당 한 번 호출, 최대 8초다. `low`는 서버 설정으로 비교할 수 있으며 자동 fallback/재호출은 없다. 해석 미리보기에서 확인해야 메모를 쓰고, 취소·해석 오류에는 작성 기회를 쓰지 않는다.
 
 ## 플레이
 
-- 첫 지침만 해석을 함께 확인한다. 이후에는 Enter 한 번으로 해석·기억·출발까지 이어진다.
-- 사망하면 한 줄을 추가하거나 지침을 삭제한 뒤 던전 입구에서 다시 출발한다.
-- 현재 상황에 맞는 메모 중 화면 위쪽 한 줄을 실행한다. 출발 전에 손잡이를 드래그하거나 각 메모의 `···` 메뉴에서 ↑↓로 무료로 순서를 바꾸고 자동 저장한다. 삭제 버튼은 항상 보이며 사망 후 사용할 수 있다. 실제 따른 줄을 강조하며, 적용되는 메모가 없으면 전진한다.
-- 기존 메모와 적용 상황 전체가 같고 행동만 다른 새 메모는 저장 전에 거절한다. 일부 조건만 겹치거나 행동이 같은 경우는 허용하며, 거절해도 작성 기회는 유지된다.
-- 본편 8개 방. 점프·숙이기·샛길 우회를 조합해 마지막 연속 구간을 통과한다.
-- 지우개 2개를 먼저 사용한다. 이후 삭제 한 줄은 +3데스. 점수는 사망·자진 부활 + 삭제 패널티.
-- 장면 안 말풍선, 한 장면씩 보기, 실행 기록, 일시정지, 자동 탭 정지를 지원한다. 새 장면은 4.2초, 이미 본 행동은 1.4초다.
-- 애니메이션 재생 중에는 스테이지별 BGM이 흐른다. 소리·모션 감소 설정을 지원한다. 곡 등록은 [오디오 설계](docs/audio-design.md)를 참고한다.
-- 브라우저 자동 저장. 다른 탭에서 바뀌면 현재 탭을 멈춘다. 손상/비호환 기록은 자동 삭제하지 않는다.
+- 서사 프롤로그는 SKIP할 수 있다. 신규 플레이는 작은 도입 26개를 포함한 10장·80스테이지를 진행한다.
+- 도입은 한 장면에 임시 한 줄을 무료로 쓰고 고치며 배운다. 본편으로 넘어가면 원래 메모·지우개·복귀점 규칙을 적용한다.
+- 1장의 기존 8방은 화면 1-5~1-12로 유지한다. 다음 장은 앞 장을 완료해야 열린다.
+- 물건·주체·순서·조건을 자연어로 적고 실행 의도를 확인한다. 모델은 지침만 해석하고 물리와 성공은 코드가 결정한다.
+- 메모는 위쪽부터 우선한다. 기본 전진은 안전하게 열린 유일한 보행 경로에서만 수행하고, 상호작용이나 역할을 대신 결정하지 않는다.
+- 관찰한 연결은 현재 시도에서 다시 확인해야 한다. 10장에는 세 봉인 복귀점과 편지 엔딩이 있다.
+- 모든 장이 공용 화면과 원본 용사 아트를 쓰며, 장별 합성 BGM·음소거·모션 감소를 지원한다.
+- 진행·메모·학습 기록은 자동 저장한다. 기존 본편 저장은 도입 면제로 이어지고 다중 창 충돌은 멈춰 알린다.
+- 로컬 QA: **http://localhost:5173/?qa=1**. 장과 개별 스테이지를 바로 선택하며 일반 진행과 따로 저장한다.
 
 ## 로컬 추가 기능: 모험 연혁 (미배포)
 
@@ -44,7 +46,7 @@ npm run typecheck     # 타입 검사만 필요할 때
 npx playwright install chromium
 ```
 
-브라우저 검사는 별도 터미널에서 `npm run dev`를 실행한 상태에서 수행한다.
+브라우저 검사는 별도 터미널에서 `npm run dev`를 실행한 상태에서 수행한다. 새 캠페인의 기본 UI 검사는 `test:campaign:scenes`, `test:onboarding`, `test:onboarding:legacy`다. 아래 구형 `test:browser`·`test:errors`·`test:notebook`은 이전 프롤로그/localStorage 흐름의 보존된 검사이며 새 캠페인 인수 증거로 사용하지 않는다.
 
 | 명령 | 범위 | 실제 API / 선행 조건 |
 | --- | --- | --- |
@@ -52,13 +54,17 @@ npx playwright install chromium
 | `npm run test:drag` | 데스크톱·모바일 메모 순서 변경 | 합성 저장 fixture, API 키 불필요 |
 | `npm run test:priority` | 우선순위·동일 조건 충돌 거부 | 합성 저장·해석 응답, API 키 불필요 |
 | `npm run test:chronicle` | 연혁·장면 재생·완료 기록 보관 | 합성 저장 fixture, API 키 불필요 |
-| `npm run test:browser` | 튜토리얼부터 클리어까지 | 실제 Jev, 서버 키 필요·호출 비용 발생 |
+| `npm run test:browser` | 구 프롤로그 원형 검사 | 실제 Jev, 서버 키 필요·호출 비용 발생 |
 | `npm run test:errors` | 통신·저장 오류, IME, 늦은 응답 | 늦은 응답 검사에서 실제 Jev 호출 |
 | `npm run test:priority:live` | 우선순위·실제 해석 결과의 충돌 | 실제 Jev 호출 |
 | `npm run test:notebook` | 삭제 비용·공유·설정 | `test:browser`가 만든 같은 `CHECK_LABEL`의 저장 기록 필요 |
 | `npm run test:guards` | HTTP 입력 가드 | 실제 Jev 호출 |
 | `npm run eval:campaign -- --repeat=3` | 캠페인 의미·조건·협동·물리·지연 평가 | 실제 DeepSeek, `.env.local` 필요·호출 비용 발생 |
 | `npm run test:campaign:browser` | 미리보기·저장·2장 실행·무료 오류·취소 | 실행 중인 개발 서버와 실제 DeepSeek 필요·2회 호출 비용 발생 |
+| `pnpm exec tsx scripts/browser-all-stages.ts` | 후속 68장면·개별 QA·모바일 렌더링 | 실제 API 호출 없음 |
+| `pnpm exec tsx scripts/browser-onboarding-flow.ts` | 2장 무료 수정·재접속·본편 인계 | provider stub, 실제 물리·저장 |
+| `pnpm exec tsx scripts/browser-legacy-onboarding.ts` | 서사 SKIP·1장 도입4개·본편 인계 | provider stub, 실제 UI·저장 |
+| `pnpm exec tsx --env-file=.env.local scripts/evaluate-onboarding-live.ts` | 도입22개 실제 해석+물리 | DeepSeek 호출 비용 발생 |
 | `npm run eval:jev` | 고정 한국어 합성 문장·상황 평가 | 실제 Jev, `.env.local` 필요·호출 비용 발생 |
 
 `test:ui`, `test:drag`, `test:priority`, `test:chronicle`은 `scripts/browser-fixtures.ts`로 검사 데이터를 만들어 과거 `artifacts/` 파일 없이 실행한다. 합성 해석은 자동화 검사에만 사용하며 실제 플레이의 해석 경로에는 포함되지 않는다. 이 검사 성공은 Jev의 실제 해석 정확도 검증과 구분한다.

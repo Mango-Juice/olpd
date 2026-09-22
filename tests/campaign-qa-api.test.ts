@@ -68,11 +68,11 @@ async function withHandler(
 }
 
 describe("campaign dev QA boundary", () => {
-  it("keeps stage 7 outside the regular production resolver", () => {
-    expect(() => campaignContext(theatreRequest())).toThrow(expect.objectContaining({ status: 400, code: "input" }));
+  it("accepts implemented stage 7 through the regular production resolver", () => {
+    expect(campaignContext(theatreRequest()).world.stageId).toBe(7);
   });
 
-  it("accepts and canonicalizes stage 7 only through an injected resolver", () => {
+  it("canonicalizes stage 7 through an injected resolver", () => {
     const body = theatreRequest();
     const entity = Object.values(body.world.entities)[0];
     entity.name = "조작된 이름";
@@ -115,8 +115,8 @@ describe("campaign dev QA boundary", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(theatreRequest()),
       });
-      expect(response.status).toBe(400);
-      expect(interpret).not.toHaveBeenCalled();
+      expect(response.status).toBe(200);
+      expect(interpret).toHaveBeenCalledTimes(1);
     });
   });
 

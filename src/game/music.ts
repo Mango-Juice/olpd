@@ -3,7 +3,9 @@ import {
   getMusicTrack,
   loopDurationSeconds,
   MEMORY_DUNGEON_STAGE_ID,
+  musicNotes,
   noteTiming,
+  type MusicIntensity,
   type MusicTrack,
 } from "./music-config";
 
@@ -12,6 +14,8 @@ export { MEMORY_DUNGEON_STAGE_ID } from "./music-config";
 export interface MusicPlaybackState {
   stageId: string;
   playing: boolean;
+  /** Presentation-only arrangement. It never controls simulation timing. */
+  intensity?: MusicIntensity;
 }
 
 interface MusicRuntime {
@@ -19,6 +23,7 @@ interface MusicRuntime {
   gain: GainNode;
   sources: Set<OscillatorNode>;
   stageId: string;
+  intensity: MusicIntensity;
   nextLoopStart: number;
   timer: ReturnType<typeof setTimeout> | null;
 }
@@ -27,6 +32,7 @@ const SCHEDULE_AHEAD_SECONDS = 1.25;
 const desired: MusicPlaybackState = {
   stageId: MEMORY_DUNGEON_STAGE_ID,
   playing: false,
+  intensity: "main",
 };
 let audioGraph: { context: AudioContext; destination: AudioNode } | null = null;
 let runtime: MusicRuntime | null = null;
@@ -47,7 +53,7 @@ function scheduleNote(
   oscillator.type = note.waveform;
   oscillator.frequency.setValueAtTime(note.frequency, start);
   filter.type = "lowpass";
-  filter.frequency.value = note.waveform === "sine" ? 900 : 1800;
+  filter.frequency.value = note.waveform === "sawtooth" ? 700 : note.waveform === "sine" ? 900 : 1800;
   const attackEnd = start + Math.min(0.45, (end - start) * 0.35);
   const releaseStart = Math.max(attackEnd, end - 0.45);
   envelope.gain.setValueAtTime(0.0001, start);
@@ -70,7 +76,7 @@ function scheduleNote(
 }
 
 function scheduleLoop(current: MusicRuntime, track: MusicTrack) {
-  track.notes.forEach((note) =>
+  musicNotes(track, current.intensity).forEach((note) =>
     scheduleNote(current, track, note, current.nextLoopStart),
   );
   current.nextLoopStart += loopDurationSeconds(track);
@@ -133,6 +139,9 @@ function syncMusic() {
     runtime.stageId === desired.stageId &&
     runtime.context === graph.context
   ) {
+    // Keep the current phrase alive; the selected layer takes effect at its
+    // next loop boundary, so changing presentation never cues a restart.
+    runtime.intensity = desired.intensity ?? "main";
     return;
   }
 
@@ -147,6 +156,7 @@ function syncMusic() {
     gain,
     sources: new Set(),
     stageId: desired.stageId,
+    intensity: desired.intensity ?? "main",
     nextLoopStart: start,
     timer: null,
   };
@@ -175,6 +185,7 @@ function ensureListeners() {
 export function setMusicPlayback(next: MusicPlaybackState) {
   desired.stageId = next.stageId;
   desired.playing = next.playing;
+  desired.intensity = next.intensity ?? "main";
   ensureListeners();
   syncMusic();
 }

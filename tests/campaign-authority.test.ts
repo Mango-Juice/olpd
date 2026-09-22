@@ -99,3 +99,14 @@ it("validates saved execution positions against the corresponding instruction tr
   undonePrefix.execution.active!.cursor.children[0].status = "pending";
   expect(parseStageRun(undonePrefix)).toBeNull();
 });
+
+it("keeps legacy onboarding with its owning save and rejects cross-run learning records", async () => {
+  const { createOnboardingProgress } = await import("../src/game/onboarding");
+  const save = makeSave(newRun(true), { writer: "learning-test", settings: { muted: true, reducedMotion: true }, tutorialCompleted: false });
+  const onboarding = createOnboardingProgress(save.state.id);
+  const parsed = authority.parse({ kind: "legacy", save, onboarding });
+  expect(parsed?.kind).toBe("legacy");
+  if (parsed?.kind === "legacy") expect(parsed.onboarding).toEqual(onboarding);
+  expect(authority.parse({ kind: "legacy", save, onboarding: { ...onboarding, ownerRunId: "another-run" } })).toBeNull();
+  expect(authority.parse({ kind: "legacy", save })).not.toBeNull();
+});

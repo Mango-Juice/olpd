@@ -17,6 +17,8 @@ export interface Entity {
   /** A carried/loaded object has exactly one parent; never duplicated in inventory. */
   parent: EntityId | null;
   properties: Record<string, Scalar>;
+  /** Public device vocabulary, never hidden connection answers or future state. */
+  propertyOptions?: Record<string, readonly Scalar[]>;
 }
 export interface Actor {
   id: "hero" | "keeper";
@@ -50,6 +52,13 @@ export interface WorldState {
   facts: Fact[];
 }
 export type Verb = "move" | "jump" | "duck" | "push" | "pull" | "place" | "take" | "release" | "open" | "close" | "turn" | "tie" | "untie" | "board" | "dismount" | "climb" | "pour" | "hold" | "observe" | "remember";
+/** A public relation whose value is one entity ID, resolved when the action starts. */
+export interface EntityReference {
+  entity: EntityId;
+  property: string;
+  source: "visible" | "remembered";
+}
+export type ActionReferenceRole = "target" | "destination" | "instrument";
 export interface PhysicalAction {
   kind: "action";
   actor: "hero" | "keeper";
@@ -59,6 +68,8 @@ export interface PhysicalAction {
   /** Rope, tongs, or another explicitly named tool; never inferred as a puzzle solution. */
   instrument?: EntityId;
   amount?: number;
+  /** Literal IDs describe the intent; referenced roles must resolve again on every attempt. */
+  references?: Partial<Record<ActionReferenceRole, EntityReference>>;
 }
 export type ProgramNode = PhysicalAction
   | { kind: "sequence"; children: ProgramNode[] }

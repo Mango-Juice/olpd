@@ -1,4 +1,5 @@
 import type { ActionResult } from "./program";
+import { isPublicProperty, resolveActionReferences } from "./conditions";
 import type { Actor, Entity, PhysicalAction, WorldState } from "./types";
 
 export type ActionValidation =
@@ -129,10 +130,15 @@ function keeperMovementInvalid(actor: Actor, action: PhysicalAction, target: Ent
  * A clarification is free; load and stability failures remain executable physics.
  */
 export function validateAction(world: WorldState, action: PhysicalAction): ActionValidation {
+  const resolution = resolveActionReferences(world, action);
+  if (resolution.outcome === "clarification") return resolution;
+  action = resolution.action;
   const actor = world.actors[action.actor];
   if (!actor) return invalid(`주체 ${action.actor}을(를) 현재 세계에서 찾을 수 없어요.`);
   const target = world.entities[action.target];
   if (!target) return invalid(`대상 ${action.target}을(를) 현재 세계에서 찾을 수 없어요.`);
+  const actuatorStroke = (action.verb === "pull" || action.verb === "push") && target.properties.actuator === true;
+  if (actuatorStroke && action.destination !== undefined) return invalid("고정된 장치는 제자리에서 한 번 작동해요. 물건을 옮길 도착지는 필요하지 않아요.");
   if (target.properties.equipment === true && action.verb !== "observe" && action.verb !== "remember" && !MOVEMENT.has(action.verb)) {
     return invalid(`${target.name}은 몸에 매단 여정 물품이에요. 손과 물건 고리를 차지하지 않으며 모험 중에는 내려놓지 않아요.`);
   }
@@ -169,14 +175,14 @@ export function validateAction(world: WorldState, action: PhysicalAction): Actio
     return invalid(`${target.name}은 ${action.actor === "hero" ? "용사" : "등지기"}의 손이 닿는 범위 밖에 있어요.`);
   }
 
-  if ((action.verb === "push" || action.verb === "pull" || action.verb === "take") && !target.movable) {
+  if ((action.verb === "push" || action.verb === "pull" || action.verb === "take") && !target.movable && !actuatorStroke) {
     return invalid(`${target.name}에는 움직이지 않음 표식이 있어요.`);
   }
   if ((action.verb === "push" || action.verb === "pull") && (target.parent === "hero" || target.parent === "keeper") && target.parent !== actor.id) {
     return invalid(`${target.name}은 다른 주체가 들고 있어요. 먼저 내려놓아야 해요.`);
   }
 
-  if ((action.verb === "push" || action.verb === "pull" || action.verb === "place" || action.verb === "pour" || action.verb === "tie") && !destination) {
+  if ((action.verb === "push" || action.verb === "pull" || action.verb === "place" || action.verb === "pour" || action.verb === "tie") && !destination && !actuatorStroke) {
     return invalid(`${target.name}을(를) 어디에 둘지 대상을 더 분명히 해 주세요.`);
   }
   if (destination && (action.verb === "push" || action.verb === "pull" || action.verb === "place" || action.verb === "pour" || action.verb === "tie")) {
@@ -392,6 +398,7 @@ function moveActor(world: WorldState, actor: Actor, location: Entity["location"]
 
 function rememberVisibleProperties(world: WorldState, target: Entity): void {
   for (const [property, value] of Object.entries(target.properties)) {
+    if (!isPublicProperty(property)) continue;
     world.facts.push({ entity: target.id, property, value, attempt: world.attempt, tick: world.tick });
   }
 }
@@ -410,12 +417,19 @@ function blockedMotion(world: WorldState, motion: MotionResult): ActionResult | 
 export function executePhysicalAction(world: WorldState, action: PhysicalAction, options: { movementStep?: number } = {}): ActionResult {
   const validation = validateAction(world, action);
   if (validation.outcome === "clarification") return { world, outcome: "clarification", reason: validation.reason };
+  action = validation.action;
 
   const next = structuredClone(world);
   const actor = next.actors[action.actor];
   const target = next.entities[action.target];
   const destination = action.destination ? next.entities[action.destination] : undefined;
   const instrument = action.instrument ? next.entities[action.instrument] : undefined;
+
+  if ((action.verb === "pull" || action.verb === "push") && target.properties.actuator === true) {
+    const strokes = target.properties.strokes;
+    target.properties.strokes = (typeof strokes === "number" ? strokes : 0) + 1;
+    return { world: next, outcome: "done", reason: `${target.name}을(를) 제자리에서 한 번 ${action.verb === "push" ? "눌렀어요" : "당겼어요"}.` };
+  }
 
   if (MOVEMENT.has(action.verb)) {
     let location = target.location;
@@ -438,7 +452,7 @@ export function executePhysicalAction(world: WorldState, action: PhysicalAction,
       const ridingMotion = blockedMotion(world, moveTree(next, actor.riding, location));
       if (ridingMotion) return ridingMotion;
     }
-    return { world: next, outcome: inTransit ? "progress" : "done", reason: inTransit ? `${target.name} 쪽으로 한 걸음 이동했어요.` : `${actor.id}이(가) ${target.name} 위치로 이동했어요.` };
+    return { world: next, outcome: inTransit ? "progress" : "done", reason: inTransit ? `${target.name} 쪽으로 한 걸음 이동했어요.` : `${actor.id === "hero" ? "용사가" : "등지기가"} ${target.name} 위치로 이동했어요.` };
   }
 
   switch (action.verb) {

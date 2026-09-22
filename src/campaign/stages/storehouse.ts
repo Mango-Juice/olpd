@@ -220,6 +220,11 @@ const brassKey: SegmentDefinition = {
     return keyedExecute(state, action);
   },
   advance: (state) => ({ world: tick(state), events: [], canChange: false }),
+  idleAction: (state) => state.entities["06-1-gate-a"].properties.open === true
+    && state.entities["06-1-gate-b"].properties.open === true
+    && !at(state, "hero", "06-1-exit")
+    ? { kind: "action", actor: "hero", verb: "move", target: "06-1-exit" }
+    : null,
   complete: (state) => at(state, "hero", "06-1-exit")
     && state.entities["06-1-gate-a"].properties.open === true
     && state.entities["06-1-gate-b"].properties.open === true,
@@ -302,6 +307,11 @@ const lightCorridor: SegmentDefinition = {
     refreshLightCorridor(next, true);
     return { world: next, events: [], canChange: Object.values(next.entities).some((item) => item.properties.kind === "light-gate" && item.properties.open === true) };
   },
+  idleAction: (state) => toolAt(state, "06-2-pedestal", "lantern")?.properties.lit === true
+    && state.entities["06-2-gate-c"].properties.open === true
+    && !at(state, "hero", "06-2-exit")
+    ? { kind: "action", actor: "hero", verb: "move", target: "06-2-exit" }
+    : null,
   complete: (state) => at(state, "hero", "06-2-exit")
     && !!toolAt(state, "06-2-pedestal", "lantern")?.properties.lit,
 };
@@ -396,6 +406,12 @@ const wetShelf: SegmentDefinition = {
     return physical;
   },
   advance: (state) => ({ world: tick(state), events: [], canChange: false }),
+  idleAction: (state) => state.entities["06-3-seal"].properties.readable === true
+    && state.entities["06-3-lantern"].properties.lit === true
+    && state.entities["06-3-rope-door"].properties.open === true
+    && !at(state, "hero", "06-3-exit")
+    ? { kind: "action", actor: "hero", verb: "move", target: "06-3-exit" }
+    : null,
   complete: (state) => at(state, "hero", "06-3-exit")
     && state.entities["06-3-seal"].properties.readable === true
     && state.entities["06-3-lantern"].properties.lit === true
@@ -471,6 +487,12 @@ const dispatchYard: SegmentDefinition = {
     refreshDispatch(next);
     return { world: next, events: [], canChange: false };
   },
+  idleAction: (state) => ["06-4-light-chest", "06-4-shadow-chest", "06-4-alarm-chest"]
+    .every((id) => state.entities[id].properties.open === true)
+    && (state.actors.hero.location.x >= 0 || state.entities["06-4-shadow-bridge"].properties.visible === true)
+    && !at(state, "hero", "06-4-exit")
+    ? { kind: "action", actor: "hero", verb: "move", target: "06-4-exit" }
+    : null,
   complete: (state) => at(state, "hero", "06-4-exit")
     && ["06-4-light-chest", "06-4-shadow-chest", "06-4-alarm-chest"].every((id) => state.entities[id].properties.open === true),
 };
@@ -628,6 +650,12 @@ const finalInventory: SegmentDefinition = {
     refreshFinalLight(next);
     return { world: next, events: [], canChange: elevator.properties.movingTo !== "none" || basket.properties.movingTo !== "none" };
   },
+  idleAction: (state) => state.entities["06-5-light-door"].properties.open === true
+    && toolAt(state, "06-5-exit-locker", "brass-key") !== undefined
+    && state.entities["06-5-exit-locker"].properties.returned === true
+    && !at(state, "hero", "06-5-exit")
+    ? { kind: "action", actor: "hero", verb: "move", target: "06-5-exit" }
+    : null,
   complete: (state) => at(state, "hero", "06-5-exit")
     && state.entities["06-5-light-door"].properties.open === true
     && !!toolAt(state, "06-5-exit-locker", "brass-key")

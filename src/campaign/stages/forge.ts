@@ -57,6 +57,36 @@ function pathIntersects(state: WorldState, action: PhysicalAction, from: number,
   return Math.min(actor.location.x, target.location.x) < to && Math.max(actor.location.x, target.location.x) >= from;
 }
 
+/**
+ * 04-4 is one encounter, but its cause chain spans separate physical rooms.
+ * Keep the legacy region/segment ID while persisting each doorway and bridge
+ * edge as an atomic movement boundary.
+ */
+const WIND_BRIDGE_STOPS = [0, 3, 5, 7, 10] as const;
+
+function windBridgeStep(state: WorldState, action: PhysicalAction): number | null {
+  if (!moved(action)) return null;
+  const actor = state.actors[action.actor];
+  const target = state.entities[action.target];
+  if (!actor || !target || actor.location.region !== target.location.region) return null;
+  const direction = Math.sign(target.location.x - actor.location.x);
+  if (direction === 0) return null;
+  const nextStop = direction > 0
+    ? WIND_BRIDGE_STOPS.find((x) => x > actor.location.x && x <= target.location.x)
+    : [...WIND_BRIDGE_STOPS].reverse().find((x) => x < actor.location.x && x >= target.location.x);
+  return Math.abs((nextStop ?? target.location.x) - actor.location.x);
+}
+
+function windBridgeAtomicPathIntersects(state: WorldState, action: PhysicalAction, from: number, to: number): boolean {
+  const actor = state.actors[action.actor];
+  const step = windBridgeStep(state, action);
+  if (!actor || step === null) return false;
+  const target = state.entities[action.target];
+  if (!target) return false;
+  const nextX = actor.location.x + Math.sign(target.location.x - actor.location.x) * step;
+  return Math.min(actor.location.x, nextX) < to && Math.max(actor.location.x, nextX) >= from;
+}
+
 function moveTree(state: WorldState, id: string, location: Entity["location"], seen = new Set<string>()): void {
   if (seen.has(id)) return;
   seen.add(id);
@@ -207,6 +237,11 @@ const openFurnace: SegmentDefinition = {
     next.entities["04-1-door"].properties.open = locked;
     return { world: next, events: [], canChange: false };
   },
+  idleAction: (state) => state.entities["04-1-door"].properties.open === true
+    && state.entities["forge-furnace"].properties.latched === true
+    && !at(state, "hero", "04-1-exit")
+    ? { kind: "action", actor: "hero", verb: "move", target: "04-1-exit" }
+    : null,
   complete: (state) => at(state, "hero", "04-1-exit")
     && state.entities["forge-furnace"].properties.open === true
     && state.entities["forge-furnace"].properties.latched === true,
@@ -316,6 +351,12 @@ const hammerTransfer: SegmentDefinition = {
     }
     return { world: next, events: [], canChange: powered };
   },
+  idleAction: (state) => state.entities["04-2-door"].properties.open === true
+    && state.entities["04-2-plate"].parent === "04-2-pedestal"
+    && state.entities["04-2-plate"].properties.starStamp === "complete"
+    && !at(state, "hero", "04-2-exit")
+    ? { kind: "action", actor: "hero", verb: "move", target: "04-2-exit" }
+    : null,
   complete: (state) => at(state, "hero", "04-2-exit")
     && state.entities["04-2-plate"].parent === "04-2-pedestal"
     && state.entities["04-2-plate"].properties.starStamp === "complete"
@@ -431,6 +472,12 @@ const coolingKey: SegmentDefinition = {
     key.properties.moonMark = temperature === 0;
     return { world: next, events: [], canChange: cooling };
   },
+  idleAction: (state) => state.entities["04-3-lock"].properties.open === true
+    && state.entities["04-3-key"].parent === "04-3-lock"
+    && state.entities["04-3-key"].properties.temperature === 0
+    && !at(state, "hero", "04-3-exit")
+    ? { kind: "action", actor: "hero", verb: "move", target: "04-3-exit" }
+    : null,
   complete: (state) => at(state, "hero", "04-3-exit")
     && state.entities["04-3-key"].parent === "04-3-lock"
     && state.entities["04-3-key"].properties.temperature === 0
@@ -466,12 +513,13 @@ const windBridge: SegmentDefinition = {
   execute: (state, action) => {
     const wrongRegion = ensureCurrentRegion(state, action);
     if (wrongRegion) return wrongRegion;
-    if (pathIntersects(state, action, 6, 10)) {
+    if (windBridgeAtomicPathIntersects(state, action, 6, 10)) {
       const bridge = state.entities["04-4-bridge"];
       if (bridge.properties.extended !== true) return failure(state, "낮은 바람으로 잠금핀이 남아 다리 판이 펼쳐지지 않았어요.");
       if (bridge.properties.safeToCross !== true) return failure(state, "고정되지 않은 다리가 강한 바람에 뒤집혀 아래 안전망으로 떨어졌어요.");
     }
-    const physical = executePhysicalAction(state, action);
+    const step = windBridgeStep(state, action);
+    const physical = step === null ? executePhysicalAction(state, action) : executePhysicalAction(state, action, { movementStep: step });
     if (physical.outcome !== "done") return physical;
     if (action.verb === "turn" && action.target === "04-4-pressure") {
       const pressure = physical.world.entities["04-4-pressure"];
@@ -495,6 +543,11 @@ const windBridge: SegmentDefinition = {
     bridge.properties.safeToCross = bridge.properties.extended === true && (chained || effective === 0);
     return { world: next, events: [], canChange: false };
   },
+  idleAction: (state) => state.entities["04-4-pin"].properties.released === true
+    && state.entities["04-4-bridge"].properties.safeToCross === true
+    && !at(state, "hero", "04-4-exit")
+    ? { kind: "action", actor: "hero", verb: "move", target: "04-4-exit" }
+    : null,
   complete: (state) => at(state, "hero", "04-4-exit")
     && state.entities["04-4-pin"].properties.released === true
     && state.entities["04-4-bridge"].properties.safeToCross === true,

@@ -13,6 +13,7 @@ let audio: AudioContext | null = null;
 let master: GainNode | null = null;
 let noise: AudioBuffer | null = null;
 let muted = false;
+const MASTER_GAIN = 0.45;
 
 export type AudioReadyListener = (
   context: AudioContext,
@@ -27,7 +28,7 @@ const readyListeners = new Set<AudioReadyListener>();
  */
 export function onAudioReady(listener: AudioReadyListener) {
   readyListeners.add(listener);
-  if (audio && master) listener(audio, master);
+  if (audio && master && audio.state === "running") listener(audio, master);
   return () => {
     readyListeners.delete(listener);
   };
@@ -41,14 +42,14 @@ function notifyAudioReady() {
 export function setAudioMuted(value: boolean) {
   muted = value;
   if (audio && master)
-    master.gain.setTargetAtTime(value ? 0 : 0.45, audio.currentTime, 0.015);
+    master.gain.setTargetAtTime(value ? 0 : MASTER_GAIN, audio.currentTime, 0.015);
 }
 export function unlockAudio() {
   try {
     if (!audio) {
       audio = new AudioContext();
       master = audio.createGain();
-      master.gain.value = muted ? 0 : 0.45;
+      master.gain.value = muted ? 0 : MASTER_GAIN;
       master.connect(audio.destination);
       noise = audio.createBuffer(
         1,
@@ -119,7 +120,7 @@ export function playSound(kind: SoundKind, isMuted: boolean) {
     muted ||
     !audio ||
     audio.state !== "running" ||
-    document.hidden
+    (typeof document !== "undefined" && document.hidden)
   )
     return;
   switch (kind) {

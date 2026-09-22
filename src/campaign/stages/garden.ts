@@ -322,6 +322,10 @@ const rootsWay: SegmentDefinition = {
     return commonExecute(state, action);
   },
   advance: (state) => ({ world: advanceTick(state), events: [], canChange: false }),
+  idleAction: (state) => state.entities["05-1-pot"].parent === "05-1-step-slot"
+    && !at(state, "hero", "05-1-exit")
+    ? { kind: "action", actor: "hero", verb: "move", target: "05-1-exit" }
+    : null,
   complete: (state) => at(state, "hero", "05-1-exit") && state.entities["05-1-pot"].parent === "05-1-step-slot",
 };
 
@@ -380,6 +384,12 @@ const twoDirections: SegmentDefinition = {
     updateGreenhouse(next);
     return { world: next, events: [], canChange: false };
   },
+  idleAction: (state) => state.entities["05-2-door"].properties.open === true
+    && state.entities["05-2-seed-bag"].parent === "hero"
+    && state.actors.hero.location.region === state.entities["05-2-exit"].location.region
+    && !at(state, "hero", "05-2-exit")
+    ? { kind: "action", actor: "hero", verb: "move", target: "05-2-exit" }
+    : null,
   complete: (state) => at(state, "hero", "05-2-exit")
     && state.actors.hero.carrying.includes("05-2-seed-bag")
     && lowerDoorOpen(state),
@@ -442,6 +452,11 @@ const brokenLabel: SegmentDefinition = {
     updateBalance(next);
     return { world: next, events: [], canChange: false };
   },
+  idleAction: (state) => state.entities["05-3-door"].properties.open === true
+    && state.entities["05-3-grate"].properties.broken !== true
+    && !at(state, "hero", "05-3-exit")
+    ? { kind: "action", actor: "hero", verb: "move", target: "05-3-exit" }
+    : null,
   complete: (state) => at(state, "hero", "05-3-exit")
     && Number(state.entities["05-3-balance"].properties.reading) >= 2
     && state.entities["05-3-grate"].properties.broken !== true,
@@ -513,6 +528,11 @@ const crossedBranches: SegmentDefinition = {
     updateCrossedBranches(next);
     return { world: next, events: [], canChange: false };
   },
+  idleAction: (state) => state.entities["05-4-door"].properties.open === true
+    && state.entities["05-4-cover"].properties.locked === true
+    && !at(state, "hero", "05-4-exit")
+    ? { kind: "action", actor: "hero", verb: "move", target: "05-4-exit" }
+    : null,
   complete: (state) => at(state, "hero", "05-4-exit")
     && state.entities["05-4-door"].properties.open === true
     && (state.entities["05-4-route"].properties.selected === "vine"
@@ -679,6 +699,11 @@ const fourSeasons: SegmentDefinition = {
     updateCeilingGarden(next);
     return { world: next, events: [], canChange: false };
   },
+  idleAction: (state) => state.entities["05-5-exit"].properties.open === true
+    && Number(state.entities["05-5-pedestal"].properties.placed) === 4
+    && !at(state, "hero", "05-5-exit")
+    ? { kind: "action", actor: "hero", verb: "move", target: "05-5-exit" }
+    : null,
   complete: (state) => at(state, "hero", "05-5-exit")
     && state.entities["05-5-exit"].properties.open === true
     && seedShapes.every((shape) => state.entities[`05-5-${shape}-seed`].parent === `05-5-${shape}-slot`)

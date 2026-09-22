@@ -3,6 +3,14 @@ import { clarifyNotebook, createNotebook, departNotebook, rewindNotebook, visitB
 import { createExecution, enterEncounter, scheduleStep, type ExecutionState } from "./scheduler";
 import type { ActionExecutor, ActionResult } from "./program";
 import type { PhysicalAction, StageId, WorldEvent, WorldState } from "./types";
+import type { CampaignStageDefinition } from "./level";
+
+export interface OnboardingLearning {
+  /** Ordered prefix of the stage's required onboarding IDs. */
+  completedSegmentIds: string[];
+  /** Original confirmed input, separate from the active notebook and core chronicle. */
+  attemptedSentences: { segmentId: string; text: string }[];
+}
 
 export interface StageRun {
   version: 2;
@@ -19,21 +27,38 @@ export interface StageRun {
   events: WorldEvent[];
   clearedSegments: string[];
   seal: number;
+  /** Absent only on compatible version-2 runs saved before onboarding existed. */
+  learning?: OnboardingLearning;
 }
 export function createStageRun(id: string, initial: WorldState): StageRun {
   if (initial.stageId === 1) throw new Error("1장은 기존 실행기를 사용해요.");
   return { version: 2, id, stageId: initial.stageId, revision: 0, statusReason: null, waitingStates: [], phase: "bookmark", world: structuredClone(initial), checkpoint: structuredClone(initial), notebook: createNotebook(initial.segmentId), execution: createExecution(), events: [], clearedSegments: [], seal: 0 };
 }
+export function createPracticeRun(id: string, initial: WorldState): StageRun {
+  const run = createStageRun(id, initial);
+  return { ...run, notebook: createNotebook(initial.segmentId, true) };
+}
+/** Starts a new campaign at required onboarding while preserving createStageRun for legacy/core fixtures. */
+export function createCampaignRun(id: string, stage: CampaignStageDefinition): StageRun {
+  const first = stage.onboarding?.[0] ?? stage.segments[0];
+  if (!first) throw new Error("시작할 구간이 없어요.");
+  const initial = first.enter(null);
+  const run = createStageRun(id, initial);
+  return { ...run, notebook: createNotebook(first.id, !!stage.onboarding?.length), learning: { completedSegmentIds: [], attemptedSentences: [] } };
+}
 export function departStage(run: StageRun): StageRun {
   if (run.phase !== "bookmark") return run;
-  return { ...run, phase: "running", statusReason: null, waitingStates: [], revision: run.revision + 1, notebook: departNotebook(run.notebook) };
+  const learning = run.learning && run.notebook.scratch && run.notebook.instructions[0]
+    ? { ...run.learning, attemptedSentences: [...run.learning.attemptedSentences, { segmentId: run.world.segmentId, text: run.notebook.instructions[0].text }] }
+    : run.learning;
+  return { ...run, phase: "running", statusReason: null, waitingStates: [], revision: run.revision + 1, notebook: departNotebook(run.notebook), ...(learning ? { learning } : {}) };
 }
 /** The notebook and discovery ledger remain outside every world rewind snapshot. */
 export function rewindStage(run: StageRun): StageRun {
   if (run.phase === "cleared" || run.notebook.clarificationId) return run;
   const world = structuredClone(run.checkpoint);
   world.attempt = run.world.attempt + 1;
-  world.facts = [...run.world.facts];
+  world.facts = run.notebook.scratch ? [...run.checkpoint.facts] : [...run.world.facts];
   return { ...run, revision: run.revision + 1, phase: "bookmark", world, waitingStates: [], notebook: rewindNotebook(run.notebook), execution: createExecution() };
 }
 export interface EnvironmentStep {
@@ -52,6 +77,31 @@ export interface StageDynamics {
   nextSegment: (world: WorldState) => WorldState | null;
   /** Boss checkpoints only; ordinary discovery bookmarks are never respawn points. */
   sealAfter: (segmentId: string) => number | null;
+  /** Optional authored movement along one already-open, unambiguous core path. */
+  idleAction?: (world: WorldState) => PhysicalAction | null;
+  /** Runtime classification keeps onboarding records outside core bookmarks and clears. */
+  isOnboardingSegment?: (segmentId: string) => boolean;
+}
+function validIdleMove(world: WorldState, action: PhysicalAction): boolean {
+  return action.kind === "action" && action.actor === "hero" && action.verb === "move"
+    && action.destination === undefined && action.instrument === undefined && action.amount === undefined && action.references === undefined
+    && Object.keys(action).every((key) => key === "kind" || key === "actor" || key === "verb" || key === "target")
+    && Object.hasOwn(world.entities, action.target) && world.visible.includes(action.target);
+}
+function stopUnsafeIdle(run: StageRun, execution: ExecutionState, reason: string, action?: PhysicalAction): StageRun {
+  const event: WorldEvent = {
+    segmentId: run.world.segmentId,
+    id: `${run.id}:${run.revision + 1}:idle-stop`,
+    tick: run.world.tick,
+    attempt: run.world.attempt,
+    instructionId: null,
+    actor: action?.actor === "hero" ? "hero" : null,
+    target: action?.target ?? null,
+    outcome: "blocked",
+    reason,
+    changes: [],
+  };
+  return { ...run, revision: run.revision + 1, phase: "blocked", statusReason: reason, waitingStates: [], execution, events: [...run.events, event] };
 }
 export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
   if (run.phase !== "running" && run.phase !== "waiting") return run;
@@ -62,10 +112,54 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
     traces.push({ before, result });
     return result;
   });
+  let waitingForRule = false;
+  let unresolvedConditionalRule = false;
+  if (scheduled.step === null) {
+    for (const program of run.notebook.instructions) {
+      if (!program.condition || (program.scope.stageId !== undefined && program.scope.stageId !== run.world.stageId)
+        || (program.scope.region !== undefined && program.scope.region !== run.world.actors.hero.location.region)) continue;
+      const value = evaluateCondition(run.world, program.condition);
+      // A false guard is dormant until a later atomic boundary; it is not a wait instruction.
+      if (value === false && !program.guard) waitingForRule = true;
+      if (value === "unknown") unresolvedConditionalRule = true;
+    }
+  }
   let world = scheduled.step?.world ?? run.world;
   const events: WorldEvent[] = [];
   const instructionId = scheduled.instructionId;
-  const actions = scheduled.step?.actions ?? [];
+  let actions = scheduled.step?.actions ?? [];
+  let stepOutcome = scheduled.step?.outcome;
+  let stepReason = scheduled.reason;
+  let hasStep = scheduled.step !== null;
+  let idleAction: PhysicalAction | null = null;
+  const mayAdvanceByDefault = scheduled.step === null && !waitingForRule && !unresolvedConditionalRule && scheduled.execution.active === null
+    && scheduled.execution.suspended.length === 0 && run.notebook.scratch !== true
+    && dynamics.isOnboardingSegment?.(run.world.segmentId) !== true;
+  if (mayAdvanceByDefault && dynamics.idleAction) {
+    let candidate: PhysicalAction | null;
+    try {
+      candidate = dynamics.idleAction(structuredClone(run.world));
+    } catch {
+      return stopUnsafeIdle(run, scheduled.execution, "기본 전진 경로를 확인하지 못해 원래 자리에서 멈췄어요.");
+    }
+    if (candidate && !validIdleMove(run.world, candidate)) {
+      return stopUnsafeIdle(run, scheduled.execution, "기본 전진은 용사의 눈앞에 보이는 열린 길 이동만 사용할 수 있어요. 원래 자리에서 멈췄어요.");
+    }
+    if (candidate) {
+      const before = structuredClone(run.world);
+      const result = dynamics.execute(structuredClone(run.world), candidate);
+      if (result.outcome !== "done" && result.outcome !== "progress") {
+        return stopUnsafeIdle(run, scheduled.execution, `기본 전진 경로가 더 이상 안전하지 않아 원래 자리에서 멈췄어요. ${result.reason}`, candidate);
+      }
+      traces.push({ before, result });
+      idleAction = candidate;
+      world = result.world;
+      actions = [candidate];
+      stepOutcome = result.outcome;
+      stepReason = result.reason;
+      hasStep = true;
+    }
+  }
   for (const [index, action] of actions.entries()) {
     const trace = traces[index];
     const signature = replaySignature(trace.before, action, instructionId);
@@ -82,14 +176,9 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
       notebook: clarifyNotebook(run.notebook, instructionId), execution: createExecution(), events: [...run.events, ...events],
       statusReason: `${scheduled.reason ?? "지침의 뜻을 확인해야 해요."} 종을 쓰지 않고 돌아왔어요. 해당 메모를 무료로 고칠 수 있어요.` };
   }
-  const waitingForRule = scheduled.step === null && run.notebook.instructions.some((program) =>
-    program.condition && (program.scope.stageId === undefined || program.scope.stageId === world.stageId) &&
-    (program.scope.region === undefined || program.scope.region === world.actors.hero.location.region) &&
-    evaluateCondition(world, program.condition) === false,
-  );
-  let phase: StageRun["phase"] = scheduled.step?.outcome === "failure" ? "failed" : (scheduled.step === null && !waitingForRule) || scheduled.step?.outcome === "blocked" ? "blocked" : "running";
-  let statusReason = waitingForRule ? "메모의 조건이 바뀌기를 안전한 곳에서 기다리고 있어요." : scheduled.reason;
-  if (phase === "running" && (actions.length > 0 || scheduled.step?.outcome === "waiting" || waitingForRule)) {
+  let phase: StageRun["phase"] = stepOutcome === "failure" ? "failed" : (!hasStep && !waitingForRule) || stepOutcome === "blocked" ? "blocked" : "running";
+  let statusReason = waitingForRule ? "메모의 조건이 바뀌기를 안전한 곳에서 기다리고 있어요." : stepReason;
+  if (phase === "running" && (actions.length > 0 || stepOutcome === "waiting" || waitingForRule)) {
     const beforeEnvironment = world;
     const environment = dynamics.advance(world);
     world = environment.world;
@@ -97,13 +186,14 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
     const changes = worldChanges(beforeEnvironment, world);
     if (changes.length > 0) events.push({ segmentId: world.segmentId, id: `${run.id}:${run.revision + 1}:reaction`, tick: world.tick, attempt: world.attempt, instructionId, actor: null, target: null, outcome: "observed", reason: environment.reason ?? "물체와 장치의 상태가 바뀌었어요.", changes });
     if (environment.failure) {
+      if (idleAction) return stopUnsafeIdle(run, scheduled.execution, `기본 전진 뒤 세계가 안전하지 않아 원래 자리에서 멈췄어요. ${environment.failure}`, idleAction);
       phase = "failed";
       statusReason = environment.failure;
       events.push({ segmentId: world.segmentId, id: `${run.id}:${run.revision + 1}:environment`, tick: world.tick, attempt: world.attempt, instructionId, actor: null, target: null, outcome: "failure", reason: environment.failure, changes: [] });
     }
     // A final transition (for example cooling finishes) must be observed once
     // before deciding that a now-stable mechanism cannot satisfy the wait.
-    else if (scheduled.step?.outcome === "waiting" || waitingForRule) phase = environment.canChange || changes.length > 0 ? "waiting" : "blocked";
+    else if (stepOutcome === "waiting" || waitingForRule) phase = environment.canChange || changes.length > 0 ? "waiting" : "blocked";
   }
   let waitingStates: string[] = [];
   if (phase === "waiting" && actions.length === 0) {
@@ -122,6 +212,25 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
   if (dynamics.segmentComplete(world)) {
     const segmentId = world.segmentId;
     const following = dynamics.nextSegment(world);
+    if (dynamics.isOnboardingSegment?.(segmentId)) {
+      if (!next.learning) throw new Error("도입 진행 기록이 없어요.");
+      next.learning = { ...next.learning, completedSegmentIds: next.learning.completedSegmentIds.includes(segmentId)
+        ? next.learning.completedSegmentIds : [...next.learning.completedSegmentIds, segmentId] };
+      if (!following) return { ...next, phase: "cleared" };
+      const remainsOnboarding = dynamics.isOnboardingSegment(following.segmentId);
+      return {
+        ...next,
+        world: following,
+        checkpoint: structuredClone(following),
+        phase: "bookmark",
+        statusReason: null,
+        waitingStates: [],
+        notebook: createNotebook(following.segmentId, remainsOnboarding),
+        execution: createExecution(),
+        // Onboarding actions live in the learning record, not the core adventure chronicle.
+        events: [],
+      };
+    }
     next.clearedSegments = [...new Set([...run.clearedSegments, segmentId])];
     if (!following) return { ...next, phase: "cleared" };
     const firstVisit = !next.notebook.visitedBookmarks.includes(following.segmentId);

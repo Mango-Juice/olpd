@@ -1,4 +1,4 @@
-import { evaluateCondition } from "./conditions";
+import { evaluateCondition, resolveActionReferences } from "./conditions";
 import type { PhysicalAction, Predicate, ProgramNode, WorldState } from "./types";
 
 /** Cursor is persisted with the world; waiting never restarts an earlier action. */
@@ -9,6 +9,8 @@ export interface ProgramCursor {
   children: ProgramCursor[];
   branch: "then" | "otherwise" | null;
   reason: string | null;
+  /** References bind once per atomic action, including while resuming from a save. */
+  resolvedAction?: PhysicalAction;
 }
 export interface ActionResult {
   world: WorldState;
@@ -106,14 +108,18 @@ export function stepProgram(world: WorldState, node: ProgramNode, cursor: Progra
   if (cursor.status === "blocked") return result(world, cursor, "blocked", [], cursor.reason);
   switch (node.kind) {
     case "action": {
-      const next = execute(world, node);
-      return result(next.world, cursor, next.outcome, [node], next.reason);
+      const resolution = cursor.resolvedAction ? { outcome: "valid" as const, action: cursor.resolvedAction } : resolveActionReferences(boundaryWorld, node);
+      if (resolution.outcome === "clarification") return result(world, cursor, "clarification", [], resolution.reason);
+      const action = resolution.action;
+      const bound = node.references ? { ...cursor, resolvedAction: action } : cursor;
+      const next = execute(world, action);
+      return result(next.world, bound, next.outcome, [action], next.reason);
     }
     case "wait": return waiting(world, cursor, node.until, boundaryWorld);
     case "until": {
       if (evaluateCondition(boundaryWorld, node.condition) === true) {
         if (cursor.index > 0 && node.body.verb === "hold") {
-          const release: PhysicalAction = { ...node.body, verb: "release" };
+          const release: PhysicalAction = { ...(cursor.resolvedAction ?? node.body), verb: "release" };
           const next = execute(world, release);
           return result(next.world, cursor, next.outcome, [release], next.reason);
         }
@@ -121,8 +127,12 @@ export function stepProgram(world: WorldState, node: ProgramNode, cursor: Progra
       }
       // A held role is established once; other actions repeat until the stated endpoint.
       if (cursor.index > 0 && node.body.verb === "hold") return waiting(world, cursor, node.condition, boundaryWorld);
-      const next = execute(world, node.body);
-      return result(next.world, { ...cursor, index: cursor.index + 1 }, next.outcome === "done" ? node.body.verb === "hold" ? "waiting" : "progress" : next.outcome, [node.body], next.reason);
+      const resolution = cursor.resolvedAction ? { outcome: "valid" as const, action: cursor.resolvedAction } : resolveActionReferences(boundaryWorld, node.body);
+      if (resolution.outcome === "clarification") return result(world, cursor, "clarification", [], resolution.reason);
+      const action = resolution.action;
+      const next = execute(world, action);
+      const bound = node.body.references ? { ...cursor, resolvedAction: action } : cursor;
+      return result(next.world, { ...bound, index: cursor.index + 1 }, next.outcome === "done" ? node.body.verb === "hold" ? "waiting" : "progress" : next.outcome, [action], next.reason);
     }
     case "if": {
       let branch = cursor.branch;

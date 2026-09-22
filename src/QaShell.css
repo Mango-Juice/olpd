@@ -17,3 +17,6 @@
 .qa-grid button.subtle { background: transparent; color: #d4ddc9; border-color: #59644e; }
 .qa-banner button:hover, .qa-grid button:not(:disabled):hover { filter: brightness(1.08); }
 .qa-banner button:focus-visible, .qa-grid button:focus-visible { outline: 2px solid #eef4df; outline-offset: 3px; }
+
+.qa-segment-picker { display: flex; gap: 12px; align-items: center; max-width: 1052px; margin: 16px auto; padding: 0 24px; font-size: 13px; }
+.qa-segment-picker select { min-width: 0; max-width: 100%; padding: 8px 12px; border-radius: 8px; }

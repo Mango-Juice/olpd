@@ -12,6 +12,15 @@ export const MATERIAL_LABELS: Record<Entity["material"], string> = {
 };
 
 const ENUM_LABELS: Record<string, string> = {
+  vent: "안전 배출구",
+  turbine: "풍차",
+  pressure: "압력판",
+  retracted: "몸 안으로 거둠",
+
+  "below-rim": "테두리 아래",
+  strong: "강함",
+  gentle: "약함",
+  high: "높음",
   none: "없음",
   unknown: "아직 모름",
   small: "작은 크기",
@@ -165,6 +174,56 @@ const ENUM_LABELS: Record<string, string> = {
 };
 
 const PROPERTY_LABELS: Record<string, string> = {
+  fixedSpike: "고정 가시",
+  lowBell: "낮은 종 울림",
+  highBell: "높은 종 울림",
+  intact: "깨지지 않은 상태",
+  keeperArrived: "등지기 도착",
+  bridged: "다리가 놓임",
+  removed: "빠짐",
+  latchedOut: "빠진 상태로 고정",
+  capacityMark: "하중 눈금",
+  safeStep: "발 디딜 수 있음",
+  cleared: "걷힌 상태",
+  requires: "필요한 물건",
+  current: "물살 세기",
+  shallow: "얕은 물",
+  waterline: "수면 위치",
+  bounded: "안전턱 있음",
+  opening: "열리는 중",
+  extension: "당긴 길이",
+  fixedToRail: "레일에 고정",
+  heldBeats: "유지한 박",
+  engaged: "맞물림",
+  reveals: "관측 대상",
+  connectionConfirmed: "연결 확인",
+  showsConnection: "관측창의 연결",
+  observed: "관찰함",
+  doorOpen: "문 열림",
+  boltedTo: "볼트로 이어진 대상",
+  decorativePipeActive: "교차한 관의 작동",
+  loadBearing: "하중 지지 가능",
+  safeLedge: "안전 받침 있음",
+  blocksPath: "길을 막음",
+  ventActive: "배출구 작동",
+  flapping: "바람에 펄럭임",
+  clearance: "통로 높이",
+  remaining: "남은 눈금",
+  waterLevel: "수위",
+  capacityMarks: "최대 눈금",
+  floated: "물에 뜸",
+  wind: "바람 세기",
+  supportedBy: "받치는 물건",
+  supportRecovered: "받침 회수",
+  triangleCord: "삼각 표식의 연결 줄",
+  connectedBell: "연결된 종",
+  rung: "종 울림",
+  connectedCord: "연결된 줄",
+  drive: "동력을 전하는 장치",
+  connection: "연결된 장치",
+  windowCrossed: "안전창 통과",
+  actuator: "한 번 누르거나 당겨 작동",
+  strokes: "당긴 횟수",
   equipment: "몸에 매단 물품",
   accessible: "접근 가능",
   accepts: "받을 수 있는 물건",
@@ -491,6 +550,9 @@ const PROPERTY_LABELS: Record<string, string> = {
 };
 
 const HIDDEN_PROPERTIES = new Set([
+  "clockPhase",
+  "checkpoint",
+  "recipient",
   "kind",
   "driftAge",
   "periodTicks",
@@ -547,6 +609,8 @@ const QUANTITY_UNITS: Partial<Record<string, string>> = {
 };
 
 const BOOLEAN_VALUES: Record<string, readonly [string, string]> = {
+  lowBell: ["낮은 종이 울림", "낮은 종이 아님"],
+  highBell: ["높은 종이 울림", "높은 종이 아님"],
   accessible: ["접근 가능", "접근 불가"],
   active: ["작동 중", "멈춤"],
   afloat: ["물에 떠 있음", "떠 있지 않음"],
@@ -729,6 +793,9 @@ export function formatEntityFacts(world: WorldState, entity: Entity): string[] {
       : `수용 한계 · ${formatScalar(entity.capacity)}칸`,
     `닿는 거리 · ${formatScalar(entity.reach)}칸`,
   ];
+  for (const [key, values] of Object.entries(entity.propertyOptions ?? {})) {
+    if (propertyVisibility(key) === "shown") facts.push(`${PROPERTY_LABELS[key]} 표시 · ${values.map((value) => formatScalar(value, world, key)).join(" / ")}`);
+  }
   if (entity.parent) facts.push(`놓인 곳 · ${resolveToken(entity.parent, world)}`);
   for (const [key, value] of Object.entries(entity.properties)) {
     if (key === "capacity" && value === entity.capacity) continue;

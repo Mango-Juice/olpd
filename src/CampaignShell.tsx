@@ -7,10 +7,11 @@ import StageChronicle from "./components/StageChronicle";
 import { CampaignRepository, type CampaignRepositoryResult, type CampaignRepositorySnapshot } from "./campaign/repository";
 import { campaignAuthority, type CampaignStoredRun } from "./campaign/authority";
 import { resolveStage } from "./campaign/registry";
-import { createStageRun, type StageRun } from "./campaign/run";
+import { createCampaignRun, createPracticeRun, type StageRun } from "./campaign/run";
 import { createExecution } from "./campaign/scheduler";
 import { parseProgram } from "./campaign/validation";
 import { stageSummary } from "./campaign/catalog";
+import { loadOnboardingProgress, progressBelongsToRun, type OnboardingProgress } from "./game/onboarding";
 import { newRun, skipTutorial } from "./game/core";
 import { makeSave, type StorageResult } from "./game/storage";
 import { stageArchive } from "./game/archive";
@@ -47,6 +48,7 @@ export default function CampaignShell() {
   const [repository] = useState(() => new CampaignRepository(authority, { migrateLegacyRun: (save): CampaignStoredRun => ({ kind: "legacy", save }) }));
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const snapshotRef = useRef<Snapshot | null>(null);
+  const pendingLegacyLearning = useRef<OnboardingProgress | null>(null);
   const [route, setRoute] = useState<Route>({ kind: "map" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -104,6 +106,13 @@ export default function CampaignShell() {
     } finally { writing.current = false; setBusy(false); }
   }
   async function save(run: CampaignStoredRun): Promise<StorageResult<void>> {
+    if (run.kind === "legacy" && !run.onboarding) {
+      const learning = pendingLegacyLearning.current;
+      const existing = snapshotRef.current?.activeRuns.find((item) => item.reference.stageId === 1)?.run;
+      const stored = existing?.kind === "legacy" ? existing.onboarding : undefined;
+      const candidate = progressBelongsToRun(learning, run.save.state.id) ? learning : stored;
+      if (candidate && progressBelongsToRun(candidate, run.save.state.id)) run = { ...run, onboarding: candidate };
+    }
     return mutate(async (current) => {
       const id = stageId(run);
       const active = current.activeRuns.find((item) => item.reference.stageId === id)?.run;
@@ -131,13 +140,24 @@ export default function CampaignShell() {
     } else {
       const stage = resolveStage(id);
       if (!stage) { setError("이 장의 세계 정보를 불러오지 못했어요. 현재 기록은 그대로 남아 있어요."); return; }
-      const fresh = createStageRun(crypto.randomUUID(), stage.segments[0].enter(null));
+      const fresh = createCampaignRun(crypto.randomUUID(), stage);
       if ((await save({ kind: "world", run: fresh })).ok) setRoute({ kind: "world", stageId: id });
     }
   }
   const bridge: LegacyStorageBridge | undefined = useMemo(() => route.kind !== "legacy" ? undefined : {
     initial: route.initial,
     save: (data) => save({ kind: "legacy", save: data }),
+    loadOnboarding: () => {
+      const active = snapshotRef.current?.activeRuns.find((item) => item.reference.stageId === 1)?.run;
+      return active?.kind === "legacy" ? active.onboarding ?? loadOnboardingProgress() : null;
+    },
+    saveOnboarding: async (progress) => {
+      const active = snapshotRef.current?.activeRuns.find((item) => item.reference.stageId === 1)?.run;
+      pendingLegacyLearning.current = progress;
+      // First boot immediately saves the matching legacy run before making the UI ready.
+      if (active?.kind !== "legacy") return { ok: true, value: undefined };
+      return save({ ...active, onboarding: progress });
+    },
     onRoadmap: map,
     onClearedPresentation: map,
     onArchive: () => setRoute({ kind: "archive", stageId: 1 }),
@@ -150,7 +170,7 @@ export default function CampaignShell() {
   const sharedHeader = <header className="campaign-controls" style={{ maxWidth: 1052, margin: "20px auto", padding: "0 24px" }}><button type="button" className="subtle" disabled={busy} onClick={() => void mutate((current) => repository.updateSettings({ ...settings, muted: !settings.muted }, { writer, expected: current.state }))}>{settings.muted ? "소리 켜기" : "소리 끄기"}</button><label><input type="checkbox" checked={settings.reducedMotion} disabled={busy} onChange={(event) => { const checked = event.target.checked; void mutate((current) => repository.updateSettings({ ...settings, reducedMotion: checked }, { writer, expected: current.state })); }} /> 움직임 줄이기</label>{error ? <p role="alert">{error}</p> : null}</header>;
   if (route.kind === "world" && active?.kind === "world" && stage) {
     const displayed = practice ?? active.run;
-    const definition = practice ? { ...stage, segments: [stage.practice] } : stage;
+    const definition = practice ? { ...stage, onboarding: [], segments: [stage.practice] } : stage;
     return <><CampaignPlay key={displayed.id} run={displayed} stage={definition} settings={settings} practice={!!practice} interpret={interpret} onSettingsChange={(next) => { void mutate((current) => repository.updateSettings(next, { writer, expected: current.state })); }}
       onCommit={async (next) => {
         if (practice) {
@@ -163,7 +183,8 @@ export default function CampaignShell() {
         return result.ok;
       }}
       onRoadmap={() => practice ? setPractice(null) : map()}
-      onPractice={() => setPractice(createStageRun(crypto.randomUUID(), stage.practice.enter(null)))}
+      onPractice={() => setPractice(createPracticeRun(crypto.randomUUID(), stage.practice.enter(null)))}
+      archivedTexts={snapshot.archives.flatMap((item) => item.run.kind === "legacy" ? item.run.save.state.instructions : [])}
       archivedPrograms={snapshot.archives.flatMap((item) => item.run.kind === "world" ? item.run.run.notebook.instructions : [])} /></>;
   }
   if (route.kind === "archive") {

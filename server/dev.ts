@@ -4,9 +4,8 @@ import { createServer as createViteServer } from "vite";
 import { handleCampaignInterpret, isLoopbackAddress } from "./campaign-http.js";
 import { handleInterpret, handleStatus } from "./http.js";
 import { resolveStage } from "../src/campaign/registry.js";
-import { THEATRE_STAGE } from "../src/campaign/stages/theatre.js";
 
-const resolveQaStage: typeof resolveStage = (id) => id === THEATRE_STAGE.id ? THEATRE_STAGE : resolveStage(id);
+const resolveQaStage = resolveStage;
 
 try {
   loadEnvFile(".env.local");

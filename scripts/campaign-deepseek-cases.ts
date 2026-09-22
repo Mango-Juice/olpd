@@ -218,12 +218,17 @@ const safePour = (trace: RuntimeTrace): boolean => trace.outcome === "done"
 function introRoute(firstVerb: Verb | readonly Verb[]): (program: InstructionProgram) => boolean {
   return (program) => {
     const units = sequenceUnits(program.body);
-    if (units.length !== 3 && units.length !== 4) return false;
-    const landingWait = units.length === 4 && isWait(units[2], landingPredicate);
-    return sameActionNode(units[0], { actor: "hero", verb: firstVerb, target: "rain-cork", destination: "rain-launch" })
-      && sameActionNode(units[1], { actor: "hero", verb: "board", target: "rain-cork" })
-      && (units.length === 3 || landingWait)
-      && sameActionNode(units.at(-1)!, { actor: "hero", verb: "dismount", target: "rain-cork", destination: "rain-platform" });
+    const actions = units.filter((node) => node.kind === "action");
+    if (actions.length !== 3 || units.length > 5) return false;
+    let completedActions = 0;
+    for (const node of units) {
+      if (node.kind === "action") { completedActions++; continue; }
+      if (!(completedActions === 1 && isWait(node, (p) => booleanPredicate(p, "rain-cork", "afloat", true)))
+        && !(completedActions === 2 && isWait(node, landingPredicate))) return false;
+    }
+    return sameActionNode(actions[0], { actor: "hero", verb: firstVerb, target: "rain-cork", destination: "rain-launch" })
+      && sameActionNode(actions[1], { actor: "hero", verb: "board", target: "rain-cork" })
+      && sameActionNode(actions[2], { actor: "hero", verb: "dismount", target: "rain-cork", destination: "rain-platform" });
   };
 }
 
@@ -231,37 +236,21 @@ function introPhysics(initial: () => WorldState): DeepSeekCase["physics"] {
   return (program) => {
     const trace = runtime(RAIN_INTRO, initial(), program);
     const units = sequenceUnits(program.body);
-    const waitIndexes = units.flatMap((node, index) => node.kind === "wait" ? [index] : []);
-    let waitBoundary: unknown = null;
-    let waitPass = waitIndexes.length === 0;
-    if (waitIndexes.length === 1) {
-      const waitIndex = waitIndexes[0];
-      const prefix = runtime(RAIN_INTRO, initial(), { ...program, body: sequence(...units.slice(0, waitIndex)) });
+    const waits = units.flatMap((node, index) => node.kind === "wait" ? [index] : []);
+    const boundaries = waits.map((index) => {
+      const prefix = runtime(RAIN_INTRO, initial(), { ...program, body: sequence(...units.slice(0, index)) });
       const before = structuredClone(prefix.world);
-      const checked = stepProgram(prefix.world, units[waitIndex], createCursor(), (world, command) => RAIN_INTRO.execute!(world, command));
+      const checked = stepProgram(prefix.world, units[index], createCursor(), (world, command) => RAIN_INTRO.execute!(world, command));
       const unchanged = JSON.stringify(checked.world) === JSON.stringify(before);
-      waitPass = isWait(units[waitIndex], landingPredicate)
-        && prefix.outcome === "done"
-        && before.entities["rain-cork"].properties.landingReachable === true
-        && checked.outcome === "done" && checked.actions.length === 0
-        && checked.world.tick === before.tick && unchanged;
-      waitBoundary = {
-        conditionBefore: before.entities["rain-cork"].properties.landingReachable,
-        outcome: checked.outcome,
-        actions: checked.actions.length,
-        tickBefore: before.tick,
-        tickAfter: checked.world.tick,
-        worldUnchanged: unchanged,
-      };
-    }
+      return { conditionBefore: checked.outcome === "done", outcome: checked.outcome, actions: checked.actions.length,
+        tickBefore: before.tick, tickAfter: checked.world.tick, worldUnchanged: unchanged,
+        pass: prefix.outcome === "done" && checked.outcome === "done" && checked.actions.length === 0 && unchanged };
+    });
     return {
-      pass: introComplete(trace) && waitPass,
-      detail: {
-        outcome: trace.outcome,
-        steps: trace.steps,
+      pass: introComplete(trace) && introRoute(["push", "place"])(program) && boundaries.every((item) => item.pass),
+      detail: { outcome: trace.outcome, steps: trace.steps,
         actions: trace.actions.map(({ actor, verb, target, destination }) => ({ actor, verb, target, destination })),
-        waitBoundary,
-      },
+        waitBoundary: boundaries.at(-1) ?? null, waitBoundaries: boundaries, redundantBoundaries: boundaries.length },
     };
   };
 }
