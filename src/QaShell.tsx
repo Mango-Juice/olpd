@@ -1,5 +1,7 @@
 import { useRef, useState } from "react";
 import App from "./App";
+import { StageRoadmap } from "./components/StageRoadmap";
+import type { CampaignState } from "./campaign/progress";
 import { CampaignPlay } from "./components/CampaignPlay";
 import { allStageSegments, isOnboardingSegment } from "./campaign/level";
 import { createNotebook } from "./campaign/notebook";
@@ -112,13 +114,22 @@ export default function QaShell() {
       onRoadmap={() => practice ? setPractice(null) : back()}
       onPractice={() => setPractice(createPracticeRun(crypto.randomUUID(), stage.practice.enter(null)))} /></>;
   } else {
-    content = <main className="qa-map"><p className="eyebrow">PLAYTEST SANDBOX</p><h1>어디부터 확인할까요?</h1><p>클리어 없이 바로 입장합니다. 다시 열면 QA 메모와 진행을 이어갈 수 있습니다.</p>
+    const qaCampaign: CampaignState = {
+      version: 1, writer: "local-qa-map", revision: 0, settings,
+      stages: STAGES.map((stage) => {
+        const saved = slots[String(stage.id)]?.run;
+        return { stageId: stage.id, status: stage.id === 1 || qaStage(stage.id) ? "unlocked" : "locked", completion: null,
+          activeRun: saved ? { stageId: stage.id, runId: saved.kind === "legacy" ? saved.save.state.id : saved.run.id } : null };
+      }),
+    };
+    content = <><StageRoadmap campaign={qaCampaign} qa onSelect={(id) => open(id, false)} onArchive={() => undefined} />
+      <details className="qa-roadmap-tools" open><summary>QA 도구 · 프롤로그와 새 모험 시작</summary><main className="qa-map"><p className="eyebrow">PLAYTEST SANDBOX</p><h1>어디부터 확인할까요?</h1><p>클리어 없이 바로 입장합니다. 다시 열면 QA 메모와 진행을 이어갈 수 있습니다.</p>
       <div className="qa-grid">{[{ id: 0, title: "프롤로그" }, ...STAGES].map(({ id, title }) => {
         const available = id < 2 || !!qaStage(id as StageId);
         return <section key={id}><span>{id === 0 ? "INTRO" : `CHAPTER ${String(id).padStart(2, "0")}`}</span><h2>{title}</h2><p>{available ? "QA 입장 가능" : "미구현 · 입장 불가"}</p>
           <button disabled={!available} onClick={() => open(id, false)}>{slots[String(id)] ? "이어 하기" : "바로 입장"}</button>
           {slots[String(id)] && available ? <button className="subtle" onClick={() => open(id, true)}>새 QA 시작</button> : null}</section>;
-      })}</div></main>;
+      })}</div></main></details></>;
   }
   return <>{header}{error ? <p className="qa-error" role="alert">{error}</p> : null}{content}</>;
 }

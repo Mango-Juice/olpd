@@ -20,3 +20,7 @@
 
 .qa-segment-picker { display: flex; gap: 12px; align-items: center; max-width: 1052px; margin: 16px auto; padding: 0 24px; font-size: 13px; }
 .qa-segment-picker select { min-width: 0; max-width: 100%; padding: 8px 12px; border-radius: 8px; }
+
+.qa-roadmap-tools { max-width: 1080px; margin: -30px auto 50px; padding: 0 24px; color: #b4bfac; }
+.qa-roadmap-tools > summary { cursor: pointer; font-size: 13px; padding: 14px 0; border-top: 1px solid #ffffff20; }
+.qa-roadmap-tools .qa-map { padding-inline: 0; }

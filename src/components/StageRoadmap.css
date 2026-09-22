@@ -1,30 +1,45 @@
-.stage-roadmap { max-width: 1040px; margin: 0 auto; padding: 48px 24px 80px; color: #e8e3d6; }
-.roadmap-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.roadmap-eyebrow { font-size: 11px; letter-spacing: .24em; color: #a4b897; }
-.roadmap-heading h1 { font-family: "Gowun Batang", serif; font-size: clamp(28px, 5vw, 44px); margin: 12px 0; }
-.roadmap-heading p:not(.roadmap-eyebrow), .roadmap-footnote { color: #aaaabb; line-height: 1.8; }
-.roadmap-progress { border-top: 1px solid #363746; padding-top: 24px; margin-top: 28px; color: #c4c3cd; line-height: 1.8; }
-.roadmap-progress span { padding: 0 8px; }
-.roadmap-path { list-style: none; padding: 0; margin: 32px 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 28px; }
-.roadmap-stop { position: relative; display: flex; align-items: flex-start; gap: 14px; min-width: 0; }
-.roadmap-sigil { flex: 0 0 40px; height: 40px; display: grid; place-items: center; border: 1px solid #778b70; border-radius: 50%; color: #d6c58c; background: #252939; font-size: 22px; margin-top: 14px; }
-.roadmap-card { flex: 1; min-width: 0; padding: 20px; border: 1px solid #535c52; border-radius: 14px; background: linear-gradient(130deg, #282e39, #202332); }
-.roadmap-card-meta { display: flex; gap: 12px; flex-wrap: wrap; justify-content: space-between; color: #c4c792; font-size: 10px; letter-spacing: .12em; }
-.roadmap-status { letter-spacing: .04em; }
-.roadmap-card h2 { margin: 12px 0 6px; font-family: "Gowun Batang", serif; font-size: 21px; overflow-wrap: anywhere; }
-.roadmap-card p { color: #b5b6c0; margin: 0 0 18px; font-size: 13px; line-height: 1.7; }
-.roadmap-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.roadmap-actions button { min-height: 42px; }
-.roadmap-card small { display: block; margin-top: 12px; color: #adaeba; line-height: 1.6; }
-.roadmap-stop.is-locked .roadmap-card { border-color: #3e4050; background: #20222e; }
-.roadmap-stop.is-locked .roadmap-sigil { color: #9595a4; border-color: #515361; background: #20222e; }
-.roadmap-stop.is-locked .roadmap-card-meta { color: #b3b3c0; }
-.roadmap-stop.is-complete .roadmap-card { border-color: #817849; }
-.roadmap-footnote { font-size: 12px; }
-@media (max-width: 700px) {
-  .stage-roadmap { padding: 28px 18px 48px; }
-  .roadmap-heading { align-items: flex-start; flex-direction: column; }
-  .roadmap-path { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .roadmap-sigil { flex-basis: 32px; height: 32px; font-size: 18px; }
-  .roadmap-card { padding: 17px; }
-}
+.stage-roadmap { max-width: 1120px; margin: 0 auto; padding: 48px 24px 80px; color: #e8e3d6; }
+.storybook-roadmap { position: relative; isolation: isolate; padding-top: 76px; }
+.roadmap-night { position: absolute; inset: 0 0 auto; height: 390px; overflow: hidden; z-index: -1; pointer-events: none; background: radial-gradient(ellipse at 70% 8%, #637d6930, transparent 58%); }
+.roadmap-moon { position: absolute; right: 12%; top: 26px; width: 70px; height: 70px; border-radius: 50%; box-shadow: -15px 8px 0 #d1cfad; transform: rotate(-18deg); opacity: .55; }
+.roadmap-night i { position: absolute; width: 3px; height: 3px; background: #eadba4; border-radius: 50%; box-shadow: 0 0 12px #e5d99c; }
+.roadmap-night i:nth-child(2) { left: 8%; top: 33px; }.roadmap-night i:nth-child(3) { left: 52%; top: 71px; }.roadmap-night i:nth-child(4) { right: 6%; top: 153px; }.roadmap-night i:nth-child(5) { left: 65%; top: 18px; }.roadmap-night i:nth-child(6) { left: 36%; top: 23px; }
+.roadmap-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin: 0 20px 34px; }
+.roadmap-eyebrow { font-size: 10px; letter-spacing: .27em; color: #bcc9a7; }
+.roadmap-heading h1 { font-family: "Gowun Batang", serif; font-size: clamp(32px, 5vw, 48px); font-weight: 600; margin: 14px 0 16px; letter-spacing: -.04em; }
+.roadmap-heading p:not(.roadmap-eyebrow) { color: #c0c0b8; font-family: "Gowun Batang", serif; font-size: 15px; line-height: 1.95; }
+.roadmap-return { flex-shrink: 0; align-self: flex-end; border: 0; border-bottom: 1px solid #9fa88970; background: transparent; padding: 12px 0; color: #ced8bc; cursor: pointer; font: inherit; font-size: 12px; }
+.roadmap-book { position: relative; color: #45493d; border: 8px solid #66513b; border-radius: 13px 19px 19px 13px; padding: 42px 42px 26px; background: repeating-linear-gradient(0deg, #c1a87804 0 1px, transparent 1px 4px), linear-gradient(90deg, #e8ddbf 0%, #f4ecd6 46%, #e7dabb 49%, #c9b38e 50%, #eee2c6 51%, #f4ecd6 56%, #e9dec3 100%); box-shadow: 0 5px 0 #baaa85, 0 9px 0 #5b4633, 0 25px 70px #04050c70, inset 0 0 45px #886b3420; }
+.roadmap-book::after { content: ""; position: absolute; top: -9px; right: 44px; width: 30px; height: 86px; background: #698271; clip-path: polygon(0 0,100% 0,100% 100%,50% 82%,0 100%); box-shadow: inset 4px 0 #ffffff15; }
+.roadmap-book-top { display: flex; align-items: center; gap: 20px; position: relative; }
+.roadmap-kicker { margin: 0 0 7px; color: #7b775d; font-size: 11px; letter-spacing: .17em; }
+.roadmap-book-top h2 { font-family: "Gowun Batang", serif; font-size: 27px; font-weight: 600; margin: 0; }
+.roadmap-letter { position: relative; width: 65px; height: 44px; flex-shrink: 0; border: 1px solid #b49d72; border-radius: 3px; background: linear-gradient(32deg, transparent 49%, #b49d7280 50%, transparent 52%) left/50% 100% no-repeat, linear-gradient(-32deg, transparent 49%, #b49d7280 50%, transparent 52%) right/50% 100% no-repeat, #eee2c2; transform: rotate(-10deg); box-shadow: 3px 5px 8px #75653e22; }
+.roadmap-letter span { display: grid; place-items: center; position: absolute; left: 23px; top: 12px; width: 22px; height: 22px; border-radius: 50%; background: #9e5b50; color: #e9c5a1; font-size: 13px; box-shadow: 1px 2px 2px #56372b40; }
+.roadmap-progress { margin: 0 34px 0 auto; font-family: "Gowun Batang", serif; color: #797657; font-size: 19px; white-space: nowrap; }
+.roadmap-progress strong { color: #405d4b; font-size: 32px; }.roadmap-progress span { display: block; font: 10px "Noto Sans KR", sans-serif; margin-top: 5px; letter-spacing: .04em; }
+.roadmap-book-invitation { margin: 22px 0 0; font-family: "Gowun Batang", serif; font-size: 14px; color: #77715a; line-height: 1.8; }
+.roadmap-bookmark { display: flex; align-items: center; gap: 14px; margin-top: 25px; padding: 17px 20px; background: #60795813; border: 1px solid #6d80523c; border-left: 3px solid #6b8160; border-radius: 3px 10px 10px 3px; }
+.roadmap-bookmark img { filter: drop-shadow(1px 3px 2px #76663e25); }.roadmap-bookmark div { display: grid; gap: 5px; }.roadmap-bookmark div span { font-size: 10px; color: #6b7358; }.roadmap-bookmark strong { font-family: "Gowun Batang", serif; font-size: 19px; }
+.roadmap-bookmark button { margin-left: auto; border: 0; border-radius: 5px; background: #48644f; color: #f8f0d9; padding: 12px 18px; font: inherit; font-size: 12px; cursor: pointer; min-height: 44px; box-shadow: 0 3px 0 #344b3b; }
+.roadmap-path { position: relative; list-style: none; padding: 0; margin: 27px 0 0; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); column-gap: 52px; }
+.roadmap-stop { position: relative; display: grid; grid-template-columns: 118px minmax(0,1fr); align-items: center; column-gap: 12px; padding: 28px 0 31px; min-width: 0; border-bottom: 1px dashed #99876150; }
+.roadmap-vignette { position: relative; align-self: start; padding-top: 16px; color: #567362; }.roadmap-illustration { display: block; width: 100%; height: auto; overflow: visible; }
+.illustration-2,.illustration-8 { color: #567982; }.illustration-3,.illustration-4 { color: #a57749; }.illustration-7,.illustration-10 { color: #82636b; }.illustration-9 { color: #8b794b; }
+.roadmap-sigil { position: absolute; left: 44px; bottom: -14px; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; border: 1px solid #8b9476; background: #ece3cb; font-family: "Gowun Batang", serif; font-size: 12px; }
+.roadmap-card { min-width: 0; }.roadmap-card-meta { display: flex; align-items: center; gap: 10px; justify-content: space-between; font-size: 10px; color: #71684f; letter-spacing: .1em; }.roadmap-status { letter-spacing: 0; font-size: 10px; }
+.roadmap-card h2 { margin: 9px 0 9px; font-family: "Gowun Batang", serif; font-size: 22px; font-weight: 600; line-height: 1.45; word-break: keep-all; overflow-wrap: anywhere; }
+.roadmap-whisper { margin: 0; font-family: "Gowun Batang", serif; font-size: 13px; line-height: 1.85; color: #656553; word-break: keep-all; overflow-wrap: anywhere; }
+.roadmap-stage-count { font-size: 10px; color: #706852; margin: 10px 0 6px; }.roadmap-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 12px; }
+.roadmap-enter,.roadmap-archive { border: 0; background: transparent; font: inherit; min-height: 38px; padding: 7px 0; text-align: left; cursor: pointer; font-size: 12px; color: #405d43; }.roadmap-enter:not(:disabled) { font-weight: 700; border-bottom: 1px solid #7e9363; }.roadmap-archive { font-size: 10px; color: #7e7154; text-decoration: underline; text-underline-offset: 4px; }
+.roadmap-card small { display: block; font-size: 10px; line-height: 1.6; color: #716954; }
+.roadmap-stop.is-locked .roadmap-vignette { opacity: .6; }.roadmap-stop.is-locked .roadmap-card h2 { color: #777260; }.roadmap-stop.is-locked .roadmap-whisper { color: #706953; }.roadmap-enter:disabled { color: #827b68; cursor: default; }
+.roadmap-stop.is-complete .roadmap-sigil { background: #637d63; color: #faf0d4; border-color: #637d63; }.roadmap-stop.is-complete .roadmap-status { color: #516c4d; }
+.roadmap-stop.is-bookmarked .roadmap-card h2 { color: #365c43; }.roadmap-stop.is-bookmarked::before { content: ""; position: absolute; inset: 14px -12px 14px -8px; background: #7082540b; border-radius: 47% 42% 45% 40%; pointer-events: none; }
+.roadmap-book-ending { margin-top: 30px; text-align: center; font-family: "Gowun Batang", serif; color: #82755d; font-size: 13px; letter-spacing: .05em; }.roadmap-book-ending span { display: block; margin-top: 13px; font-size: 21px; color: #a18f67; }
+.roadmap-footnote { margin: 28px 16px 0; color: #aaa99f; font-size: 11px; line-height: 1.9; text-align: center; }
+.storybook-roadmap button:focus-visible { outline: 2px solid #a67238; outline-offset: 5px; }.storybook-roadmap button:disabled { cursor: default; }.roadmap-bookmark button:disabled { opacity: .55; }
+@media (hover:hover) { .roadmap-stop:not(.is-locked):hover .roadmap-illustration { transform: translateY(-3px); }.roadmap-enter:not(:disabled):hover,.roadmap-archive:hover { color: #183b28; }.roadmap-illustration { transition: transform .2s ease; } }
+@media (max-width: 850px) { .roadmap-book { padding: 30px 24px 24px; }.roadmap-path { column-gap: 38px; }.roadmap-stop { grid-template-columns: 88px minmax(0,1fr); gap: 8px; }.roadmap-sigil { left: 30px; }.roadmap-card h2 { font-size: 20px; } }
+@media (max-width: 620px) { .stage-roadmap { padding: 32px 14px 48px; }.roadmap-heading { margin: 0 7px 25px; flex-direction: column; align-items: flex-start; gap: 4px; }.roadmap-return { align-self: flex-start; }.roadmap-heading h1 { font-size: 33px; }.roadmap-heading p:not(.roadmap-eyebrow) { font-size: 13px; }.roadmap-book { border-width: 5px; padding: 29px 18px 24px; background: repeating-linear-gradient(0deg,#c1a87804 0 1px,transparent 1px 4px),linear-gradient(90deg,#e8ddbf,#f4ecd6 14%,#f4ecd6 85%,#e9dec3); }.roadmap-book::after { right: 21px; width: 21px; height: 52px; }.roadmap-book-top { gap: 12px; }.roadmap-letter { width: 48px; height: 34px; }.roadmap-letter span { left: 15px; top: 8px; }.roadmap-book-top h2 { font-size: 21px; }.roadmap-kicker { font-size: 9px; }.roadmap-progress { position: absolute; right: 0; top: 74px; margin: 0; font-size: 13px; }.roadmap-progress strong { font-size: 19px; }.roadmap-progress span { display: none; }.roadmap-book-invitation { padding-right: 55px; font-size: 12px; }.roadmap-bookmark { flex-wrap: wrap; padding: 13px 12px; gap: 10px; margin-top: 21px; }.roadmap-bookmark img { width: 38px; height: 38px; }.roadmap-bookmark strong { font-size: 17px; }.roadmap-bookmark button { width: 100%; margin: 0; }.roadmap-path { grid-template-columns: minmax(0,1fr); margin-top: 15px; }.roadmap-stop { grid-template-columns: 100px minmax(0,1fr); padding: 27px 0; gap: 12px; }.roadmap-sigil { left: 36px; }.roadmap-card h2 { font-size: 21px; }.roadmap-whisper { font-size: 13px; }.roadmap-night { inset-inline: 0; }.roadmap-moon { right: 14%; top: 5px; opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .roadmap-illustration { transition: none; } }

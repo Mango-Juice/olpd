@@ -1,0 +1,47 @@
+import { chromium, expect } from "@playwright/test";
+import { mkdir, writeFile } from "node:fs/promises";
+const browser = await chromium.launch();
+const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, reducedMotion: "reduce" });
+await context.addInitScript({ content: "globalThis.__name = (fn) => fn;" });
+const page = await context.newPage();
+const errors: string[] = [];
+let calls = 0;
+page.on("pageerror", (error) => errors.push(error.message));
+page.on("request", (request) => { if (request.url().includes("/api/") && request.method() === "POST") calls++; });
+await mkdir("artifacts/storybook-roadmap", { recursive: true });
+try {
+  await page.goto("http://localhost:5173/favicon.svg");
+  await page.evaluate(async () => {
+    const load = (path: string): Promise<Record<string, any>> => import(/* @vite-ignore */ path);
+    const [{ newRun }, { ROOMS }, { makeSave }] = await Promise.all([load("/src/game/core.ts"), load("/src/game/content.ts"), load("/src/game/storage.ts")]);
+    const room = ROOMS.length - 1;
+    const state = { ...newRun(false), id: "storybook-fixture", phase: "cleared", room, point: ROOMS[room].points.length, revision: 41 };
+    localStorage.setItem("one-line-per-death:save", JSON.stringify(makeSave(state, { writer: "storybook-fixture", savedAt: 123456, tutorialCompleted: true, settings: { muted: true, reducedMotion: true } })));
+  });
+  await page.goto("http://localhost:5173/");
+  await expect(page.getByRole("heading", { name: "편지가 닿을 때까지", exact: true })).toBeVisible();
+  await expect(page.locator(".roadmap-stop")).toHaveCount(10);
+  await expect(page.locator(".roadmap-illustration")).toHaveCount(10);
+  await expect(page.locator(".roadmap-stop.is-locked button")).toHaveCount(8);
+  for (const button of await page.locator(".roadmap-stop.is-locked button").all()) await expect(button).toBeDisabled();
+  await expect(page.locator(".roadmap-bookmark strong")).toHaveText("비에 잠긴 회랑");
+  await page.evaluate(() => document.fonts.ready);
+  await page.screenshot({ path: "artifacts/storybook-roadmap/desktop.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: "artifacts/storybook-roadmap/mobile.png", fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.locator(".roadmap-bookmark button").click();
+  await expect(page.locator(".play-stage-progress-heading")).toContainText("2-1");
+  await page.getByRole("button", { name: "여정 지도", exact: true }).first().click();
+  await expect(page.locator(".roadmap-bookmark button")).toContainText("이야기 이어가기");
+  await page.locator(".roadmap-bookmark button").click();
+  await expect(page.locator(".play-stage-progress-heading")).toContainText("2-1");
+  await page.goto("http://localhost:5173/?qa=1");
+  await expect(page.locator(".storybook-roadmap .roadmap-stop")).toHaveCount(10);
+  await expect(page.locator(".storybook-roadmap .is-locked")).toHaveCount(0);
+  await page.locator(".storybook-roadmap .roadmap-stop").filter({ has: page.getByRole("heading", { name: "비에 잠긴 회랑", exact: true }) }).getByRole("button", { name: "들어가기", exact: false }).click();
+  await expect(page.locator(".play-stage-progress-heading")).toContainText("2-1");
+  expect(errors).toEqual([]); expect(calls).toBe(0);
+  await writeFile("artifacts/storybook-roadmap/report.json", JSON.stringify({ passed: true, chapters: 10, locked: 8, checks: ["legacy completion", "unlock", "bookmark start", "resume", "mobile width", "QA shared book and isolated entry"], errors, liveCalls: calls }, null, 2));
+  console.log("PASS storybook roadmap: 10 chapters, locks, bookmark start/resume, mobile, no AI calls");
+} finally { await browser.close(); }
