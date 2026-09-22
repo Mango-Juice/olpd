@@ -1,31 +1,27 @@
-import type { CampaignStageDefinition } from "./level";
-import type { StageId } from "./types";
-import { RAIN_STAGE } from "./stages/rain";
-import { KITCHEN_STAGE } from "./stages/kitchen";
-import { FORGE_STAGE } from "./stages/forge";
-import { GARDEN_STAGE } from "./stages/garden";
-import { STOREHOUSE_STAGE } from "./stages/storehouse";
-import { THEATRE_STAGE } from "./stages/theatre";
-import { FOG_STAGE } from "./stages/fog";
-import { TOWER_STAGE } from "./stages/tower";
-import { WARDEN_STAGE } from "./stages/warden";
-import { ONBOARDING_STAGES } from "./stages/onboarding";
+import type { CampaignStageDefinition } from './level';
+import type { StageId } from './types';
+import { QUIET_RAIN_STAGE, QUIET_KITCHEN_STAGE, QUIET_FORGE_STAGE } from './quiet/early';
+import { QUIET_GARDEN_STAGE, QUIET_STOREHOUSE_STAGE, QUIET_THEATRE_STAGE } from './quiet/middle';
+import { QUIET_FOG_STAGE, QUIET_TOWER_STAGE, QUIET_WARDEN_STAGE } from './quiet/late';
 
-const DEFINITIONS: Partial<Record<StageId, CampaignStageDefinition>> = {
-  2: RAIN_STAGE,
-  3: KITCHEN_STAGE,
-  4: FORGE_STAGE,
-  5: GARDEN_STAGE,
-  6: STOREHOUSE_STAGE,
-  7: THEATRE_STAGE,
-  8: FOG_STAGE,
-  9: TOWER_STAGE,
-  10: WARDEN_STAGE,
+const CHAPTER_PURPOSE: Partial<Record<StageId, string>> = {
+  2: '편지를 젖지 않게 지키며 회랑을 건너야 해요.',
+  3: '멈춰 선 부엌을 지나 편지의 길을 찾아요.',
+  4: '바람을 빌려 대장간 위쪽으로 올라가요.',
+  5: '뒤집힌 정원을 지나 다음 문을 찾아요.',
+  6: '등불을 챙겨 어두운 보관소를 빠져나가요.',
+  7: '등지기와 함께 극장을 빠져나가야 해요.',
+  8: '안개 속 길을 확인하며 건너편으로 가요.',
+  9: '등지기와 함께 종탑 위로 올라가요.',
+  10: '문지기를 구하고, 함께 편지를 전하러 가요.',
 };
-for (const stage of Object.values(DEFINITIONS)) {
-  DEFINITIONS[stage.id] = { ...stage, onboarding: ONBOARDING_STAGES[stage.id] ?? [] };
-}
-/** Stage access is separately governed by campaign completion, never this lookup. */
+const DEFINITIONS: Partial<Record<StageId, CampaignStageDefinition>> = Object.fromEntries([
+  QUIET_RAIN_STAGE, QUIET_KITCHEN_STAGE, QUIET_FORGE_STAGE,
+  QUIET_GARDEN_STAGE, QUIET_STOREHOUSE_STAGE, QUIET_THEATRE_STAGE,
+  QUIET_FOG_STAGE, QUIET_TOWER_STAGE, QUIET_WARDEN_STAGE,
+].map((stage) => [stage.id, { ...stage, objective: CHAPTER_PURPOSE[stage.id] }]));
+
+/** Access is governed by verified completion; old worlds are recovery records, not live scenes. */
 export function resolveStage(id: StageId): CampaignStageDefinition | null {
   return DEFINITIONS[id] ?? null;
 }

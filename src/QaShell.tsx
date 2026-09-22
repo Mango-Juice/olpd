@@ -3,7 +3,7 @@ import App from "./App";
 import { StageRoadmap } from "./components/StageRoadmap";
 import type { CampaignState } from "./campaign/progress";
 import { CampaignPlay } from "./components/CampaignPlay";
-import { allStageSegments, isOnboardingSegment } from "./campaign/level";
+import { allStageSegments, isOnboardingSegment, stageDynamics } from "./campaign/level";
 import { createNotebook } from "./campaign/notebook";
 import { STAGES } from "./campaign/catalog";
 import { campaignAuthority, type CampaignStoredRun } from "./campaign/authority";
@@ -17,7 +17,8 @@ import type { Settings } from "./game/types";
 import type { StageId } from "./campaign/types";
 import "./QaShell.css";
 
-const KEY = "one-line-per-death:qa:v1";
+// Keep the previous sandbox untouched; redesigned scenes have independent records.
+const KEY = "one-line-per-death:qa:quiet-v1";
 const qaStage = resolveStage;
 const authority = campaignAuthority(qaStage);
 const initialSettings: Settings = { muted: true, reducedMotion: true };
@@ -82,6 +83,13 @@ export default function QaShell() {
     if (!stage || !segment) return;
     const world = segment.enter(null);
     const fresh = createStageRun(crypto.randomUUID(), world);
+    if (stage.contentRevision === "quiet-v1") {
+      fresh.contentRevision = stage.contentRevision;
+      fresh.notebook = createNotebook(segmentId, true);
+      fresh.clearedSegments = stage.segments.slice(0, stage.segments.indexOf(segment)).map((item) => item.id);
+      fresh.seal = fresh.clearedSegments.reduce((seal, id) => stageDynamics(stage).sealAfter(id) ?? seal, 0);
+      fresh.sceneNotes = [];
+    }
     const introductory = isOnboardingSegment(stage, segmentId);
     const introIndex = stage.onboarding?.findIndex((item) => item.id === segmentId) ?? -1;
     // QA-only seeded learning prefix. This isolated slot never grants campaign completion.

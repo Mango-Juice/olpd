@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
 import { ACTION_LABELS, CONFIG, ROOMS } from "../game/content";
 import {
   ONBOARDING_STAGES,
@@ -22,12 +21,13 @@ import {
 } from "../render/legacyOnboarding";
 import { drawHero, onHeroSpriteReady, drawDungeonBackdrop, drawDungeonFloor, drawDungeonMasonry } from "../render/scene";
 import {
-  PlayComposer,
   PlayHints,
   PlayLayout,
   PlayNotebook,
   PlayStageProgress,
 } from "./PlayChrome";
+import { PlayCommandComposer } from "./PlayCommandComposer";
+import { usePlayCommand } from "../hooks/usePlayCommand";
 import "./LegacyOnboarding.css";
 
 interface LegacyOnboardingProps {
@@ -59,16 +59,6 @@ const STAGE_PROGRESS = [
 
 function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
-}
-
-function conditionLabels(interpretation: Interpretation): string[] {
-  const labels = interpretation.appliesTo.map((id) => {
-    if (id === "clear") return "평평한 길";
-    if (id === "pit" || id === "bridge") return "바닥이 끊긴 곳";
-    if (id === "lowCeiling") return "머리 위가 낮은 곳";
-    return "옆길이 있는 곳";
-  });
-  return [...new Set(labels)];
 }
 
 function prepareCanvas(
@@ -344,21 +334,16 @@ export function LegacyOnboarding({
   onRetryInitialization,
 }: LegacyOnboardingProps) {
   const [draft, setDraft] = useState("");
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState("");
+  const [actionPending, setActionPending] = useState(false);
+  const [executing, setExecuting] = useState(false);
+  const [actionError, setActionError] = useState("");
   const [message, setMessage] = useState("");
   const [presentation, setPresentation] = useState<Presentation | null>(null);
-  const [candidate, setCandidate] = useState<{
-    text: string;
-    value: Interpretation;
-  } | null>(null);
   const [lastInterpretation, setLastInterpretation] = useState<{
     text: string;
     value: Interpretation;
   } | null>(null);
-  const requestRef = useRef<AbortController | null>(null);
   const presentationKey = useRef(0);
-  const composing = useRef(false);
   const mounted = useRef(true);
 
   useEffect(
@@ -366,7 +351,6 @@ export function LegacyOnboarding({
       mounted.current = true;
       return () => {
         mounted.current = false;
-        requestRef.current?.abort();
       };
     },
     [],
@@ -374,16 +358,18 @@ export function LegacyOnboarding({
 
   const chooseStory = async (choice: "read" | "skipped") => {
     if (pending || conflict || !ready) return;
-    setPending(true);
-    setError("");
+    setActionPending(true);
+    setActionError("");
     const saved = await onProgressChange(chooseNarrative(progress, choice));
     if (!mounted.current) return;
-    if (!saved) setError("이야기 선택을 저장하지 못했어요. 다시 시도해 주세요.");
-    setPending(false);
+    if (!saved) setActionError("이야기 선택을 저장하지 못했어요. 다시 시도해 주세요.");
+    setActionPending(false);
   };
 
   const finishAttempt = async (result: OnboardingAttemptResult) => {
     const stageIndex = progress.currentStage;
+    if (!(await onProgressChange(result.progress))) return false;
+    if (!mounted.current) return false;
     setPresentation({
       key: ++presentationKey.current,
       stageIndex,
@@ -393,13 +379,7 @@ export function LegacyOnboarding({
     });
     setMessage(result.message);
     await wait(settings.reducedMotion ? 30 : 820);
-    if (!mounted.current) return;
-    if (!(await onProgressChange(result.progress))) {
-      if (!mounted.current) return;
-      setError("도입 기록을 저장하지 못했어요. 같은 장면에서 다시 시도해 주세요.");
-      return;
-    }
-    if (!mounted.current) return;
+    if (!mounted.current) return false;
     if (result.attempt.succeeded) {
       setDraft("");
       setLastInterpretation(null);
@@ -410,82 +390,53 @@ export function LegacyOnboarding({
         setMessage("다음 장면은 새 시작점과 빈 임시 한 줄로 시작해요.");
       }
     }
+    return true;
   };
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    if (pending || conflict || !ready || composing.current) return;
-    const text = draft.trim();
-    if (!text) {
-      setError("용사에게 남길 한 줄을 적어 주세요.");
-      return;
-    }
-    if ([...text].length > CONFIG.maxInstructionLength) {
-      setError(`한 줄은 ${CONFIG.maxInstructionLength}자까지 쓸 수 있어요.`);
-      return;
-    }
-    setPending(true);
-    setError("");
-    setMessage("");
-    const controller = new AbortController();
-    requestRef.current = controller;
-    const timeout = window.setTimeout(
-      () => controller.abort(),
-      CONFIG.requestTimeoutMs,
-    );
-    try {
-      const value = await interpret(text, controller.signal);
-      setCandidate({ text, value });
-    } catch (cause) {
-      setError(
-        controller.signal.aborted
-          ? "15초 안에 응답이 오지 않았어요. 쓴 문장은 그대로예요."
-          : cause instanceof Error
-          ? cause.message
-          : "뜻을 확인하지 못했어요. 쓴 문장은 그대로예요.",
-      );
-    } finally {
-      clearTimeout(timeout);
-      if (requestRef.current === controller) requestRef.current = null;
-      if (mounted.current) setPending(false);
-    }
-  };
-
-  const confirmCandidate = async () => {
-    if (!candidate || pending || conflict || !ready) return;
-    setPending(true);
-    setError("");
-    setLastInterpretation(candidate);
-    try {
-      await finishAttempt(
-        attemptOnboarding(progress, candidate.text, candidate.value),
-      );
-      if (mounted.current) setCandidate(null);
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "이 뜻으로 움직이지 못했어요.",
-      );
-    } finally {
-      if (mounted.current) setPending(false);
-    }
-  };
+  const {
+    pending: commandPending,
+    error: commandError,
+    submit,
+    cancel,
+    clearError,
+  } = usePlayCommand<Interpretation>({
+    contextKey: `${progress.ownerRunId}:${progress.currentStage}:${progress.attempts.length}`,
+    maxLength: CONFIG.maxInstructionLength,
+    timeoutMs: CONFIG.requestTimeoutMs,
+    blocked: conflict || !ready || executing,
+    interpret,
+    execute: async (value, text) => {
+      setExecuting(true);
+      setMessage("");
+      setLastInterpretation({ text, value });
+      try {
+        return await finishAttempt(attemptOnboarding(progress, text, value));
+      } finally {
+        if (mounted.current) setExecuting(false);
+      }
+    },
+    onStart: () => setActionError(""),
+  });
+  const pending = actionPending || commandPending || executing;
+  const error = commandError || actionError;
 
   const repeat = async () => {
     if (!lastInterpretation || pending || conflict || !ready) return;
-    setPending(true);
-    setError("");
+    setActionPending(true);
+    setActionError("");
     try {
-      await finishAttempt(
+      const saved = await finishAttempt(
         attemptOnboarding(
           progress,
           lastInterpretation.text,
           lastInterpretation.value,
         ),
       );
+      if (!saved) setActionError("도입 기록을 저장하지 못했어요. 같은 장면에서 다시 시도해 주세요.");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "다시 실행하지 못했어요.");
+      setActionError(cause instanceof Error ? cause.message : "다시 실행하지 못했어요.");
     } finally {
-      if (mounted.current) setPending(false);
+      if (mounted.current) setActionPending(false);
     }
   };
 
@@ -544,7 +495,7 @@ export function LegacyOnboarding({
     );
   }
 
-  if (isOnboardingComplete(progress)) {
+  if (isOnboardingComplete(progress) && !executing) {
     return (
       <section className="legacy-story" aria-labelledby="legacy-handoff-title">
         <div className="legacy-story-scene" aria-hidden="true">
@@ -572,7 +523,11 @@ export function LegacyOnboarding({
     );
   }
 
-  const stage = ONBOARDING_STAGES[progress.currentStage];
+  const stageIndex = presentation?.stageIndex ?? Math.min(
+    progress.currentStage,
+    ONBOARDING_STAGES.length - 1,
+  );
+  const stage = ONBOARDING_STAGES[stageIndex];
   const stageAttempts = progress.attempts.filter(
     (attempt) => attempt.stageId === stage.id,
   );
@@ -584,14 +539,14 @@ export function LegacyOnboarding({
           <div className="scene-frame">
             <div className="scene-head">
               <div>
-                <span className="room-tag">정식 도입 · 1-{progress.currentStage + 1}</span>
+                <span className="room-tag">정식 도입 · 1-{stageIndex + 1}</span>
                 <h2>{stage.title}</h2>
               </div>
-              <span className="chapter-number">{progress.currentStage + 1} / 12</span>
+              <span className="chapter-number">{stageIndex + 1} / 12</span>
             </div>
             <div className="canvas-holder legacy-onboarding-canvas">
               <OnboardingCanvas
-                stageIndex={presentation?.stageIndex ?? progress.currentStage}
+                stageIndex={stageIndex}
                 presentation={presentation}
                 reducedMotion={settings.reducedMotion}
               />
@@ -606,7 +561,7 @@ export function LegacyOnboarding({
               </div>
             )}
             <div className="scene-foot">
-              <span><i /> 목표 · {stage.goal}</span>
+              <span><i /> {stage.goal}</span>
               <span>무료 지역 복구</span>
             </div>
           </div>
@@ -616,95 +571,37 @@ export function LegacyOnboarding({
             currentId={`intro:${stage.id}`}
             completedIds={progress.completedStageIds.map((id) => `intro:${id}`)}
           />
-          <PlayComposer onSubmit={submit} ariaLabel={`${stage.title} 임시 한 줄`}>
-            <label htmlFor="onboarding-instruction">
-              이 장면에서만 쓸 임시 한 줄 <span aria-hidden="true">↘</span>
-            </label>
-            <textarea
-              id="onboarding-instruction"
-              value={draft}
-              onChange={(event) => {
-                requestRef.current?.abort();
-                setDraft(event.target.value);
-                setCandidate(null);
-                setLastInterpretation(null);
-                setError("");
-              }}
-              rows={2}
-              placeholder="보이는 장면과 용사가 할 행동을 한 줄로 적어 주세요."
-              disabled={pending || conflict || !ready}
-              onCompositionStart={() => { composing.current = true; }}
-              onCompositionEnd={() => { composing.current = false; }}
-              onKeyDown={(event) => {
-                if (
-                  event.key === "Enter" &&
-                  !event.shiftKey &&
-                  !event.nativeEvent.isComposing &&
-                  event.nativeEvent.keyCode !== 229 &&
-                  !composing.current
-                ) {
-                  event.preventDefault();
-                  event.currentTarget.form?.requestSubmit();
-                }
-              }}
-            />
-            <div className="compose-bottom">
-              <span className="count">{[...draft].length} / {CONFIG.maxInstructionLength}</span>
-              <button
-                type="submit"
-                className="primary"
-                disabled={
-                  pending ||
-                  conflict ||
-                  !ready ||
-                  !draft.trim() ||
-                  [...draft].length > CONFIG.maxInstructionLength
-                }
-              >
-                {pending ? "뜻을 확인하는 중…" : "뜻 확인"} {!pending && <span>↗</span>}
-              </button>
-            </div>
-            {candidate && (
-              <div className="interpretation legacy-onboarding-interpretation">
-                <h4>“이렇게 이해했어요.”</h4>
-                <p>
-                  행동은 <strong>{ACTION_LABELS[candidate.value.action]}</strong>.{" "}
-                  {candidate.value.appliesTo.length > 0
-                    ? `${conditionLabels(candidate.value).join(", ")}에서 따를게요.`
-                    : "지금까지 알려진 장면에는 적용하지 않을게요."}
-                </p>
-                <div className="action-row">
-                  <button
-                    type="button"
-                    className="primary"
-                    disabled={pending}
-                    onClick={() => void confirmCandidate()}
-                  >
-                    이 뜻으로 움직이기 <span>→</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="subtle"
-                    disabled={pending}
-                    onClick={() => setCandidate(null)}
-                  >
-                    문장 다시 보기
-                  </button>
-                </div>
-              </div>
-            )}
+          <PlayCommandComposer
+            id="onboarding-instruction"
+            value={draft}
+            onChange={(value) => {
+              setDraft(value);
+              setLastInterpretation(null);
+              clearError();
+              setActionError("");
+            }}
+            onSubmit={submit}
+            onCancel={cancel}
+            pending={commandPending}
+            error={error}
+            disabled={actionPending || executing || conflict || !ready}
+            maxLength={CONFIG.maxInstructionLength}
+            label="이 장면에서만 쓸 임시 한 줄"
+            placeholder="보이는 장면과 용사가 할 행동을 한 줄로 적어 주세요."
+          >
             {message && <p className="legacy-onboarding-result" role="status">{message}</p>}
-            {error && <p className="error" role="alert">{error}</p>}
             <div className="legacy-onboarding-tools">
               <button
                 type="button"
                 className="subtle"
                 disabled={pending || !draft}
                 onClick={() => {
+                  cancel();
                   setDraft("");
-                  setCandidate(null);
                   setLastInterpretation(null);
                   setPresentation(null);
+                  clearError();
+                  setActionError("");
                   setMessage("임시 한 줄을 지웠어요. 비용 없이 다시 쓸 수 있어요.");
                 }}
               >
@@ -727,7 +624,7 @@ export function LegacyOnboarding({
                 </button>
               )}
             </div>
-          </PlayComposer>
+          </PlayCommandComposer>
           <PlayHints hints={stage.hint} resetKey={stage.id} />
         </section>
         <PlayNotebook count={stageAttempts.length}>

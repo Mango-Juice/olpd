@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { ApiError } from "./errors.js";
+import { QUIET_CAMPAIGN_PROMPT } from "./quiet-campaign-prompt.js";
 import { logAiCall, recordCall } from "./metrics.js";
 import type { CampaignInterpretResult } from "./campaign-contracts.js";
 import { parseProgram } from "../src/campaign/validation.js";
@@ -9,7 +10,7 @@ import type { ActionReferenceRole, EntityReference, InstructionProgram, Physical
 
 export const DEEPSEEK_CAMPAIGN_MODEL = "deepseek-flash";
 export const DEEPSEEK_CAMPAIGN_TIMEOUT_MS = 8_000;
-export const DEEPSEEK_CAMPAIGN_PROMPT_VERSION = "campaign-deepseek-14";
+export const DEEPSEEK_CAMPAIGN_PROMPT_VERSION = "campaign-deepseek-16-quiet";
 export type DeepSeekTrace = (event: { kind: "request" | "response" | "rejection"; data: unknown }) => void;
 export interface DeepSeekOptions {
   apiKey?: string; fetchImpl?: typeof fetch; signal?: AbortSignal;
@@ -44,6 +45,7 @@ hold: target is the object continuously held; a continuous grip such as "당겨 
 observe/remember: target is the public object observed or remembered.
 Predicate.property must be an exact key inside an entity properties object (or a current remembered fact). Entity top-level location/parent and actor state are interpretation context, not predicate fields. If an explicitly requested condition cannot be represented by those keys, ask for clarification; never invent a location/arrived field or silently drop the condition. Use only listed entity/actor IDs and public properties. Output JSON, not prose or code fences.`;
 export function deepSeekPublicWorld(world: WorldState) {
+  const quiet = /^\d{2}-v2-\d+$/.test(world.segmentId);
   const latestFacts = new Map<string, { entity: string; property: string; value: string | number | boolean }>();
   for (const fact of world.facts) {
     if (fact.attempt !== world.attempt || propertyVisibility(fact.property) !== "shown") continue;
@@ -61,7 +63,8 @@ export function deepSeekPublicWorld(world: WorldState) {
       id, name: entity.name,
       ...(Object.keys(options).length ? { propertyOptions: options } : {}),
       ...(entity.description === entity.name ? {} : { description: entity.description }),
-      material: entity.material, movable: entity.movable, weight: entity.weight, capacity: entity.capacity, reach: entity.reach,
+      material: entity.material, movable: entity.movable,
+      ...(quiet ? {} : { weight: entity.weight, capacity: entity.capacity, reach: entity.reach }),
       location: entity.location,
       ...(entity.parent === null ? {} : { parent: entity.parent }),
       ...(Object.keys(publicProperties).length === 0 ? {} : { properties: publicProperties }),
@@ -203,7 +206,7 @@ export async function interpretCampaignWithDeepSeek(text: string, input: WorldSt
   const request = { model: DEEPSEEK_CAMPAIGN_MODEL, thinking: { type: thinking === "low" ? "enabled" : "disabled" },
     ...(thinking === "low" ? { reasoning_effort: "low" } : { temperature: 0 }), max_tokens: thinking === "low" ? 4096 : 2048,
     response_format: { type: "json_object" }, messages: [
-      { role: "system", content: DEEPSEEK_CAMPAIGN_PROMPT },
+      { role: "system", content: /^\d{2}-v2-\d+$/.test(world.segmentId) ? QUIET_CAMPAIGN_PROMPT : DEEPSEEK_CAMPAIGN_PROMPT },
       { role: "user", content: JSON.stringify({ instruction: normalized, world: { ...context, ...(known.length === 0 ? {} : { knownEntities: known }) } }) },
     ] };
   const serialized = JSON.stringify(request);
@@ -242,7 +245,7 @@ export async function interpretCampaignWithDeepSeek(text: string, input: WorldSt
     if (!program || program.guard !== (program.condition !== undefined)) throw new ApiError(502, "provider", "AI 지침 구조가 게임 규칙과 맞지 않아요.", true);
     validateReferences(program, world);
     // This generative API provides no calibrated interpretation probability.
-    return { program, confidence: null, needsConfirmation: true, sourceSpans: { actions: [], condition: null } };
+    return { program, confidence: null, needsConfirmation: false, sourceSpans: { actions: [], condition: null } };
   } catch (error) {
     const mapped = controller.signal.aborted ? new ApiError(503, "unavailable", options.signal?.aborted ? "뜻 확인을 취소했어요." : "뜻 확인이 오래 걸려 멈췄어요. 작성 기회는 그대로예요.", true) : error instanceof ApiError ? error : new ApiError(503, "unavailable", "AI 해석 서비스에 연결하지 못했어요.", true);
     errorCode = mapped.code; emit(options.trace, "rejection", { code: mapped.code, message: mapped.message }); throw mapped;

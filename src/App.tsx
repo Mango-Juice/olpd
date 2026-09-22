@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
 import { isInterpretation } from "./game/interpretation";
 import { PrologueGuide } from "./components/PrologueGuide";
 import { DungeonCanvas } from "./components/DungeonCanvas";
 import { LegacyOnboarding } from "./components/LegacyOnboarding";
+import { PlayCommandComposer } from "./components/PlayCommandComposer";
 import Modal from "./components/Modal";
 import {
-  PlayComposer,
   PlayHeader,
   PlayUtilityActions,
   PlayHints,
@@ -68,6 +67,7 @@ import type {
   SaveData,
   Settings,
 } from "./game/types";
+import { usePlayCommand } from "./hooks/usePlayCommand";
 
 type Popup = "help" | "settings" | "new" | "share" | "storage" | null;
 const initialSettings: Settings = {
@@ -221,11 +221,7 @@ export default function App({ bridge }: AppProps = {}) {
   const [sceneMode, setSceneMode] = useState<"entrance" | "action">("action");
   const [sceneByScene, setSceneByScene] = useState(false);
   const [draft, setDraft] = useState("");
-  const [pending, setPending] = useState(false);
-  const [interpretation, setInterpretation] = useState<Interpretation | null>(
-    null,
-  );
-  const [error, setError] = useState("");
+  const [actionError, setActionError] = useState("");
   const [popup, setPopup] = useState<Popup>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [shareInstructions, setShareInstructions] = useState(false);
@@ -235,16 +231,10 @@ export default function App({ bridge }: AppProps = {}) {
   const [sharedEntry, setSharedEntry] = useState(
     () => new URLSearchParams(location.search).get("challenge") === "new",
   );
-  const requestRef = useRef<{ id: number; controller: AbortController } | null>(
-    null,
-  );
-  const requestId = useRef(0);
-  const composing = useRef(false);
   const busy = useRef(false);
   const saving = useRef(false);
   const presentedClears = useRef(new Set<string>());
   const notebook = useRef<HTMLDetailsElement>(null);
-  const draftRef = useRef("");
   const stepModeRef = useRef(false);
   const [awaitingNext, setAwaitingNext] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -265,7 +255,6 @@ export default function App({ bridge }: AppProps = {}) {
   const dropRef = useRef<{ id: string; position: "before" | "after" } | null>(
     null,
   );
-
   useEffect(() => {
     const handler = () => setHidden(document.hidden);
     document.addEventListener("visibilitychange", handler);
@@ -281,8 +270,6 @@ export default function App({ bridge }: AppProps = {}) {
             conflictRef.current = true;
             setConflict(true);
             setPaused(true);
-            requestRef.current?.controller.abort();
-            setPending(false);
           }
         } catch {
           conflictRef.current = true;
@@ -294,7 +281,6 @@ export default function App({ bridge }: AppProps = {}) {
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
   }, [bridge]);
-  useEffect(() => () => requestRef.current?.controller.abort(), []);
   useEffect(() => setAudioMuted(settings.muted), [settings.muted]);
   useEffect(() => {
     if (showChronicle) return;
@@ -407,10 +393,6 @@ export default function App({ bridge }: AppProps = {}) {
         conflictRef.current = true;
         setConflict(true);
         setPaused(true);
-        requestRef.current?.controller.abort();
-        requestRef.current = null;
-        requestId.current++;
-        setPending(false);
       }
       return false;
     }
@@ -564,17 +546,14 @@ export default function App({ bridge }: AppProps = {}) {
     [bridge],
   );
   const cancelDraft = () => {
-    requestRef.current?.controller.abort();
-    requestRef.current = null;
-    requestId.current++;
-    setPending(false);
-    setInterpretation(null);
-    setError("");
+    cancelCommand();
+    clearCommandError();
+    setActionError("");
   };
   const changeDraft = (value: string) => {
-    cancelDraft();
-    draftRef.current = value;
     setDraft(value);
+    clearCommandError();
+    setActionError("");
   };
   const playNext = useCallback(async () => {
     if (conflictRef.current) return false;
@@ -628,6 +607,37 @@ export default function App({ bridge }: AppProps = {}) {
     }
     return false;
   };
+  const rememberAndGo = async (text: string, value: Interpretation) => {
+    const next = addInstruction(stateRef.current, text, value);
+    if (!(await commit(next))) return false;
+    playSound("write", settingsRef.current.muted);
+    setDraft("");
+    setActionError("");
+    await startPlayback();
+    return true;
+  };
+  const {
+    pending,
+    error: commandError,
+    submit: submitCommand,
+    cancel: cancelCommand,
+    clearError: clearCommandError,
+  } = usePlayCommand<Interpretation>({
+    contextKey: `${state.id}:${state.phase}:${state.room}:${state.deaths}:${state.tutorialStep}:${state.instructions.length}`,
+    maxLength: CONFIG.maxInstructionLength,
+    timeoutMs: CONFIG.requestTimeoutMs,
+    blocked: !state.canWrite || conflict,
+    interpret: interpretOnboardingLine,
+    execute: (value, text) => rememberAndGo(text, value),
+    onStart: () => {
+      unlockAudio();
+      setActionError("");
+    },
+  });
+  const error = commandError || actionError;
+  useEffect(() => {
+    if (conflict) cancelCommand();
+  }, [cancelCommand, conflict]);
   const launch = async () => {
     if (busy.current || pending || conflict) return;
     busy.current = true;
@@ -636,22 +646,9 @@ export default function App({ bridge }: AppProps = {}) {
       if (await startPlayback()) {
         cancelDraft();
         setDraft("");
-        draftRef.current = "";
       }
     } finally {
       busy.current = false;
-    }
-  };
-  const rememberAndGo = async (text: string, value: Interpretation) => {
-    const next = addInstruction(stateRef.current, text, value);
-    if (await commit(next)) {
-      playSound("write", settingsRef.current.muted);
-      setDraft("");
-      draftRef.current = "";
-      setInterpretation(null);
-      setError("");
-      setPending(false);
-      await startPlayback();
     }
   };
   const begin = async () => {
@@ -674,114 +671,6 @@ export default function App({ bridge }: AppProps = {}) {
     setStarted(true);
     if (stateRef.current.phase === "running") await playNext();
     else presentCleared(stateRef.current);
-  };
-  const interpret = async (e: FormEvent) => {
-    e.preventDefault();
-    if (
-      pending ||
-      requestRef.current !== null ||
-      composing.current ||
-      !stateRef.current.canWrite ||
-      conflictRef.current
-    )
-      return;
-    const text = draft.trim();
-    if (!text) {
-      setError("용사에게 남길 한 줄을 적어주세요.");
-      return;
-    }
-    if ([...text].length > CONFIG.maxInstructionLength) {
-      setError("한 줄은 80자까지 쓸 수 있어요.");
-      return;
-    }
-    unlockAudio();
-    setError("");
-    setInterpretation(null);
-    setPending(true);
-    const controller = new AbortController();
-    const id = ++requestId.current;
-    requestRef.current = { id, controller };
-    const timeout = window.setTimeout(
-      () => controller.abort(),
-      CONFIG.requestTimeoutMs,
-    );
-    try {
-      const response = await fetch("/api/interpret", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          dungeonVersion: DUNGEON_VERSION,
-          rulesVersion: RULES_VERSION,
-        }),
-        signal: controller.signal,
-      });
-      if (response.status === 429)
-        throw new Error(
-          "요청이 잠시 몰렸어요. 1분 뒤 다시 시도해 주세요. 쓴 문장은 그대로예요.",
-        );
-      const data = await response.json().catch(() => {
-        throw new Error(
-          "해석 서버의 응답을 읽지 못했어요. 쓴 문장은 그대로예요. 잠시 후 다시 시도해 주세요.",
-        );
-      });
-      if (
-        id !== requestId.current ||
-        text !== draftRef.current.trim() ||
-        conflictRef.current
-      )
-        return;
-      if (!response.ok)
-        throw new Error(
-          data?.error?.message ??
-            data?.message ??
-            "해석하지 못했어요. 잠시 후 다시 시도해 주세요.",
-        );
-      const value: unknown = data?.interpretation ?? data;
-      if (!isInterpretation(value))
-        throw new Error("해석 응답이 올바르지 않아요. 다시 시도해 주세요.");
-      // Only the very first lesson needs a separate explanation/confirmation.
-      if (
-        stateRef.current.tutorial &&
-        stateRef.current.instructions.length === 0 &&
-        !completedRef.current
-      )
-        setInterpretation(value);
-      else await rememberAndGo(text, value);
-    } catch (cause) {
-      if (id === requestId.current) {
-        setError(
-          controller.signal.aborted
-            ? "15초 안에 응답이 오지 않았어요. 쓴 문장은 그대로예요. 다시 시도해 주세요."
-            : cause instanceof TypeError
-              ? "연결에 실패했어요. 쓴 문장은 그대로예요. 연결을 확인하고 다시 시도해 주세요."
-              : cause instanceof Error
-                ? cause.message
-                : "연결에 실패했어요. 다시 시도해 주세요.",
-        );
-      }
-    } finally {
-      clearTimeout(timeout);
-      if (id === requestId.current) {
-        setPending(false);
-        requestRef.current = null;
-      }
-    }
-  };
-  const confirmInstruction = async () => {
-    if (!interpretation || busy.current || conflict) return;
-    busy.current = true;
-    try {
-      await rememberAndGo(draft.trim(), interpretation);
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : "기억하지 못했어요. 다시 적어주세요.",
-      );
-    } finally {
-      busy.current = false;
-    }
   };
   const changeSettings = async (next: Settings) => {
     if (busy.current || conflictRef.current) return;
@@ -824,7 +713,7 @@ export default function App({ bridge }: AppProps = {}) {
         setDeleteId(null);
       }
     } catch (cause) {
-      setError(String(cause));
+      setActionError(String(cause));
     } finally {
       busy.current = false;
       setErasing(false);
@@ -848,7 +737,6 @@ export default function App({ bridge }: AppProps = {}) {
       ) {
         cancelDraft();
         setDraft("");
-        draftRef.current = "";
         setAnimating(false);
         setPaused(false);
         setNotice("");
@@ -923,7 +811,6 @@ export default function App({ bridge }: AppProps = {}) {
       completedRef.current = true;
       if (await commit(next)) {
         setDraft("");
-        draftRef.current = "";
         setAnimating(false);
         setAwaitingNext(false);
         setPaused(false);
@@ -1018,8 +905,6 @@ export default function App({ bridge }: AppProps = {}) {
     !animating && (state.phase === "ready" || state.phase === "dead");
   const canCompose = started && isRest && state.canWrite;
   const actualPhase = animating ? "running" : state.phase;
-  const needsFirstExplanation =
-    state.tutorial && state.instructions.length === 0 && !tutorialCompleted;
   const activeMemory =
     started && event
       ? (event.instructionText ?? "아무 말이 없으면 앞으로 걸어.")
@@ -1098,12 +983,6 @@ export default function App({ bridge }: AppProps = {}) {
   };
   const displayedDeaths =
     state.deaths - (animating && event?.outcome === "death" ? 1 : 0);
-  const viewedObservations = new Set([
-    observation.id,
-    ...state.events.map((e) => e.observation),
-  ]);
-  const knownApplications =
-    interpretation?.appliesTo.filter((id) => viewedObservations.has(id)) ?? [];
   const selected = state.instructions.find((x) => x.id === deleteId);
   const shareText = `죽을 때마다 한 줄\n${score(state)}데스로 던전 탈출!\n사망·자진 부활 ${state.deaths} + 삭제 패널티 ${state.penaltyDeaths}${
     shareInstructions
@@ -1186,11 +1065,11 @@ export default function App({ bridge }: AppProps = {}) {
         {popup === "help" && (
           <Modal title="네 번의 첫걸음" onClose={() => setPopup(null)}>
             <p>
-              각 장면에서 보이는 목표와 상황을 한 줄로 적으면, 용사가 이해한
-              행동과 조건을 먼저 보여 줍니다.
+              각 장면에서 보이는 목표와 상황을 한 줄로 적고 Enter를 누르면,
+              용사가 뜻을 읽어 바로 움직입니다.
             </p>
             <ul>
-              <li>뜻을 확인한 뒤 움직이기를 눌러 실제 장면에서 실행해요.</li>
+              <li>입력한 한 줄은 저장된 뒤 같은 장면에서 곧바로 실행돼요.</li>
               <li>실패해도 데스나 지우개를 쓰지 않고 같은 자리로 돌아와요.</li>
               <li>임시 한 줄은 연습 기록에만 남고 본편 메모로 복사되지 않아요.</li>
             </ul>
@@ -1531,116 +1410,29 @@ export default function App({ bridge }: AppProps = {}) {
           )}
           {canCompose && (
             <>
-              <PlayComposer onSubmit={interpret} ariaLabel="이번 생의 한 줄">
-                <label htmlFor="instruction">
-                  {state.tutorial && state.instructions.length === 0
+              <PlayCommandComposer
+                id="instruction"
+                value={draft}
+                onChange={changeDraft}
+                onSubmit={submitCommand}
+                onCancel={cancelCommand}
+                pending={pending}
+                error={error}
+                disabled={conflict}
+                maxLength={CONFIG.maxInstructionLength}
+                label={
+                  state.tutorial && state.instructions.length === 0
                     ? "첫 번째 가르침"
-                    : "이번 생에서 남길 한 줄"}{" "}
-                  <span aria-hidden="true">↘</span>
-                </label>
-                <textarea
-                  id="instruction"
-                  value={draft}
-                  onChange={(e) => changeDraft(e.target.value)}
-                  placeholder={
-                    state.tutorial && state.instructions.length === 0
-                      ? "앞으로 전진해"
-                      : state.tutorial
-                        ? "구덩이가 있으면 뛰어"
-                        : "이럴 때는, 이렇게 해줘…"
-                  }
-                  maxLength={160}
-                  rows={2}
-                  onCompositionStart={() => {
-                    composing.current = true;
-                  }}
-                  onCompositionEnd={() => {
-                    composing.current = false;
-                  }}
-                  onKeyDown={(e) => {
-                    if (
-                      e.key === "Enter" &&
-                      !e.shiftKey &&
-                      !e.nativeEvent.isComposing &&
-                      e.nativeEvent.keyCode !== 229 &&
-                      !composing.current
-                    ) {
-                      e.preventDefault();
-                      if (!pending) e.currentTarget.form?.requestSubmit();
-                    }
-                  }}
-                  disabled={conflict}
-                  aria-describedby="instruction-help"
-                />
-                <div className="compose-bottom">
-                  <span className="count">{[...draft].length} / 80</span>
-                  <button
-                    className="primary"
-                    type="submit"
-                    disabled={pending || !draft.trim() || conflict}
-                  >
-                    {pending ? (
-                      <>
-                        <span className="pulse" />
-                        읽고 있어요
-                      </>
-                    ) : needsFirstExplanation ? (
-                      "뜻을 확인해 볼까?"
-                    ) : (
-                      "기억하고 출발"
-                    )}
-                    {!pending && <span>↗</span>}
-                  </button>
-                </div>
-                {pending && (
-                  <p className="helper">
-                    최대 15초 정도 걸릴 수 있어요. 문장을 바꾸면 이전 해석은
-                    취소됩니다.
-                  </p>
-                )}
-                {error && (
-                  <p className="error" role="alert">
-                    {error}
-                  </p>
-                )}
-                {interpretation && (
-                  <div className="interpretation">
-                    <h4>“이렇게 기억할게.”</h4>
-                    <p>
-                      행동은{" "}
-                      <strong>{ACTION_LABELS[interpretation.action]}</strong>.{" "}
-                      {knownApplications.length
-                        ? `지금까지 본 ${knownApplications.map((id) => OBSERVATIONS[id].label).join(", ")}에서 사용할게.`
-                        : "지금까지 본 상황에는 적용되지 않아."}
-                    </p>
-                    <p>
-                      첫 줄만 함께 확인해요. 다음부터는 Enter 한 번으로 기억하고
-                      출발할게요.
-                    </p>
-                    <div className="action-row">
-                      <button
-                        type="button"
-                        className="primary"
-                        onClick={confirmInstruction}
-                      >
-                        기억하고 출발 <span>→</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="subtle"
-                        onClick={() => setInterpretation(null)}
-                      >
-                        다시 생각할게
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </PlayComposer>
-              <p className="helper" id="instruction-help">
-                {needsFirstExplanation
-                  ? "첫 한 줄은 용사가 어떻게 이해했는지 함께 확인해요."
-                  : "Enter ↵ 한 번이면 읽고 바로 출발해요. 기억한 글은 사망 후 지울 수 있어요."}
-              </p>
+                    : "이번 생에서 남길 한 줄"
+                }
+                placeholder={
+                  state.tutorial && state.instructions.length === 0
+                    ? "앞으로 전진해"
+                    : state.tutorial
+                      ? "구덩이가 있으면 뛰어"
+                      : "이럴 때는, 이렇게 해줘…"
+                }
+              />
               <PlayHints
                 hints={legacyHints(room, observation)}
                 resetKey={`${state.tutorial ? "prologue" : displayedRoom}:${observation.id}`}
@@ -1649,8 +1441,7 @@ export default function App({ bridge }: AppProps = {}) {
           )}
           {started &&
             isRest &&
-            !(state.tutorial && state.instructions.length === 0) &&
-            !interpretation && (
+            !(state.tutorial && state.instructions.length === 0) && (
               <div className="action-row">
                 <button
                   className={state.canWrite ? "secondary" : "primary"}

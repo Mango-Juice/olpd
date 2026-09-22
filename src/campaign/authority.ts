@@ -1,7 +1,7 @@
 import { isOnboardingProgress, progressBelongsToRun, type OnboardingProgress } from "../game/onboarding";
 import { loadSave } from "../game/storage";
 import type { SaveData } from "../game/types";
-import { allStageSegments, isOnboardingSegment, type CampaignStageDefinition } from "./level";
+import { allStageSegments, isOnboardingSegment, stageDynamics, type CampaignStageDefinition } from "./level";
 import type { RunCompletionAuthority } from "./progress";
 import type { StageRun } from "./run";
 import { parseStageRun } from "./run-validation";
@@ -24,7 +24,8 @@ export function campaignAuthority(resolveStage: (id: StageId) => CampaignStageDe
       const run = parseStageRun(raw.run);
       if (!run) return null;
       const stage = resolveStage(run.stageId);
-      if (!stage || stage.segments.length !== stageSummary(run.stageId).coreSegments) return null;
+      if (!stage || (stage.contentRevision === "quiet-v1" && stage.segments.length !== stageSummary(run.stageId).coreSegments)) return null;
+      if (run.contentRevision !== stage.contentRevision) return null;
       const allSegments = allStageSegments(stage);
       if (new Set(allSegments.map((segment) => segment.id)).size !== allSegments.length) return null;
       // Content wording may change without invalidating a saved physical state.
@@ -39,7 +40,30 @@ export function campaignAuthority(resolveStage: (id: StageId) => CampaignStageDe
       const ids = stage.segments.map((segment) => segment.id);
       const onboardingIds = (stage.onboarding ?? []).map((segment) => segment.id);
       if (run.clearedSegments.some((id) => !ids.includes(id))) return null;
-      if (!run.learning) {
+      if (stage.contentRevision === "quiet-v1") {
+        const completed = run.clearedSegments;
+        const sceneNotes = run.sceneNotes ?? [];
+        let previousNoteIndex = -1;
+        const currentIndex = ids.indexOf(run.world.segmentId);
+        const expectedCompleted = run.phase === "cleared"
+          ? ids
+          : ids.slice(0, Math.max(0, currentIndex));
+        if (stage.onboarding?.length || run.learning || !run.sceneNotes || run.notebook.scratch !== true ||
+          !ids.includes(run.world.segmentId) || run.checkpoint.segmentId !== run.world.segmentId ||
+          run.notebook.visitedBookmarks.length !== 1 || run.notebook.visitedBookmarks[0] !== run.world.segmentId ||
+          completed.length !== expectedCompleted.length || completed.some((id, index) => id !== expectedCompleted[index]) ||
+          expectedCompleted.some((id) => !sceneNotes.some((note) => note.segmentId === id))) return null;
+        for (const note of sceneNotes) {
+          const noteIndex = ids.indexOf(note.segmentId);
+          if (noteIndex < previousNoteIndex || noteIndex < 0 || noteIndex > currentIndex) return null;
+          previousNoteIndex = noteIndex;
+        }
+        if (run.phase !== "bookmark" && !sceneNotes.some((note) => note.segmentId === run.world.segmentId)) return null;
+        let expectedSeal = 0;
+        const dynamics = stageDynamics(stage);
+        for (const id of completed) expectedSeal = dynamics.sealAfter(id) ?? expectedSeal;
+        if (run.seal !== expectedSeal) return null;
+      } else if (!run.learning) {
         // Version-2 core saves predate onboarding. Preserve them without inventing learning history.
         if (!ids.includes(run.world.segmentId) || !ids.includes(run.checkpoint.segmentId) || run.notebook.scratch || run.notebook.visitedBookmarks.some((id) => !ids.includes(id))) return null;
       } else {

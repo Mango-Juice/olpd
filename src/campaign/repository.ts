@@ -2,6 +2,7 @@ import { listStageArchives } from "../game/archive";
 import { loadSave, type StorageLike } from "../game/storage";
 import type { SaveData, Settings } from "../game/types";
 import { isStageId } from "./catalog";
+import { parseStageRun } from "./run-validation";
 import {
   completeVerifiedRun,
   createCampaignState,
@@ -20,6 +21,7 @@ export const CAMPAIGN_DATABASE = "one-line-per-death:campaign";
 export const CAMPAIGN_DATABASE_VERSION = 1;
 export const CAMPAIGN_STORE = "campaign";
 const ROOT_KEY = "root";
+const CAMPAIGN_DOCUMENT_VERSION = 2 as const;
 
 export type CampaignRepositoryErrorCode =
   | "unavailable"
@@ -50,11 +52,21 @@ interface StoredArchive extends StoredRun {
   completedAt: number;
 }
 
+export interface CampaignRecoveryRecord {
+  kind: "active" | "archive";
+  reference: CampaignRunReference;
+  payload: unknown;
+  recoveredAt: number;
+  completedAt?: number;
+}
+
 /** One root record keeps progression, active runs, and archives in one IDB commit. */
 interface CampaignDocument {
+  version: typeof CAMPAIGN_DOCUMENT_VERSION;
   state: CampaignState;
   activeRuns: StoredRun[];
   archives: StoredArchive[];
+  recoveries: CampaignRecoveryRecord[];
 }
 
 export interface CampaignRepositorySnapshot<Run> {
@@ -65,6 +77,8 @@ export interface CampaignRepositorySnapshot<Run> {
     completedAt: number;
     run: Run;
   }[];
+  /** Raw pre-revision runs retained outside the current playable campaign. */
+  recoveries: CampaignRecoveryRecord[];
 }
 
 export interface CampaignWriteOptions {
@@ -132,6 +146,23 @@ function validReference(value: unknown): value is CampaignRunReference {
     value.runId.trim().length > 0 &&
     isStageId(value.stageId)
   );
+}
+
+function preRevisionWorldRun(payload: unknown): { reference: CampaignRunReference; cleared: boolean } | null {
+  if (!isRecord(payload) || payload.kind !== "world") return null;
+  const run = parseStageRun(payload.run);
+  if (!run || run.contentRevision !== undefined) return null;
+  return { reference: { runId: run.id, stageId: run.stageId }, cleared: run.phase === "cleared" };
+}
+
+function validRecovery(value: unknown): value is CampaignRecoveryRecord {
+  if (!isRecord(value) || (value.kind !== "active" && value.kind !== "archive") ||
+    !validReference(value.reference) || value.reference.stageId === 1 ||
+    typeof value.recoveredAt !== "number" || !Number.isFinite(value.recoveredAt) || value.recoveredAt < 0) return false;
+  const described = preRevisionWorldRun(value.payload);
+  if (!described || !sameReference(described.reference, value.reference)) return false;
+  if (value.kind === "active") return value.completedAt === undefined && !described.cleared;
+  return typeof value.completedAt === "number" && Number.isFinite(value.completedAt) && value.completedAt >= 0 && described.cleared;
 }
 
 function sameStoredValue(
@@ -424,8 +455,10 @@ export class CampaignRepository<Run extends object> {
   ): CampaignRepositoryResult<CampaignRepositorySnapshot<Run>> {
     if (
       !isRecord(value) ||
+      value.version !== CAMPAIGN_DOCUMENT_VERSION ||
       !Array.isArray(value.activeRuns) ||
-      !Array.isArray(value.archives)
+      !Array.isArray(value.archives) ||
+      !Array.isArray(value.recoveries)
     ) {
       return failure("corrupt", "캠페인 저장 데이터의 구조가 올바르지 않습니다.");
     }
@@ -486,6 +519,16 @@ export class CampaignRepository<Run extends object> {
       archives.push({ reference: described, completedAt: raw.completedAt, run });
     }
 
+    const recoveries: CampaignRecoveryRecord[] = [];
+    const recoveryRunIds = new Set<string>();
+    for (const raw of value.recoveries) {
+      if (!validRecovery(raw) || storedRunIds.has(raw.reference.runId) || recoveryRunIds.has(raw.reference.runId)) {
+        return failure("corrupt", "개편 전 실행 보관 기록을 검증하지 못했습니다.");
+      }
+      recoveryRunIds.add(raw.reference.runId);
+      recoveries.push(structuredClone(raw));
+    }
+
     const expectedActive = stateResult.value.stages
       .map((stage) => stage.activeRun)
       .filter((reference): reference is CampaignRunReference => reference !== null);
@@ -493,6 +536,9 @@ export class CampaignRepository<Run extends object> {
       .map((stage) =>
         stage.completion?.source === "campaign" ? stage.completion : null,
       )
+      .filter((completion) => completion !== null);
+    const recoveredCompletions = stateResult.value.stages
+      .map((stage) => stage.completion?.source === "content-recovery" ? stage.completion : null)
       .filter((completion) => completion !== null);
     const referencesMatch = (
       expected: CampaignRunReference[],
@@ -512,7 +558,11 @@ export class CampaignRepository<Run extends object> {
           (archive) =>
             sameReference(completion.run, archive.reference) &&
             completion.completedAt === archive.completedAt,
-        ),
+          ),
+      ) ||
+      !recoveredCompletions.every((completion) =>
+        recoveries.some((recovery) => recovery.kind === "archive" &&
+          sameReference(completion.run, recovery.reference) && completion.completedAt === recovery.completedAt),
       ) ||
       archives.some(
         (archive) =>
@@ -525,7 +575,7 @@ export class CampaignRepository<Run extends object> {
 
     return {
       ok: true,
-      value: { state: stateResult.value, activeRuns, archives },
+      value: { state: stateResult.value, activeRuns, archives, recoveries },
     };
   }
 
@@ -533,6 +583,7 @@ export class CampaignRepository<Run extends object> {
     snapshot: CampaignRepositorySnapshot<Run>,
   ): CampaignDocument {
     return {
+      version: CAMPAIGN_DOCUMENT_VERSION,
       state: snapshot.state,
       activeRuns: snapshot.activeRuns.map(({ reference, run }) => ({
         reference,
@@ -543,6 +594,7 @@ export class CampaignRepository<Run extends object> {
         completedAt,
         payload: this.authority.serialize(run),
       })),
+      recoveries: snapshot.recoveries.map((recovery) => structuredClone(recovery)),
     };
   }
 
@@ -631,6 +683,7 @@ export class CampaignRepository<Run extends object> {
             state: createCampaignState(writer),
             activeRuns: [],
             archives: [],
+            recoveries: [],
           },
         };
       } catch (cause) {
@@ -760,6 +813,128 @@ export class CampaignRepository<Run extends object> {
           run,
           completedAt,
         })),
+        recoveries: [],
+      },
+    };
+  }
+
+  /**
+   * Detaches pre-revision stage 2+ runs before current content validation.
+   * The transform is fail-closed and is committed with the replacement root.
+   */
+  private migrateContentDocument(
+    value: unknown,
+    writer: string,
+  ): CampaignRepositoryResult<CampaignDocument> {
+    if (isRecord(value) && value.version === CAMPAIGN_DOCUMENT_VERSION) {
+      const decoded = this.decodeDocument(value);
+      return decoded.ok ? { ok: true, value: value as unknown as CampaignDocument } : decoded;
+    }
+    if (!isRecord(value) || Object.hasOwn(value, "version") ||
+      !Array.isArray(value.activeRuns) || !Array.isArray(value.archives) || Object.hasOwn(value, "recoveries")) {
+      return failure("corrupt", "캠페인 저장 데이터의 구조가 올바르지 않습니다.");
+    }
+    const stateResult = validateCampaignState(value.state);
+    if (!stateResult.ok) return failure("corrupt", stateResult.error.message);
+
+    const retainedActive: StoredRun[] = [];
+    const retainedArchives: StoredArchive[] = [];
+    const recoveries: CampaignRecoveryRecord[] = [];
+    const seen = new Set<string>();
+    const recoveredAt = Date.now();
+    const activeReferences: CampaignRunReference[] = [];
+
+    for (const raw of value.activeRuns) {
+      if (!isRecord(raw) || !validReference(raw.reference) || !Object.hasOwn(raw, "payload") || seen.has(raw.reference.runId)) {
+        return failure("corrupt", "활성 실행 기록의 구조가 올바르지 않습니다.");
+      }
+      seen.add(raw.reference.runId);
+      activeReferences.push(raw.reference);
+      if (raw.reference.stageId === 1) {
+        retainedActive.push({ reference: raw.reference, payload: structuredClone(raw.payload) });
+        continue;
+      }
+      const legacy = preRevisionWorldRun(raw.payload);
+      if (legacy) {
+        if (legacy.cleared || !sameReference(legacy.reference, raw.reference)) {
+          return failure("corrupt", "개편 전 활성 실행 기록을 검증하지 못했습니다.");
+        }
+        recoveries.push({ kind: "active", reference: raw.reference, payload: structuredClone(raw.payload), recoveredAt });
+        continue;
+      }
+      const current = this.parseStoredRun(raw.payload);
+      if (!current.ok || !sameReference(current.value.reference, raw.reference)) {
+        return failure("corrupt", "활성 실행 기록을 검증하지 못했습니다.");
+      }
+      retainedActive.push({ reference: raw.reference, payload: structuredClone(raw.payload) });
+    }
+
+    for (const raw of value.archives) {
+      if (!isRecord(raw) || !validReference(raw.reference) || !Object.hasOwn(raw, "payload") ||
+        typeof raw.completedAt !== "number" || !Number.isFinite(raw.completedAt) || raw.completedAt < 0 || seen.has(raw.reference.runId)) {
+        return failure("corrupt", "완료 실행 기록의 구조가 올바르지 않습니다.");
+      }
+      seen.add(raw.reference.runId);
+      if (stateResult.value.stages[raw.reference.stageId - 1].status !== "completed") {
+        return failure("corrupt", "완료 실행 기록이 완료되지 않은 장에 연결되어 있습니다.");
+      }
+      if (raw.reference.stageId === 1) {
+        retainedArchives.push({ reference: raw.reference, payload: structuredClone(raw.payload), completedAt: raw.completedAt });
+        continue;
+      }
+      const legacy = preRevisionWorldRun(raw.payload);
+      if (legacy) {
+        if (!legacy.cleared || !sameReference(legacy.reference, raw.reference)) {
+          return failure("corrupt", "개편 전 완료 실행 기록을 검증하지 못했습니다.");
+        }
+        recoveries.push({ kind: "archive", reference: raw.reference, payload: structuredClone(raw.payload), recoveredAt, completedAt: raw.completedAt });
+        continue;
+      }
+      const current = this.parseStoredRun(raw.payload);
+      let cleared = false;
+      if (current.ok && sameReference(current.value.reference, raw.reference)) {
+        try { cleared = this.authority.isCleared(current.value.run); } catch { cleared = false; }
+      }
+      if (!current.ok || !cleared) return failure("corrupt", "완료 실행 기록을 검증하지 못했습니다.");
+      retainedArchives.push({ reference: raw.reference, payload: structuredClone(raw.payload), completedAt: raw.completedAt });
+    }
+
+    const expectedActive = stateResult.value.stages.flatMap((stage) => stage.activeRun ? [stage.activeRun] : []);
+    if (expectedActive.length !== activeReferences.length ||
+      expectedActive.some((reference) => !activeReferences.some((candidate) => sameReference(reference, candidate)))) {
+      return failure("corrupt", "캠페인 진행 상태와 활성 실행 기록이 서로 맞지 않습니다.");
+    }
+    for (const stage of stateResult.value.stages) {
+      const completion = stage.completion;
+      if (completion?.source !== "campaign") continue;
+      const archive = [...retainedArchives, ...recoveries.filter((item): item is CampaignRecoveryRecord & { completedAt: number } => item.kind === "archive")]
+        .find((item) => sameReference(item.reference, completion.run) && item.completedAt === completion.completedAt);
+      if (!archive) return failure("corrupt", "완료 증거를 보관 기록에서 확인하지 못했습니다.");
+    }
+
+    const recoveredActiveIds = new Set(recoveries.filter((item) => item.kind === "active").map((item) => item.reference.runId));
+    const recoveredArchiveIds = new Set(recoveries.filter((item) => item.kind === "archive").map((item) => item.reference.runId));
+    const migratedState = validateCampaignState({
+      ...stateResult.value,
+      writer,
+      revision: stateResult.value.revision + 1,
+      stages: stateResult.value.stages.map((stage) => ({
+        ...stage,
+        activeRun: stage.activeRun && recoveredActiveIds.has(stage.activeRun.runId) ? null : stage.activeRun,
+        completion: stage.completion && recoveredArchiveIds.has(stage.completion.run.runId)
+          ? { ...stage.completion, source: "content-recovery" }
+          : stage.completion,
+      })),
+    });
+    if (!migratedState.ok) return failure("corrupt", migratedState.error.message);
+    return {
+      ok: true,
+      value: {
+        version: CAMPAIGN_DOCUMENT_VERSION,
+        state: migratedState.value,
+        activeRuns: retainedActive,
+        archives: retainedArchives,
+        recoveries,
       },
     };
   }
@@ -785,18 +960,33 @@ export class CampaignRepository<Run extends object> {
   ): Promise<CampaignRepositoryResult<CampaignRepositorySnapshot<Run>>> {
     const read = await this.store.read();
     if (!read.ok) return read;
-    if (read.value !== null) return this.decodeDocument(read.value);
+    if (read.value !== null) {
+      if (isRecord(read.value) && read.value.version === CAMPAIGN_DOCUMENT_VERSION) {
+        return this.decodeDocument(read.value);
+      }
+      const migrated = await this.store.mutate((current) => {
+        if (current === null) return failure("conflict", "캠페인 저장 데이터가 다른 창에서 바뀌었습니다.");
+        const document = this.migrateContentDocument(current, writer);
+        if (!document.ok) return document;
+        const decoded = this.decodeDocument(document.value);
+        if (!decoded.ok) return decoded;
+        return { ok: true, value: { document: document.value, result: decoded.value } };
+      });
+      return migrated;
+    }
 
     const prepared = await this.initialSnapshot(writer);
     if (!prepared.ok) return prepared;
     const initial = this.documentFromSnapshot(prepared.value);
     const created = await this.store.mutate((current) => {
       if (current !== null) {
-        const decoded = this.decodeDocument(current);
+        const migrated = this.migrateContentDocument(current, writer);
+        if (!migrated.ok) return migrated;
+        const decoded = this.decodeDocument(migrated.value);
         if (!decoded.ok) return decoded;
         return {
           ok: true,
-          value: { document: current, result: decoded.value },
+          value: { document: migrated.value, result: decoded.value },
         };
       }
       const decoded = this.decodeDocument(initial);
@@ -977,6 +1167,7 @@ export class CampaignRepository<Run extends object> {
             run: verified.value.run,
           },
         ],
+        recoveries: decoded.value.recoveries,
       };
       const document = this.documentFromSnapshot(next);
       const archived = document.archives.find((item) =>

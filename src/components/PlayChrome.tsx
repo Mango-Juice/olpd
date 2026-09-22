@@ -177,7 +177,7 @@ export interface PlayHintsProps {
 const HINT_BUTTON_LABELS = [
   "볼 곳 알려주기",
   "관계 한 가지 알려주기",
-  "예시 문장까지 보기",
+  "마지막 실마리 보기",
 ] as const;
 
 export function PlayHints({ hints, resetKey }: PlayHintsProps) {

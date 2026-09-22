@@ -54,6 +54,17 @@ export function campaignContext(body: unknown, stageResolver: CampaignStageResol
   for (const [id, actor] of Object.entries(world.actors)) {
     const known = actorCatalog.get(id);
     if (!known) throw new ApiError(400, "input", "현재 장에 없는 주체예요.");
+    const sceneActor = segments.find((segment) => segment.id === world.segmentId)?.enter(null).actors[id];
+    if (stage.contentRevision === "quiet-v1" && sceneActor) {
+      // Gravity is visible actor orientation in the compact garden, not a fifth
+      // clickable rules marker. Crossing its arch may change it during a scene.
+      const gravity = actor.capabilities.find((capability) => capability.startsWith("gravity:"));
+      actor.capabilities = [...sceneActor.capabilities];
+      if (stage.id === 5 && gravity && ["gravity:up", "gravity:down", "gravity:normal"].includes(gravity)) {
+        actor.capabilities = [...actor.capabilities.filter((capability) => !capability.startsWith("gravity:")), gravity];
+      }
+      continue;
+    }
     actor.capabilities = [...known.capabilities];
     // Gravity is fixed per public room, but changes when the actor crosses rooms.
     // The last catalog snapshot must not reset a moving actor to its spawn gravity.

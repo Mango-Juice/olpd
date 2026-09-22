@@ -9,7 +9,7 @@ import {
   interpretCampaign,
 } from "../server/campaign-service.ts";
 import { resetRateLimitsForTests } from "../server/rate-limit.ts";
-import { RAIN_STAGE } from "../src/campaign/stages/rain.ts";
+import { QUIET_RAIN_STAGE as RAIN_STAGE } from "../src/campaign/quiet/early.ts";
 import { GARDEN_STAGE } from "../src/campaign/stages/garden.ts";
 import type { WorldState } from "../src/campaign/types.ts";
 
@@ -27,7 +27,7 @@ const interpreted: CampaignInterpretResult = {
       kind: "action",
       actor: "hero",
       verb: "push",
-      target: "rain-cork",
+      target: "02-v2-1-box",
     },
   },
   confidence: 0.9,
@@ -72,7 +72,7 @@ describe("campaign service request boundary", () => {
     for (const id of world.actors.hero.carrying) world.entities[id].location = { ...marker.location };
     world.actors.hero.capabilities = ["teleport", "gravity:down"];
     marker.properties.gravity = "left";
-    const context = campaignContext({ ...validRequest(), stageId: 5, world });
+    const context = campaignContext({ ...validRequest(), stageId: 5, world }, (id) => id === 5 ? GARDEN_STAGE : null);
     expect(context.world.actors.hero.capabilities).toContain("gravity:up");
     expect(context.world.actors.hero.capabilities).not.toContain("gravity:down");
     expect(context.world.actors.hero.capabilities).not.toContain("teleport");
@@ -99,7 +99,7 @@ describe("campaign service request boundary", () => {
       "unknown entity",
       () => {
         const body = validRequest();
-        const source = body.world.entities["rain-cork"];
+        const source = body.world.entities["02-v2-1-box"];
         body.world.entities.intruder = {
           ...structuredClone(source),
           id: "intruder",
@@ -132,22 +132,22 @@ describe("campaign service request boundary", () => {
     const body = validRequest("  상자를 밀어  ");
     body.world.attempt = 2;
     body.attempt = 2;
-    body.world.entities["rain-cork"].name = "조작된 이름";
-    body.world.entities["rain-cork"].description = "조작된 설명";
-    body.world.entities["rain-cork"].material = "metal";
-    body.world.entities["rain-cork"].movable = false;
-    body.world.entities["rain-cork"].reach = 99;
+    body.world.entities["02-v2-1-box"].name = "조작된 이름";
+    body.world.entities["02-v2-1-box"].description = "조작된 설명";
+    body.world.entities["02-v2-1-box"].material = "metal";
+    body.world.entities["02-v2-1-box"].movable = false;
+    body.world.entities["02-v2-1-box"].reach = 99;
     body.world.actors.hero.capabilities = ["teleport"];
     body.world.facts = [
       {
-        entity: "rain-cork",
+        entity: "02-v2-1-box",
         property: "afloat",
         value: false,
         attempt: 1,
         tick: 0,
       },
       {
-        entity: "rain-cork",
+        entity: "02-v2-1-box",
         property: "afloat",
         value: true,
         attempt: 2,
@@ -169,12 +169,12 @@ describe("campaign service request boundary", () => {
     expect(body).toEqual(before);
     expect(context.text).toBe("상자를 밀어");
     expect(context.world).not.toBe(body.world);
-    expect(context.world.entities["rain-cork"]).toMatchObject({
-      name: canonical.entities["rain-cork"].name,
-      description: canonical.entities["rain-cork"].description,
-      material: canonical.entities["rain-cork"].material,
-      movable: canonical.entities["rain-cork"].movable,
-      reach: canonical.entities["rain-cork"].reach,
+    expect(context.world.entities["02-v2-1-box"]).toMatchObject({
+      name: canonical.entities["02-v2-1-box"].name,
+      description: canonical.entities["02-v2-1-box"].description,
+      material: canonical.entities["02-v2-1-box"].material,
+      movable: canonical.entities["02-v2-1-box"].movable,
+      reach: canonical.entities["02-v2-1-box"].reach,
     });
     expect(context.world.actors.hero.capabilities).toEqual(
       canonical.actors.hero.capabilities,

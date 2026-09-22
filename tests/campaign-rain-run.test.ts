@@ -4,7 +4,8 @@ import { stageDynamics } from "../src/campaign/level";
 import { createStageRun, departStage, advanceStage, rewindStage } from "../src/campaign/run";
 import { writeProgram } from "../src/campaign/notebook";
 import { campaignAuthority } from "../src/campaign/authority";
-import { resolveStage } from "../src/campaign/registry";
+// Historical runtime regression fixture; this chapter is not in the current registry.
+const resolveStage = (id: number) => id === 2 ? RAIN_STAGE : null;
 import type { PhysicalAction, ProgramNode } from "../src/campaign/types";
 const act = (verb: PhysicalAction["verb"], target: string, rest: Partial<PhysicalAction> = {}): PhysicalAction => ({ kind: "action", actor: "hero", verb, target, ...rest });
 const plans: Record<string, ProgramNode[]> = {

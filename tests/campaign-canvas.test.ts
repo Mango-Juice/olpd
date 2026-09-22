@@ -4,25 +4,26 @@ import { describe, expect, it } from "vitest";
 import { makeEntity, makeHero, makeWorld } from "../src/campaign/level";
 import { CampaignCanvas } from "../src/components/CampaignCanvas";
 
-function causeMapWorld() {
-  return makeWorld(4, "04-2", [
-    makeEntity("current", "현재 장치", "04-2", 1, {
-      description: "현재 구역의 장치 설명.",
+function sceneWorld() {
+  return makeWorld(4, "04-v2-ui", [
+    makeEntity("current", "현재 장치", "04-v2-ui", 3, {
+      description: "캔버스 밖에 반복하지 않는 설명",
+      properties: { kind: "handle", open: false, capacity: 9, unlistedInternalKey: "secret" },
     }),
-    makeEntity("neighbor", "인접 구역 장치", "04-neighbor", 2, {
-      description: "경계 너머에서 상호작용할 수 있는 장치.",
+    makeEntity("exit", "짧은 출구", "04-v2-ui", 9, {
+      properties: { kind: "exit", safe: true },
     }),
-    makeEntity("previous", "지난 장치", "04-1", 3, {
-      description: "이전 구역의 긴 장치 설명. 뒤 문장도 있어요.",
-      properties: { causeMapVisible: true, unlistedInternalKey: "secret" },
+    makeEntity("previous", "지난 장치", "04-v2-old", 3, {
+      properties: { kind: "handle", causeMapVisible: true },
     }),
-  ], makeHero("04-2"));
+  ], makeHero("04-v2-ui", .5));
 }
 
 function renderCanvas(selectedEntityId?: string) {
   return renderToStaticMarkup(createElement(CampaignCanvas, {
-    world: causeMapWorld(),
-    title: "원인 지도",
+    world: sceneWorld(),
+    scene: { floors: [{ from: 0, to: 10, y: 0 }] },
+    title: "고요한 장면",
     reducedMotion: true,
     paused: true,
     selectedEntityId,
@@ -30,39 +31,29 @@ function renderCanvas(selectedEntityId?: string) {
   }));
 }
 
-describe("campaign canvas direct inspection", () => {
-  it("keeps prior cause-map devices in a separate visible list", () => {
+describe("campaign canvas scene-only inspection", () => {
+  it("keeps the authored canvas fixed and has no pan, zoom, or visible object cards", () => {
     const html = renderCanvas();
-    const currentList = html.match(/<div class="campaign-object-picker">[\s\S]*?<\/ol>/u)?.[0];
-    const previousList = html.match(/<div class="campaign-object-picker campaign-previous-objects">[\s\S]*?<\/ol>/u)?.[0];
-
-    expect(currentList).toContain("현재 장치");
-    expect(currentList).toContain("인접 구역 장치");
-    expect(currentList).not.toContain("지난 장치");
-    expect(previousList).toContain("이전 스테이지의 장치 상태");
-    expect(previousList).toContain("지난 장치");
-    expect(html).not.toContain("현재 구역의 장치 설명");
-    expect(html).not.toContain("이전 구역의 긴 장치 설명");
+    expect(html).toContain('data-scene-width="960"');
+    expect(html).toContain('width="960"');
+    expect(html).toContain('height="500"');
+    expect(html).not.toContain("campaign-map-navigation");
+    expect(html).not.toContain("campaign-object-picker");
+    expect(html).not.toContain("전체 지도");
+    expect(html).not.toContain("용사 위치");
   });
 
-  it("labels a selected prior device clearly and never presents internal properties", () => {
-    const html = renderCanvas("previous");
-
-    expect(html).toContain("이전 구역에서 이어진 장치 상태");
-    expect(html).toContain('aria-label="이전 구역의 지난 장치"');
-    expect(html).toContain("이전 구역의 긴 장치 설명.");
+  it("keeps keyboard selection accessible without duplicating details or internal data", () => {
+    const html = renderCanvas("current");
+    expect(html).toContain("현재 장치 선택됨");
+    expect(html).toContain('aria-label="장면 속 물건"');
+    expect(html).toContain("현재 장치");
+    expect(html).toContain("짧은 출구");
+    expect(html).not.toContain("지난 장치");
+    expect(html).not.toContain("캔버스 밖에 반복하지 않는 설명");
+    expect(html).not.toContain("capacity");
     expect(html).not.toContain("unlistedInternalKey");
-    expect(html).not.toContain("causeMapVisible");
+    expect(html).not.toContain("campaign-entity-facts");
+    expect(html).not.toContain("campaign-scene-observation");
   });
-});
-
-it("shows the full description and readable property rows without nested disclosure or repeated names", () => {
-  const world = makeWorld(2, "02-1", [makeEntity("item", "작은 상자", "02-1", 0, { description: "작은 상자" })]);
-  const html = renderToStaticMarkup(createElement(CampaignCanvas, { world, title: "연습", reducedMotion: true, paused: true, selectedEntityId: "item" }));
-  const observation = html.match(/<section class="campaign-scene-observation"[\s\S]*?<\/section>/u)![0];
-  expect(observation.match(/작은 상자/gu)).toHaveLength(1);
-  expect(observation).toContain('<dl class="campaign-entity-facts">');
-  expect(observation).toContain("<dt>재료</dt>");
-  expect(html).not.toContain("<details");
-  expect(html).not.toContain("자세한 성질 보기");
 });

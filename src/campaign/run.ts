@@ -14,6 +14,8 @@ export interface OnboardingLearning {
 
 export interface StageRun {
   version: 2;
+  /** Authored content contract. Absent only on runs saved before revisioned stages. */
+  contentRevision?: "quiet-v1";
   id: string;
   stageId: StageId;
   revision: number;
@@ -26,24 +28,29 @@ export interface StageRun {
   execution: ExecutionState;
   events: WorldEvent[];
   clearedSegments: string[];
+  /** Confirmed quiet-scene input, kept after each fresh scratch notebook replaces the last. */
+  sceneNotes?: { segmentId: string; text: string }[];
   seal: number;
   /** Absent only on compatible version-2 runs saved before onboarding existed. */
   learning?: OnboardingLearning;
 }
-export function createStageRun(id: string, initial: WorldState): StageRun {
+export function createStageRun(id: string, initial: WorldState, contentRevision?: StageRun["contentRevision"]): StageRun {
   if (initial.stageId === 1) throw new Error("1장은 기존 실행기를 사용해요.");
-  return { version: 2, id, stageId: initial.stageId, revision: 0, statusReason: null, waitingStates: [], phase: "bookmark", world: structuredClone(initial), checkpoint: structuredClone(initial), notebook: createNotebook(initial.segmentId), execution: createExecution(), events: [], clearedSegments: [], seal: 0 };
+  return { version: 2, ...(contentRevision ? { contentRevision } : {}), id, stageId: initial.stageId, revision: 0, statusReason: null, waitingStates: [], phase: "bookmark", world: structuredClone(initial), checkpoint: structuredClone(initial), notebook: createNotebook(initial.segmentId), execution: createExecution(), events: [], clearedSegments: [], seal: 0 };
 }
 export function createPracticeRun(id: string, initial: WorldState): StageRun {
   const run = createStageRun(id, initial);
   return { ...run, notebook: createNotebook(initial.segmentId, true) };
 }
-/** Starts a new campaign at required onboarding while preserving createStageRun for legacy/core fixtures. */
+/** Starts a new campaign with the notebook contract owned by its content revision. */
 export function createCampaignRun(id: string, stage: CampaignStageDefinition): StageRun {
   const first = stage.onboarding?.[0] ?? stage.segments[0];
   if (!first) throw new Error("시작할 구간이 없어요.");
   const initial = first.enter(null);
-  const run = createStageRun(id, initial);
+  const run = createStageRun(id, initial, stage.contentRevision);
+  if (stage.contentRevision === "quiet-v1") {
+    return { ...run, notebook: createNotebook(first.id, true), sceneNotes: [] };
+  }
   return { ...run, notebook: createNotebook(first.id, !!stage.onboarding?.length), learning: { completedSegmentIds: [], attemptedSentences: [] } };
 }
 export function departStage(run: StageRun): StageRun {
@@ -51,7 +58,9 @@ export function departStage(run: StageRun): StageRun {
   const learning = run.learning && run.notebook.scratch && run.notebook.instructions[0]
     ? { ...run.learning, attemptedSentences: [...run.learning.attemptedSentences, { segmentId: run.world.segmentId, text: run.notebook.instructions[0].text }] }
     : run.learning;
-  return { ...run, phase: "running", statusReason: null, waitingStates: [], revision: run.revision + 1, notebook: departNotebook(run.notebook), ...(learning ? { learning } : {}) };
+  const sentence = run.contentRevision === "quiet-v1" && run.notebook.scratch ? run.notebook.instructions[0]?.text : undefined;
+  const sceneNotes = sentence ? [...(run.sceneNotes ?? []), { segmentId: run.world.segmentId, text: sentence }] : run.sceneNotes;
+  return { ...run, phase: "running", statusReason: null, waitingStates: [], revision: run.revision + 1, notebook: departNotebook(run.notebook), ...(learning ? { learning } : {}), ...(sceneNotes ? { sceneNotes } : {}) };
 }
 /** The notebook and discovery ledger remain outside every world rewind snapshot. */
 export function rewindStage(run: StageRun): StageRun {
@@ -174,11 +183,17 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
     checkpoint.facts = [...run.world.facts];
     return { ...run, revision: run.revision + 1, phase: "bookmark", world: checkpoint, waitingStates: [],
       notebook: clarifyNotebook(run.notebook, instructionId), execution: createExecution(), events: [...run.events, ...events],
-      statusReason: `${scheduled.reason ?? "지침의 뜻을 확인해야 해요."} 종을 쓰지 않고 돌아왔어요. 해당 메모를 무료로 고칠 수 있어요.` };
+      statusReason: run.contentRevision === "quiet-v1"
+        ? scheduled.reason ?? "문장을 조금만 바꿔 주세요."
+        : `${scheduled.reason ?? "지침의 뜻을 확인해야 해요."} 종을 쓰지 않고 돌아왔어요. 해당 메모를 무료로 고칠 수 있어요.` };
   }
-  let phase: StageRun["phase"] = stepOutcome === "failure" ? "failed" : (!hasStep && !waitingForRule) || stepOutcome === "blocked" ? "blocked" : "running";
+  // A commanded ride keeps moving after the boarding action has finished.
+  // This advances the environment only; it never invents a landing/action.
+  const autonomousRide = run.contentRevision === "quiet-v1" && !hasStep && !waitingForRule
+    && Object.values(world.actors).some((actor) => actor.riding !== null);
+  let phase: StageRun["phase"] = stepOutcome === "failure" ? "failed" : (!hasStep && !waitingForRule && !autonomousRide) || stepOutcome === "blocked" ? "blocked" : "running";
   let statusReason = waitingForRule ? "메모의 조건이 바뀌기를 안전한 곳에서 기다리고 있어요." : stepReason;
-  if (phase === "running" && (actions.length > 0 || stepOutcome === "waiting" || waitingForRule)) {
+  if (phase === "running" && (actions.length > 0 || stepOutcome === "waiting" || waitingForRule || autonomousRide)) {
     const beforeEnvironment = world;
     const environment = dynamics.advance(world);
     world = environment.world;
@@ -193,7 +208,7 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
     }
     // A final transition (for example cooling finishes) must be observed once
     // before deciding that a now-stable mechanism cannot satisfy the wait.
-    else if (stepOutcome === "waiting" || waitingForRule) phase = environment.canChange || changes.length > 0 ? "waiting" : "blocked";
+    else if (stepOutcome === "waiting" || waitingForRule || autonomousRide) phase = environment.canChange || changes.length > 0 ? "waiting" : "blocked";
   }
   let waitingStates: string[] = [];
   if (phase === "waiting" && actions.length === 0) {
@@ -233,6 +248,20 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
     }
     next.clearedSegments = [...new Set([...run.clearedSegments, segmentId])];
     if (!following) return { ...next, phase: "cleared" };
+    if (run.contentRevision === "quiet-v1") {
+      const seal = dynamics.sealAfter(segmentId);
+      return {
+        ...next,
+        world: following,
+        checkpoint: structuredClone(following),
+        phase: "bookmark",
+        statusReason: null,
+        waitingStates: [],
+        notebook: createNotebook(following.segmentId, true),
+        execution: createExecution(),
+        seal: seal ?? next.seal,
+      };
+    }
     const firstVisit = !next.notebook.visitedBookmarks.includes(following.segmentId);
     next = { ...next, world: following, phase: firstVisit ? "bookmark" : "running", execution: enterEncounter(next.execution), notebook: visitBookmark(next.notebook, following.segmentId) };
     const seal = dynamics.sealAfter(segmentId);

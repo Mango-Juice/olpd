@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { campaignAuthority } from "../src/campaign/authority";
-import { createStageRun } from "../src/campaign/run";
+import { createCampaignRun, createStageRun } from "../src/campaign/run";
 import { parseStageRun } from "../src/campaign/run-validation";
 import { RAIN_INTRO, RAIN_PRACTICE } from "../src/campaign/stages/rain";
 import type { CampaignStageDefinition } from "../src/campaign/level";
@@ -45,7 +45,7 @@ it("round-trips a detached world snapshot with execution and notebook state", ()
 it("accepts every registered chapter's initial ownership and cursor state", () => {
   for (const id of [2, 3, 4, 5, 6] as const) {
     const stage = resolveStage(id)!;
-    const run = createStageRun(`chapter-${id}`, stage.segments[0].enter(null));
+    const run = createCampaignRun(`chapter-${id}`, stage);
     expect(campaignAuthority(resolveStage).parse({ kind: "world", run })).not.toBeNull();
     expect(run.world.entities.letter.parent).toBe("hero");
   }

@@ -50,9 +50,9 @@ function finish(run: StageRun, id: string, text: string): StageRun {
 
 describe("campaign onboarding runtime", () => {
   it("publishes total, onboarding, and stable core counts without renumbering core definitions", () => {
-    expect(STAGES.map((stage) => stage.segments)).toEqual([12, 8, 7, 7, 7, 7, 9, 8, 7, 8]);
-    expect(STAGES.map((stage) => stage.coreSegments)).toEqual([8, 5, 5, 5, 5, 5, 5, 5, 5, 6]);
-    expect(STAGES.map((stage) => stage.onboardingSegments)).toEqual([4, 3, 2, 2, 2, 2, 4, 3, 2, 2]);
+    expect(STAGES.map((stage) => stage.segments)).toEqual([12, 6, 6, 6, 6, 6, 6, 6, 6, 6]);
+    expect(STAGES.map((stage) => stage.coreSegments)).toEqual([8, 6, 6, 6, 6, 6, 6, 6, 6, 6]);
+    expect(STAGES.map((stage) => stage.onboardingSegments)).toEqual([4, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
     expect(fixtureStage.segments.map((segment) => segment.id)).toEqual(["02-1", "02-2", "02-3", "02-4", "02-5"]);
     expect(allStageSegments(fixtureStage).map((segment) => segment.id)).toEqual(["02-intro-1", "02-intro-2", "02-intro-3", "02-1", "02-2", "02-3", "02-4", "02-5"]);
   });

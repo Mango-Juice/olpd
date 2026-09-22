@@ -11,8 +11,8 @@ import type { WorldState } from "../src/campaign/types.ts";
 
 const resolveQaStage: typeof resolveStage = (id) => id === THEATRE_STAGE.id ? THEATRE_STAGE : resolveStage(id);
 
-function theatreRequest() {
-  const world = THEATRE_STAGE.practice.enter(null);
+function theatreRequest(historical = false) {
+  const world = (historical ? THEATRE_STAGE : resolveStage(7)!).practice.enter(null);
   return {
     text: "인형을 발판에 올려",
     stageId: 7 as const,
@@ -73,7 +73,7 @@ describe("campaign dev QA boundary", () => {
   });
 
   it("canonicalizes stage 7 through an injected resolver", () => {
-    const body = theatreRequest();
+    const body = theatreRequest(true);
     const entity = Object.values(body.world.entities)[0];
     entity.name = "조작된 이름";
 
@@ -92,7 +92,7 @@ describe("campaign dev QA boundary", () => {
         interpret,
       });
     }, async (url) => {
-      const body = theatreRequest();
+      const body = theatreRequest(true);
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

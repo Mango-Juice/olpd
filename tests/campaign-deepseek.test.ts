@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { handleCampaignInterpret } from "../server/campaign-http";
 import { DEEPSEEK_CAMPAIGN_TIMEOUT_MS, interpretCampaignWithDeepSeek } from "../server/campaign-deepseek";
 import { interpretCampaign } from "../server/campaign-service";
-import { RAIN_INTRO } from "../src/campaign/stages/rain";
+import { RAIN_INTRO, RAIN_STAGE } from "../src/campaign/stages/rain";
 import { RAIN_REACH } from "../src/campaign/stages/rain-late";
 import { resetRateLimitsForTests } from "../server/rate-limit";
 
@@ -22,15 +22,15 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("DeepSeek campaign boundary", () => {
-  it("routes the production campaign service through one non-thinking call and requires preview", async () => {
+  it("routes the campaign service through one non-thinking call without an extra confirmation", async () => {
     const fetchImpl = fake(); vi.stubGlobal("fetch", fetchImpl);
     const world = RAIN_INTRO.enter(null);
-    const result = await interpretCampaign({ text: "상자에 올라", stageId: 2, runId: "test", revision: 0, attempt: world.attempt, world }, "deepseek-unit");
+    const result = await interpretCampaign({ text: "상자에 올라", stageId: 2, runId: "test", revision: 0, attempt: world.attempt, world }, "deepseek-unit", { resolveStage: (id) => id === 2 ? RAIN_STAGE : null });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(fetchImpl.mock.calls[0][0]).toBe("https://api.deepseek.com/chat/completions");
     const request = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body));
     expect(request).toMatchObject({ model: "deepseek-flash", thinking: { type: "disabled" }, temperature: 0, response_format: { type: "json_object" } });
-    expect(result).toMatchObject({ needsConfirmation: true, confidence: null, program: { model: "deepseek-flash", text: "상자에 올라", body: action } });
+    expect(result).toMatchObject({ needsConfirmation: false, confidence: null, program: { model: "deepseek-flash", text: "상자에 올라", body: action } });
   });
   it("keeps hidden live state, stale facts, and credentials out of trace while preserving public context", async () => {
     const world = RAIN_INTRO.enter(null);
@@ -183,7 +183,7 @@ describe("DeepSeek campaign boundary", () => {
       started();
       init?.signal?.addEventListener("abort", () => { aborted(); reject(new Error("cancelled")); }, { once: true });
     })));
-    const server = createServer((req, res) => { void handleCampaignInterpret(req, res); });
+    const server = createServer((req, res) => { void handleCampaignInterpret(req, res, { resolveStage: (id) => id === 2 ? RAIN_STAGE : null }); });
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const world = RAIN_INTRO.enter(null);
     const body = JSON.stringify({ text: "상자에 올라", stageId: 2, runId: "disconnect", revision: 0, attempt: world.attempt, world });

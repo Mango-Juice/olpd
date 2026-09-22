@@ -3,12 +3,19 @@ import { executePhysicalAction } from "./physics";
 import type { EnvironmentStep, StageDynamics } from "./run";
 import type { Actor, Entity, PhysicalAction, StageId, WorldState } from "./types";
 
+/** Authored, bounded stage composition. Coordinates are world units, never UI data. */
+export interface SceneComposition {
+  floors: readonly { from: number; to: number; y: number }[];
+  ceiling?: boolean;
+}
+
 export interface SegmentDefinition {
   id: string;
   title: string;
   goal: string;
   description: string;
   hints: readonly [string, string, string];
+  scene?: SceneComposition;
   /** Entry must preserve physical state when later rooms depend on it. */
   enter: (previous: WorldState | null) => WorldState;
   execute?: ActionExecutor;
@@ -20,6 +27,9 @@ export interface SegmentDefinition {
 export interface CampaignStageDefinition {
   id: Exclude<StageId, 1>;
   title: string;
+  contentRevision?: "quiet-v1";
+  /** The chapter's purpose, never a list of steps or hidden completion rules. */
+  objective?: string;
   segments: readonly SegmentDefinition[];
   /** Required first-play learning cards. Core segment IDs remain stable in `segments`. */
   onboarding?: readonly SegmentDefinition[];
@@ -52,7 +62,7 @@ export function stageDynamics(stage: CampaignStageDefinition): StageDynamics {
       // Entering core is a hard boundary: onboarding tools, facts, and physical state do not leak.
       const onboarding = isOnboardingSegment(stage, world.segmentId);
       const entered = next.enter(onboarding && !isOnboardingSegment(stage, next.id) ? null : world);
-      if (onboarding) return entered;
+      if (onboarding || stage.contentRevision === "quiet-v1") return entered;
       const facts = [...world.facts];
       const seen = new Set(facts.map((fact) => JSON.stringify(fact)));
       for (const fact of entered.facts) {
@@ -61,7 +71,7 @@ export function stageDynamics(stage: CampaignStageDefinition): StageDynamics {
       }
       return { ...entered, tick: world.tick, segmentStartedAt: world.tick, attempt: world.attempt, facts };
     },
-    sealAfter: (id) => stage.id !== 10 ? null : id === stage.segments[1]?.id ? 1 : id === stage.segments[3]?.id ? 2 : null,
+    sealAfter: (id) => stage.id !== 10 ? null : id === stage.segments[1]?.id ? 1 : id === stage.segments[3]?.id ? 2 : stage.contentRevision === "quiet-v1" && id === stage.segments[4]?.id ? 3 : null,
     isOnboardingSegment: (id) => isOnboardingSegment(stage, id),
   };
 }

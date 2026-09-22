@@ -26,9 +26,9 @@ function defaults(): Settings { return { muted: false, reducedMotion: window.mat
 function recordId(run: CampaignStoredRun): string { return run.kind === "legacy" ? run.save.state.id : run.run.id; }
 function revision(run: CampaignStoredRun): number { return run.kind === "legacy" ? run.save.state.revision : run.run.revision; }
 function stageId(run: CampaignStoredRun): StageId { return run.kind === "legacy" ? 1 : run.run.stageId; }
-function download(value: unknown): void {
+function download(value: unknown, filename = "one-line-per-death-campaign.json"): void {
   const url = URL.createObjectURL(new Blob([JSON.stringify(value, null, 2)], { type: "application/json" }));
-  const link = document.createElement("a"); link.href = url; link.download = "one-line-per-death-campaign.json"; link.click();
+  const link = document.createElement("a"); link.href = url; link.download = filename; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 async function interpret(text: string, run: StageRun, signal: AbortSignal): Promise<InstructionProgram> {
@@ -189,9 +189,12 @@ export default function CampaignShell() {
   }
   if (route.kind === "archive") {
     const records = snapshot.archives.filter((item) => !route.stageId || item.reference.stageId === route.stageId);
+    const historical = snapshot.recoveries.filter((item) => item.kind === "archive" && (!route.stageId || item.reference.stageId === route.stageId));
     if (selectedArchive?.kind === "legacy") return <StageChronicle current={stageArchive(selectedArchive.save)} archives={records.flatMap((item) => item.run.kind === "legacy" ? [stageArchive(item.run.save)] : [])} settings={settings} onClose={() => setSelectedArchive(null)} />;
-    if (selectedArchive?.kind === "world") return <main className="stage-roadmap"><button type="button" onClick={() => setSelectedArchive(null)}>기록 목록으로</button><h1>{stageSummary(selectedArchive.run.stageId).title}의 발자국</h1><CampaignCanvas world={selectedArchive.run.world} title="마지막 장면" reducedMotion={settings.reducedMotion} paused /><ol>{selectedArchive.run.notebook.instructions.map((program) => <li key={program.id}>{program.text}</li>)}</ol><ol>{selectedArchive.run.events.map((event) => <li key={event.id}>{event.reason}</li>)}</ol></main>;
-    return <main className="stage-roadmap"><button type="button" onClick={map}>여정 지도로</button><h1>지난 모험의 메모</h1>{records.length ? <ul>{records.map((item) => <li key={item.reference.runId}><button type="button" onClick={() => setSelectedArchive(item.run)}>{stageSummary(item.reference.stageId).title} · {new Date(item.completedAt).toLocaleDateString("ko-KR")}</button></li>)}</ul> : <p>아직 완료한 모험 기록이 없어요.</p>}</main>;
+    if (selectedArchive?.kind === "world") return <main className="stage-roadmap"><button type="button" onClick={() => setSelectedArchive(null)}>기록 목록으로</button><h1>{stageSummary(selectedArchive.run.stageId).title}의 발자국</h1><CampaignCanvas world={selectedArchive.run.world} title="마지막 장면" reducedMotion={settings.reducedMotion} paused /><ol>{selectedArchive.run.sceneNotes?.length ? selectedArchive.run.sceneNotes.map((note, index) => <li key={`${note.segmentId}-${index}`}>{note.text}</li>) : selectedArchive.run.notebook.instructions.map((program) => <li key={program.id}>{program.text}</li>)}</ol><ol>{selectedArchive.run.events.map((event) => <li key={event.id}>{event.reason}</li>)}</ol></main>;
+    return <main className="stage-roadmap"><button type="button" onClick={map}>여정 지도로</button><h1>지난 모험의 메모</h1>{records.length || historical.length ? <ul>{records.map((item) => <li key={item.reference.runId}><button type="button" onClick={() => setSelectedArchive(item.run)}>{stageSummary(item.reference.stageId).title} · {new Date(item.completedAt).toLocaleDateString("ko-KR")}</button></li>)}{historical.map((item) => <li key={`historical-${item.reference.runId}`}><span>{stageSummary(item.reference.stageId).title} · 개편 전 기록 · {new Date(item.completedAt ?? item.recoveredAt).toLocaleDateString("ko-KR")}</span> <button type="button" onClick={() => download(item.payload, `one-line-per-death-chapter-${item.reference.stageId}-historical.json`)}>원본 내려받기</button></li>)}</ul> : <p>아직 완료한 모험 기록이 없어요.</p>}</main>;
   }
-  return <>{sharedHeader}<StageRoadmap campaign={snapshot.state} busy={busy} onSelect={(id, mode) => void select(id, mode)} onArchive={(id) => setRoute({ kind: "archive", stageId: id })} /></>;
+  const recoveredActive = snapshot.recoveries.filter((item) => item.kind === "active");
+  const recoveryNotice = snapshot.recoveries.length ? <aside className="campaign-controls" style={{ maxWidth: 1004, margin: "0 auto 20px", padding: "16px 24px" }} role="status"><strong>개편 전 모험 기록을 따로 보관했어요.</strong><p>{recoveredActive.length ? `진행 중이던 ${recoveredActive.length}개 장은 원본을 남기고 새 기획으로 다시 시작해요. ` : ""}완료한 장과 열린 문은 그대로예요.</p><button type="button" className="subtle" onClick={() => download(snapshot.recoveries, "one-line-per-death-historical-runs.json")}>개편 전 원본 내려받기</button></aside> : null;
+  return <>{sharedHeader}{recoveryNotice}<StageRoadmap campaign={snapshot.state} busy={busy} onSelect={(id, mode) => void select(id, mode)} onArchive={(id) => setRoute({ kind: "archive", stageId: id })} /></>;
 }

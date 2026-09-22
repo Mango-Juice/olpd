@@ -57,7 +57,7 @@ export const ONBOARDING_STAGES: readonly OnboardingStage[] = [
   {
     id: "first-step",
     title: "한 걸음의 약속",
-    goal: "열린 문까지 걸어간다.",
+    goal: "열린 문 너머로 빛이 들어와요.",
     expectedAction: "advance",
     observationIds: ["clear"],
     hint: [
@@ -69,7 +69,7 @@ export const ONBOARDING_STAGES: readonly OnboardingStage[] = [
   {
     id: "single-gap",
     title: "끊긴 바닥 하나",
-    goal: "바닥 틈을 넘어 문에 닿는다.",
+    goal: "문 앞의 돌길이 끊겨 있어요.",
     expectedAction: "jump",
     observationIds: ["bridge", "pit"],
     hint: [
@@ -81,7 +81,7 @@ export const ONBOARDING_STAGES: readonly OnboardingStage[] = [
   {
     id: "low-arch",
     title: "머리 위 돌",
-    goal: "낮은 돌 아치 아래를 지나간다.",
+    goal: "돌 아치가 머리 가까이 내려왔어요.",
     expectedAction: "duck",
     observationIds: ["lowCeiling"],
     hint: [
@@ -93,7 +93,7 @@ export const ONBOARDING_STAGES: readonly OnboardingStage[] = [
   {
     id: "side-path",
     title: "옆으로 난 길",
-    goal: "연결된 샛길을 따라 문까지 간다.",
+    goal: "벽 옆으로 작은 길이 이어져 있어요.",
     expectedAction: "detour",
     observationIds: ["pitCeilingPath", "spikesCeilingPath"],
     hint: [

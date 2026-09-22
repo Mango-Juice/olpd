@@ -12,8 +12,8 @@ export interface CampaignRunReference {
 export interface CampaignCompletion {
   run: CampaignRunReference;
   completedAt: number;
-  /** Legacy completions are evidence validated by game/storage before migration. */
-  source: "campaign" | "legacy";
+  /** Recovery sources preserve previously verified completion without reusing old runtime content. */
+  source: "campaign" | "legacy" | "content-recovery";
 }
 
 export type CampaignStageStatus = "locked" | "unlocked" | "completed";
@@ -120,7 +120,8 @@ function validCompletion(
     Number.isFinite(value.completedAt) &&
     value.completedAt >= 0 &&
     (value.source === "campaign" ||
-      (value.source === "legacy" && stageId === 1))
+      (value.source === "legacy" && stageId === 1) ||
+      (value.source === "content-recovery" && stageId !== 1))
   );
 }
 
