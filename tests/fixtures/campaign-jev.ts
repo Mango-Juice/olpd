@@ -1,25 +1,31 @@
 import { randomUUID } from "node:crypto";
 
-import { CAMPAIGN_INPUT_LIMIT } from "../src/campaign/notebook.js";
-import { formatProperty, formatScalar, propertyVisibility } from "../src/campaign/presentation.js";
-import type { PhysicalAction, Predicate, ProgramNode, Scalar, Verb, WorldState } from "../src/campaign/types.js";
-import { parseProgram } from "../src/campaign/validation.js";
+import { CAMPAIGN_INPUT_LIMIT } from "../../src/campaign/notebook.js";
+import { formatProperty, formatScalar, propertyVisibility } from "../../src/campaign/presentation.js";
+import type { PhysicalAction, Predicate, ProgramNode, Scalar, Verb, WorldState } from "../../src/campaign/types.js";
+import { parseProgram } from "../../src/campaign/validation.js";
 import {
-  CAMPAIGN_JEV_MAX_CHOICES,
-  CAMPAIGN_JEV_MAX_REQUEST_BYTES,
-  CAMPAIGN_JEV_MAX_TOKENS,
-  CAMPAIGN_JEV_MODEL,
-  CAMPAIGN_JEV_MIN_CONFIDENCE,
-  CAMPAIGN_JEV_TIMEOUT_MS,
   type CampaignActionSource,
   type CampaignInterpretResult,
-  type CampaignJevPhase,
-  type CampaignJevTraceEvent,
   type CampaignSourceSpan,
-} from "./campaign-contracts.js";
-import { ApiError } from "./errors.js";
-import { logAiCall, recordCall } from "./metrics.js";
-import { postProviderJson } from "./provider-http.js";
+} from "../../server/campaign-contracts.js";
+import { ApiError } from "../../server/errors.js";
+import { logAiCall, recordCall } from "../../server/metrics.js";
+import { postProviderJson } from "../../server/provider-http.js";
+
+// Retired multi-phase experiment retained only for deterministic regression tests.
+const CAMPAIGN_JEV_MODEL = "jev-1.13.0";
+const CAMPAIGN_JEV_TIMEOUT_MS = 15_000;
+const CAMPAIGN_JEV_MAX_TOKENS = 250;
+const CAMPAIGN_JEV_MAX_CHOICES = 255;
+const CAMPAIGN_JEV_MAX_REQUEST_BYTES = 768 * 1024;
+const CAMPAIGN_JEV_MIN_CONFIDENCE = 0.6;
+
+type CampaignJevPhase = "anchor" | "verb_scope" | "roles" | "joint";
+export type CampaignJevTraceEvent =
+  | { kind: "request"; phase: CampaignJevPhase; state: unknown; questions: unknown }
+  | { kind: "response"; phase: CampaignJevPhase; response: unknown }
+  | { kind: "rejection"; phase: CampaignJevPhase | "compiler"; field: string; code: string; message: string };
 
 const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 const NONE = "NONE";

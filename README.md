@@ -46,30 +46,25 @@ npm run typecheck     # 타입 검사만 필요할 때
 npx playwright install chromium
 ```
 
-브라우저 검사는 별도 터미널에서 `npm run dev`를 실행한 상태에서 수행한다. Chapter 1 UI 검사는 테스트 전용 엔트리에서 실제 App과 공용 컴포넌트를 실행한다. 후속 장은 `test:campaign:shared`로 실제 QA 화면의 누적 메모·부활·재생·삭제 비용을 검사한다. `test:campaign:scenes`는 54개 장면 배치를 검사한다. 폐기된 콘텐츠 평가와 실제 API 정확도는 별도 범위다.
+브라우저 검사는 별도 터미널에서 `npm run dev`를 실행한 상태에서 수행한다. 기본 검사는 유료 API 없이 명시적 fixture로 UI와 실제 실행기·저장을 확인한다.
 
-| 명령 | 범위 | 실제 API / 선행 조건 |
+| 명령 | 범위 | 실제 API |
 | --- | --- | --- |
-| `npm run test:ui` | 가독성·우선순위 표시·장면별 재생 | 합성 저장 fixture, API 키 불필요 |
-| `npm run test:drag` | 데스크톱·모바일 메모 순서 변경 | 합성 저장 fixture, API 키 불필요 |
-| `npm run test:priority` | 우선순위·동일 조건 충돌 거부 | 합성 저장·해석 응답, API 키 불필요 |
-| `npm run test:chronicle` | 연혁·장면 재생·완료 기록 보관 | 합성 저장 fixture, API 키 불필요 |
-| `npm run test:browser` | 구 프롤로그 원형 검사 | 실제 Jev, 서버 키 필요·호출 비용 발생 |
-| `npm run test:errors` | 통신·저장 오류, IME, 늦은 응답 | 합성 응답, 실제 API 호출 없음 |
-| `npm run test:priority:live` | 우선순위·실제 해석 결과의 충돌 | 실제 Jev 호출 |
-| `npm run test:notebook` | 삭제 비용·공유·설정 | 결정적 코어 fixture, 외부 artifact 불필요 |
-| `npm run test:guards` | HTTP 입력 가드 | 실제 Jev 호출 |
-| `npm run eval:campaign -- --repeat=3` | 캠페인 의미·조건·협동·물리·지연 평가 | 실제 DeepSeek, `.env.local` 필요·호출 비용 발생 |
-| `npm run test:campaign:shared` | Enter·메모 누적·입구 부활·한 장면씩 재생·삭제 비용·모바일 | provider fixture, 실제 실행기·QA 저장 |
-| `pnpm exec tsx scripts/browser-quiet-scenes.ts` | 새 후속 54장면·고정 화면·장별 모바일·내부 패널 제거 | 실제 API 호출 없음 |
-| `pnpm exec tsx scripts/browser-legacy-onboarding.ts` | 서사 SKIP·1장 도입4개·본편 인계 | provider stub, 실제 UI·저장 |
-| `pnpm exec tsx --env-file=.env.local scripts/evaluate-quiet-live.ts --all` | 새 54장면 대표 의도 실제 해석+실행 | DeepSeek 최대54회, 자동 재시도 없음 |
-| `npx tsx --env-file=.env.local scripts/evaluate-shared-live.ts` | Jev 및 DeepSeek 재사용 규칙·대기·협동 smoke | 최대 4회, `--only=02-v2-1`으로 1건 지정 가능 |
-| `npm run eval:jev` | 고정 한국어 합성 문장·상황 평가 | 실제 Jev, `.env.local` 필요·호출 비용 발생 |
+| `npm run test:browser` | 현재 프롤로그·1장 도입과 후속 장 공용 UI | 호출 없음 |
+| `npm run test:ui` | 1장 가독성·장면별 재생 | 호출 없음 |
+| `npm run test:drag` / `test:priority` | 메모 드래그·우선순위·충돌 | 호출 없음 |
+| `npm run test:notebook` / `test:chronicle` | 삭제 비용·공유·설정·연대기·보관 | 호출 없음 |
+| `npm run test:errors` | 통신·저장 오류, IME, 늦은 응답 | 호출 없음 |
+| `npm run test:campaign:scenes` | 후속 54장면 고정 화면과 모바일 폭 | 호출 없음 |
+| `npm run test:campaign:recovery` | 옛 저장 원본·해금 보존과 새 형식 재개 | 호출 없음 |
+| `npm run eval:campaign -- --ids=02-v2-1` | 지정한 현재 장면의 한국어 해석·실행 | DeepSeek, 장면당 1회. `--all`은 최대 54회 |
+| `npm run eval:campaign:smoke` | Jev와 DeepSeek의 조건·재사용·대기·협동 표본 | 최대 4회. `--only=02-v2-1`로 1건 지정 가능 |
+| `npm run eval:jev` | 1장 한국어 행동·상황 평가 | 실제 Jev 호출 |
+| `npm run test:priority:live` / `test:guards` | 실제 API의 우선순위/입력 경계 | 실제 Jev 호출 |
 
-`test:ui`, `test:drag`, `test:priority`, `test:notebook`, `test:chronicle`은 `scripts/browser-fixtures.ts`로 검사 데이터를 만들어 과거 `artifacts/` 파일 없이 실행한다. 합성 해석은 자동화 검사에만 사용하며 실제 플레이의 해석 경로에는 포함되지 않는다. 이 검사 성공은 Jev의 실제 해석 정확도 검증과 구분한다.
+`test:onboarding`은 현재 프롤로그·1장 도입 검사, `test:campaign:shared`는 후속 장 공용 UI 검사만 따로 실행한다. 자동화 성공은 실제 모델 정확도나 사람의 체감 난이도와 구분한다. 브라우저 fixture는 실제 플레이의 AI 경로에 포함되지 않는다.
 
-`APP_URL=https://...`로 대상 주소를 바꿀 수 있다. `CHECK_LABEL`을 지원하는 검사에서는 보고서와 실제 저장 기록의 접두어를 지정한다. 에뮬레이션·보고서·스크린샷은 `artifacts/`에 남는다. `npm run preview`는 빌드된 정적 화면만 제공하며 Node API를 띄우지 않는다.
+`artifacts/`는 Git에서 제외되는 로컬 결과 폴더다. 이전 콘텐츠용 실행 스크립트는 제거했으며, 당시 실험과 검증 수치는 [과거 기록 안내](docs/history/README.md)에서 구분한다. `npm run preview`는 빌드된 정적 화면만 제공하고 Node API는 띄우지 않는다.
 
 ## 구조
 
@@ -100,7 +95,7 @@ API에는 서버 인스턴스 단위 IP 30회/분 제한과, 배포 프로젝트
 
 저장 파일은 게임/던전/해석 규칙 버전을 포함한다. 향후 규칙 변경 시 버전을 올리고 명시적인 마이그레이션을 제공해야 하며, 저장된 지침을 조용히 다시 해석하지 않는다.
 
-검사 결과와 공개 배포의 관찰 범위는 [검증 기록](docs/verification.md), AI 평가는 [Jev 평가](docs/jev-evaluation-2026-09-21.md)를 참고한다. 현재 개발 현황은 [PLAN](PLAN.md), 미구현 확장안은 [스토리 구상](docs/story-concept.md)과 [10장 스테이지 설계](docs/stage-design/README.md)에 구분해 보관한다.
+검사 결과와 공개 배포의 관찰 범위는 [검증 기록](docs/verification.md), AI 평가는 [Jev 평가](docs/jev-evaluation-2026-09-21.md)를 참고한다. 현재 구현은 [캠페인 구현 기록](docs/campaign-implementation.md), 플레이 규칙은 [10장 스테이지 설계](docs/stage-design/README.md), 이야기 설정은 [스토리 구상](docs/story-concept.md)을 따른다.
 
 
 ## Git 작업

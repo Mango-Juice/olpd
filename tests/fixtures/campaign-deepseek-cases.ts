@@ -1,9 +1,9 @@
-import { createCursor, stepProgram, type ProgramCursor } from "../src/campaign/program";
-import { KITCHEN_STAGE } from "../tests/fixtures/campaign-worlds/kitchen";
-import { RAIN_INTRO } from "../tests/fixtures/campaign-worlds/rain";
-import { RAIN_REACH } from "../tests/fixtures/campaign-worlds/rain-late";
-import { THEATRE_STAGE } from "../tests/fixtures/campaign-worlds/theatre";
-import type { SegmentDefinition } from "../src/campaign/level";
+import { createCursor, stepProgram, type ProgramCursor } from "../../src/campaign/program";
+import { KITCHEN_STAGE } from "./campaign-worlds/kitchen";
+import { RAIN_INTRO } from "./campaign-worlds/rain";
+import { RAIN_REACH } from "./campaign-worlds/rain-late";
+import { THEATRE_STAGE } from "./campaign-worlds/theatre";
+import type { SegmentDefinition } from "../../src/campaign/level";
 import type {
   InstructionProgram,
   PhysicalAction,
@@ -12,7 +12,7 @@ import type {
   Scalar,
   Verb,
   WorldState,
-} from "../src/campaign/types";
+} from "../../src/campaign/types";
 
 export interface DeepSeekCase {
   id: string;

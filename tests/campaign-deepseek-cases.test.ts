@@ -4,7 +4,7 @@ import {
   DEEPSEEK_CASE_FIXTURE_BODIES,
   fixtureProgram,
   type DeepSeekCase,
-} from "../scripts/campaign-deepseek-cases";
+} from "./fixtures/campaign-deepseek-cases";
 import { createCursor, stepProgram } from "../src/campaign/program";
 import { THEATRE_STAGE } from "./fixtures/campaign-worlds/theatre";
 import type { InstructionProgram, PhysicalAction, Predicate, ProgramNode, WorldState } from "../src/campaign/types";

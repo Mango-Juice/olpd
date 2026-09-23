@@ -4,8 +4,8 @@ import { interpretWithJev } from '../server/jev';
 import { interpretCampaignWithDeepSeek, DEEPSEEK_CAMPAIGN_PROMPT_VERSION } from '../server/campaign-deepseek';
 import { campaignContext } from '../server/campaign-service';
 import { resolveStage } from '../src/campaign/registry';
-import { stageDynamics } from '../src/campaign/level';
-import { acknowledgePresentation, advanceStage, createCampaignRun, departStage, writeStageProgram } from '../src/campaign/run';
+import { createCampaignRun } from '../src/campaign/run';
+import { runSceneProgram } from './lib/run-campaign-probe';
 import { resolveProgramBindings } from '../src/campaign/bindings';
 import { QUIET_EARLY_INTENT_CASES } from '../src/campaign/quiet/early';
 import { QUIET_MIDDLE_INTENT_CASES } from '../tests/fixtures/quiet-middle-intents';
@@ -34,8 +34,7 @@ for (const entry of cases.filter((item) => !only || item.segmentId === only)) {
     const run = createCampaignRun(`shared-live-${entry.segmentId}`, { ...stage, segments: [scene] });
     const canonical = campaignContext({ text: entry.text, world: run.world, stageId: stage.id, runId: run.id, revision: run.revision, attempt: run.world.attempt });
     const { program } = await interpretCampaignWithDeepSeek(entry.text, canonical.world, { trace: (trace) => traces.push(trace) });
-    let current = departStage(writeStageProgram(run, program));
-    for (let i = 0; i < 80 && ['running', 'waiting'].includes(current.phase); i++) current = advanceStage(acknowledgePresentation(current), stageDynamics({ ...stage, segments: [scene] }));
+    const { run: current } = runSceneProgram(stage, scene, program);
     const rebinding = entry.portable ? resolveProgramBindings(stage.segments[1].enter(null), program) : null;
     const pass = current.phase === 'cleared' && (!entry.portable || (program.scope.stageId === stage.id && rebinding?.kind === 'resolved'));
     results.push({ provider: 'deepseek', id: entry.segmentId, text: entry.text, pass, phase: current.phase, reason: current.statusReason,

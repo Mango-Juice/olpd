@@ -33,7 +33,6 @@ export interface CampaignPlayProps {
   onRoadmap: () => void;
   onNewChallenge?: () => void;
   best?: number | null;
-  practice?: boolean;
   onSettingsChange?: (settings: Settings) => void;
 }
 
@@ -58,7 +57,7 @@ function downloadRun(run: StageRun) {
 }
 
 export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoadmap, onNewChallenge,
-  best, practice = false, onSettingsChange }: CampaignPlayProps) {
+  best, onSettingsChange }: CampaignPlayProps) {
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -184,10 +183,10 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
     ? run.clearedSegments.filter((id) => id !== presentation.completedSegmentId) : run.clearedSegments;
   return <div className={`shell campaign-play${keyboard ? " keyboard-open" : ""}`} onPointerDownCapture={unlockAudio} onKeyDownCapture={unlockAudio}>
     <PlayHeader actions={<>
-      <button type="button" className="subtle" disabled={saving} onClick={() => { cancelCommand(); onRoadmap(); }}>{practice ? "연습 마치기" : "여정 지도"}</button>
+      <button type="button" className="subtle" disabled={saving} onClick={() => { cancelCommand(); onRoadmap(); }}>여정 지도</button>
       <PlayUtilityActions muted={settings.muted} onHelp={() => setPopup("help")} onToggleSound={() => onSettingsChange?.({ ...settings, muted: !settings.muted })} onSettings={() => setPopup("settings")} />
     </>} />
-    <PlayIntro description={stage.objective} aside={<>{stage.title}<small>CHAPTER {String(stage.id).padStart(2, "0")}{practice ? " · 연습" : ""}</small></>} />
+    <PlayIntro description={stage.objective} aside={<>{stage.title}<small>CHAPTER {String(stage.id).padStart(2, "0")}</small></>} />
     {failedSave && <aside className="error" role="alert"><p>{notice}</p><div className="action-row">
       <button className="secondary" disabled={saving} onClick={() => { void commit(failedSave).then((ok) => { if (ok) { setNotice(""); setPaused(false); } }); }}>저장 다시 시도</button>
       <button className="secondary" onClick={() => downloadRun(failedSave)}>원본 기록 내보내기</button>
@@ -223,7 +222,7 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
         {!animating && run.phase === "blocked" && <button type="button" className="primary wide" disabled={saving || !!failedSave} onClick={() => { void commit(abandonStage(live.current)); }}>포기하고 부활하기 · +1데스</button>}
         {!animating && run.phase === "cleared" && <PlayClearPanel deaths={run.notebook.deaths} penaltyDeaths={run.notebook.penaltyDeaths} best={best}
           onChronicle={openChronicle} onShare={() => { setNotice(""); setPopup("share"); }} onNew={() => setPopup("new")}>
-          {stage.id === 10 && !practice ? <button className="secondary" onClick={() => setPopup("ending")}>편지를 펼치기</button> : null}
+          {stage.id === 10 ? <button className="secondary" onClick={() => setPopup("ending")}>편지를 펼치기</button> : null}
           <button className="secondary" onClick={onRoadmap}>여정 지도로 →</button>
         </PlayClearPanel>}
         {notice && !failedSave && <p className="helper" role="status">{notice}</p>}

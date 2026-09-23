@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { makeEntity, makeHero, makeWorld } from "../src/campaign/level";
 import type { WorldState } from "../src/campaign/types";
-import { interpretCampaignWithJev } from "../server/campaign-jev";
-import { parseCampaignInterpretRequest, type CampaignJevTraceEvent } from "../server/campaign-contracts";
+import { interpretCampaignWithJev, type CampaignJevTraceEvent } from "./fixtures/campaign-jev";
+import { parseCampaignInterpretRequest } from "../server/campaign-contracts";
 import { ApiError } from "../server/errors";
 
 type RequestBody = {

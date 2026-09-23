@@ -3,9 +3,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { interpretCampaignWithDeepSeek, DEEPSEEK_CAMPAIGN_PROMPT_VERSION } from '../server/campaign-deepseek';
 import { campaignContext } from '../server/campaign-service';
 import { resolveStage } from '../src/campaign/registry';
-import { stageDynamics } from '../src/campaign/level';
-import { advanceStage, createCampaignRun, departStage } from '../src/campaign/run';
-import { createNotebook, writeProgram } from '../src/campaign/notebook';
+import { createCampaignRun } from '../src/campaign/run';
+import { runSceneProgram } from './lib/run-campaign-probe';
 import { QUIET_EARLY_INTENT_CASES } from '../src/campaign/quiet/early';
 import { QUIET_MIDDLE_INTENT_CASES } from '../tests/fixtures/quiet-middle-intents';
 import { QUIET_LATE_INTENT_CASES } from '../tests/fixtures/quiet-late-intents';
@@ -17,7 +16,7 @@ const cases = [...QUIET_EARLY_INTENT_CASES, ...QUIET_MIDDLE_INTENT_CASES, ...QUI
 if (cases.length > 54 || !cases.length) throw new Error('Invalid probe selection');
 const override = process.argv.find((arg) => arg.startsWith('--text='))?.slice(7);
 if (override && cases.length !== 1) throw new Error('Text override needs one scene');
-const directory = `artifacts/quiet-live/${new Date().toISOString().replaceAll(':', '-')}`;
+const directory = `artifacts/campaign-live/${new Date().toISOString().replaceAll(':', '-')}`;
 await mkdir(directory, { recursive: true });
 const results: Record<string, unknown>[] = [];
 let cursor = 0;
@@ -31,17 +30,10 @@ async function worker() {
     const started = performance.now();
     let record: Record<string, unknown>;
     try {
-      let run = createCampaignRun(`probe-${scene.id}`, stage);
-      run.world = scene.enter(null); run.checkpoint = structuredClone(run.world);
-      run.notebook = createNotebook();
-      run.clearedSegments = stage.segments.slice(0, stage.segments.indexOf(scene)).map((item) => item.id);
-      run.seal = run.clearedSegments.reduce((seal, id) => stageDynamics(stage).sealAfter(id) ?? seal, 0);
-      const canonical = campaignContext({ text, world: run.world, stageId: stage.id, runId: run.id, revision: run.revision, attempt: run.world.attempt });
+      const initial = createCampaignRun(`probe-${scene.id}`, { ...stage, segments: [scene] });
+      const canonical = campaignContext({ text, world: initial.world, stageId: stage.id, runId: initial.id, revision: initial.revision, attempt: initial.world.attempt });
       const { program } = await interpretCampaignWithDeepSeek(text, canonical.world, { trace: (event) => traces.push(event) });
-      run.notebook = writeProgram(run.notebook, program);
-      run = departStage(run);
-      let steps = 0;
-      while (steps++ < 80 && ['running', 'waiting'].includes(run.phase) && run.world.segmentId === scene.id) run = advanceStage(run, stageDynamics(stage));
+      const { run, steps } = runSceneProgram(stage, scene, program);
       record = { id: scene.id, text, pass: run.clearedSegments.includes(scene.id), phase: run.phase, reason: run.statusReason, steps, program,
         events: run.events.filter((event) => event.segmentId === scene.id).map(({ reason, outcome }) => ({ reason, outcome })) };
     } catch (error) { record = { id: scene.id, text, pass: false, error: error instanceof Error ? error.message : String(error) }; }

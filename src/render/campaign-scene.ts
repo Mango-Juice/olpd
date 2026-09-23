@@ -1,5 +1,5 @@
 import type { SceneComposition } from "../campaign/level";
-import type { Actor, Entity, EntityId, Verb, WorldState } from "../campaign/types";
+import type { Actor, Entity, EntityId, WorldState } from "../campaign/types";
 import type { StagePresentation } from "../campaign/run";
 import {
   campaignActorVerb,
@@ -57,9 +57,6 @@ export interface CampaignSceneOptions {
   time: number;
   reducedMotion: boolean;
   selectedEntityId?: EntityId;
-  previousWorld?: WorldState;
-  transitionProgress?: number;
-  actorVerbs?: Partial<Record<Actor["id"], Verb>>;
   presentation?: StagePresentation | null;
   playbackProgress?: number;
   labelScale?: number;
@@ -1806,7 +1803,6 @@ export function renderCampaignScene(
     time,
     reducedMotion,
     selectedEntityId,
-    actorVerbs = {},
     presentation = null,
   } = options;
   const world = presentation?.after ?? options.world;
@@ -1814,7 +1810,7 @@ export function renderCampaignScene(
   const geometry = createSceneGeometry(world, options.scene);
   const presentationProgress = Math.max(
     0,
-    Math.min(1, options.playbackProgress ?? options.transitionProgress ?? 1),
+    Math.min(1, options.playbackProgress ?? 1),
   );
   const worldProgress = presentation
     ? presentation.outcome === "revive"
@@ -1824,10 +1820,7 @@ export function renderCampaignScene(
       ? 1
       : presentationProgress;
   const eased = worldProgress * worldProgress * (3 - 2 * worldProgress);
-  const previous = presentation?.before ??
-    (options.previousWorld?.segmentId === world.segmentId && options.previousWorld.attempt === world.attempt
-      ? options.previousWorld
-      : world);
+  const previous = presentation?.before ?? world;
   const stateWorld = presentation && presentationProgress < 0.53
     ? presentation.before
     : world;
@@ -1900,7 +1893,7 @@ export function renderCampaignScene(
     const moving = actor.moved && worldProgress < 1 && !source.riding;
     const verb = presentation
       ? campaignActorVerb(presentation, actor.id)
-      : actorVerbs[actor.id];
+      : undefined;
     if (actor.id !== "hero" && !source.riding && !(moving && verb === "jump")) {
       ctx.save(); ctx.translate(actor.x, actor.y); ctx.rotate(actor.rotation);
       ctx.fillStyle = "rgba(5,8,20,.25)"; ctx.beginPath(); ctx.ellipse(0, 2, 29, 5, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();

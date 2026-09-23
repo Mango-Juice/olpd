@@ -1,5 +1,7 @@
 # DeepSeek V4.1 Flash 실측 — 2026-09-22
 
+> 당시 코드와 API 실험을 보존한 기록입니다. 현재 구현 기준은 [캠페인 구현 기록](campaign-implementation.md)입니다.
+
 사용자가 등록한 `DEEPSEEK_API_KEY`로 공식 `deepseek-flash` API를 호출했다. 공식 문서는 이 이름을 DeepSeek V4.1 Flash로 설명하며 실제 응답의 model 필드도 `deepseek-flash`였다. 키 값과 HTTP 인증 헤더는 기록하지 않았다.
 
 ## 80개 스테이지 통합 검증 — 2026-09-22

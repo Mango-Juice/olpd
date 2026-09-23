@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "eval:jev": "tsx --env-file=.env.local scripts/evaluate.ts",
     "preview": "vite preview --host 0.0.0.0",
-    "test:browser": "tsx scripts/browser-check.ts",
+    "test:browser": "npm run test:onboarding && npm run test:campaign:shared",
     "test:errors": "tsx scripts/browser-errors.ts",
     "test:notebook": "tsx scripts/browser-notebook.ts",
     "test:ui": "tsx scripts/browser-ui.ts",
@@ -19,13 +19,12 @@
     "test:drag": "tsx scripts/browser-drag.ts",
     "test:chronicle": "tsx scripts/browser-chronicle.ts",
     "test:guards": "tsx scripts/check-guards.ts",
-    "eval:campaign": "tsx --env-file=.env.local scripts/evaluate-campaign-deepseek-live.ts",
-    "test:campaign:browser": "tsx scripts/browser-campaign-deepseek.ts",
-    "test:campaign:scenes": "tsx scripts/browser-quiet-scenes.ts",
-    "test:onboarding": "tsx scripts/browser-onboarding-flow.ts",
-    "test:onboarding:legacy": "tsx scripts/browser-legacy-onboarding.ts",
-    "eval:onboarding": "tsx --env-file=.env.local scripts/evaluate-onboarding-live.ts",
-    "test:campaign:shared": "tsx scripts/browser-shared-campaign.ts"
+    "eval:campaign": "tsx --env-file=.env.local scripts/evaluate-campaign-live.ts",
+    "test:campaign:scenes": "tsx scripts/browser-campaign-scenes.ts",
+    "test:onboarding": "tsx scripts/browser-legacy-onboarding.ts",
+    "test:campaign:shared": "tsx scripts/browser-shared-campaign.ts",
+    "test:campaign:recovery": "tsx scripts/browser-campaign-recovery.ts",
+    "eval:campaign:smoke": "tsx --env-file=.env.local scripts/evaluate-shared-live.ts"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-kr": "^5.3.0",

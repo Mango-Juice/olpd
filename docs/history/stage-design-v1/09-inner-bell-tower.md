@@ -1,6 +1,6 @@
 # 9장 — 종탑의 안쪽
 
-> **로컬 구현 · 통합 검증은 [구현 기록](../campaign-implementation.md) 참고.** 재미·플레이타임은 실측하지 않았다. 1~8장의 규칙만으로 풀며, 이야기를 건너뛰어도 진행할 수 있다.
+> **로컬 구현 · 통합 검증은 [구현 기록](../../campaign-implementation.md) 참고.** 재미·플레이타임은 실측하지 않았다. 1~8장의 규칙만으로 풀며, 이야기를 건너뛰어도 진행할 수 있다.
 
 ## 장의 역할
 
@@ -29,17 +29,17 @@
 
 ## 진행 번호와 구현 경계
 
-신규 도입은 **9-1~9-2**, 기존 구간은 **9-3~9-7**다. 화면에는 앞자리 0 없이 이 연속 번호를 쓴다. 아래의 옛 번호와 코드 식별자는 마이그레이션 대응용이며 새 화면 번호가 아니다. 도입 ID는 `09-learn-1`~`09-learn-2`이며 [도입 코드](../../src/campaign/stages/onboarding.ts)에 있다.
+신규 도입은 **9-1~9-2**, 기존 구간은 **9-3~9-7**다. 화면에는 앞자리 0 없이 이 연속 번호를 쓴다. 아래의 옛 번호와 코드 식별자는 마이그레이션 대응용이며 새 화면 번호가 아니다. 도입 ID는 `09-learn-1`~`09-learn-2`이며 [도입 코드](../../../tests/fixtures/campaign-worlds/onboarding.ts)에 있다.
 
-기존 구간도 로컬 구현되어 있다. 통합 검증은 [구현 기록](../campaign-implementation.md)을 참고한다.
+기존 구간도 로컬 구현되어 있다. 통합 검증은 [구현 기록](../../campaign-implementation.md)을 참고한다.
 
 | 이전 문서 번호 | 현재 코드 ID / 위치 | 새 화면 번호 |
 | --- | --- | --- |
-| `09-1` | `09-1` — [tower.ts](../../src/campaign/stages/tower.ts) | 9-3 |
-| `09-2` | `09-2` — [tower.ts](../../src/campaign/stages/tower.ts) | 9-4 |
-| `09-3` | `09-3` — [tower.ts](../../src/campaign/stages/tower.ts) | 9-5 |
-| `09-4` | `09-4` — [tower.ts](../../src/campaign/stages/tower.ts) | 9-6 |
-| `09-5` | `09-5` — [tower.ts](../../src/campaign/stages/tower.ts) | 9-7 |
+| `09-1` | `09-1` — [tower.ts](../../../tests/fixtures/campaign-worlds/tower.ts) | 9-3 |
+| `09-2` | `09-2` — [tower.ts](../../../tests/fixtures/campaign-worlds/tower.ts) | 9-4 |
+| `09-3` | `09-3` — [tower.ts](../../../tests/fixtures/campaign-worlds/tower.ts) | 9-5 |
+| `09-4` | `09-4` — [tower.ts](../../../tests/fixtures/campaign-worlds/tower.ts) | 9-6 |
+| `09-5` | `09-5` — [tower.ts](../../../tests/fixtures/campaign-worlds/tower.ts) | 9-7 |
 
 도입 ID는 위 코드에 보존하며 기존 저장·방문 이력의 ID를 새 번호 문자열로 덮어쓰지 않는다. 기존 본편 진입/완료 저장은 그대로 이어 가고 새 도입은 입문 면제로 표시한다. 입문 면제에 허위 플레이·완료 연혁을 만들지 않으며, 다시 해 보기는 선택이다.
 

@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import type { SceneComposition } from "../campaign/level";
 import type { StagePresentation } from "../campaign/run";
-import type { EntityId, WorldState, Verb } from "../campaign/types";
+import type { EntityId, WorldState } from "../campaign/types";
 import {
   campaignPresentationDuration,
   campaignSoundCuesBetween,
@@ -25,7 +25,6 @@ import "./CampaignCanvas.css";
 export interface CampaignCanvasProps {
   world: WorldState;
   scene?: SceneComposition;
-  actorVerbs?: Partial<Record<"hero" | "keeper", Verb>>;
   title: string;
   displayNumber?: number;
   reducedMotion: boolean;
@@ -108,7 +107,6 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
       layoutRef.current = renderCampaignScene(context, {
         world: current.world,
         scene: current.scene,
-        actorVerbs: current.actorVerbs,
         presentation: current.presentation ?? current.settledPresentation,
         playbackProgress,
         title: current.title,

@@ -1,6 +1,6 @@
 # 10장 — 돌아오지 못한 문지기
 
-> **로컬 구현 · 통합 검증은 [구현 기록](../campaign-implementation.md) 참고.** [공통 규칙](00-play-contract.md) 적용. 공격 회피와 장치 조작으로 세 봉인을 해제하는 최종 퍼즐전이다. 체력 막대, 새 필살기, 숨은 정답 문장은 없다. 도입 포함 초회 32–48분 목표는 미측정 가설이다.
+> **로컬 구현 · 통합 검증은 [구현 기록](../../campaign-implementation.md) 참고.** [공통 규칙](00-play-contract.md) 적용. 공격 회피와 장치 조작으로 세 봉인을 해제하는 최종 퍼즐전이다. 체력 막대, 새 필살기, 숨은 정답 문장은 없다. 도입 포함 초회 32–48분 목표는 미측정 가설이다.
 
 ## 보스전의 약속
 
@@ -37,18 +37,18 @@
 
 ## 진행 번호와 구현 경계
 
-신규 도입은 **10-1~10-2**, 기존 구간은 **10-3~10-8**다. 화면에는 앞자리 0 없이 이 연속 번호를 쓴다. 아래의 옛 번호와 코드 식별자는 마이그레이션 대응용이며 새 화면 번호가 아니다. 도입 ID는 `10-learn-1`~`10-learn-2`이며 [도입 코드](../../src/campaign/stages/onboarding.ts)에 있다.
+신규 도입은 **10-1~10-2**, 기존 구간은 **10-3~10-8**다. 화면에는 앞자리 0 없이 이 연속 번호를 쓴다. 아래의 옛 번호와 코드 식별자는 마이그레이션 대응용이며 새 화면 번호가 아니다. 도입 ID는 `10-learn-1`~`10-learn-2`이며 [도입 코드](../../../tests/fixtures/campaign-worlds/onboarding.ts)에 있다.
 
-기존 구간도 로컬 구현되어 있다. 통합 검증은 [구현 기록](../campaign-implementation.md)을 참고한다.
+기존 구간도 로컬 구현되어 있다. 통합 검증은 [구현 기록](../../campaign-implementation.md)을 참고한다.
 
 | 이전 문서 번호 | 현재 코드 ID / 위치 | 새 화면 번호 |
 | --- | --- | --- |
-| `10-1` | `10-1` — [warden.ts](../../src/campaign/stages/warden.ts) | 10-3 |
-| `10-2` | `10-2` — [warden.ts](../../src/campaign/stages/warden.ts) | 10-4 |
-| `10-3` | `10-3` — [warden.ts](../../src/campaign/stages/warden.ts) | 10-5 |
-| `10-4` | `10-4` — [warden.ts](../../src/campaign/stages/warden.ts) | 10-6 |
-| `10-5` | `10-5` — [warden.ts](../../src/campaign/stages/warden.ts) | 10-7 |
-| `10-6` | `10-6` — [warden.ts](../../src/campaign/stages/warden.ts) | 10-8 |
+| `10-1` | `10-1` — [warden.ts](../../../tests/fixtures/campaign-worlds/warden.ts) | 10-3 |
+| `10-2` | `10-2` — [warden.ts](../../../tests/fixtures/campaign-worlds/warden.ts) | 10-4 |
+| `10-3` | `10-3` — [warden.ts](../../../tests/fixtures/campaign-worlds/warden.ts) | 10-5 |
+| `10-4` | `10-4` — [warden.ts](../../../tests/fixtures/campaign-worlds/warden.ts) | 10-6 |
+| `10-5` | `10-5` — [warden.ts](../../../tests/fixtures/campaign-worlds/warden.ts) | 10-7 |
+| `10-6` | `10-6` — [warden.ts](../../../tests/fixtures/campaign-worlds/warden.ts) | 10-8 |
 
 도입 ID는 위 코드에 보존하며 기존 저장·방문 이력의 ID를 새 번호 문자열로 덮어쓰지 않는다. 기존 본편 진입/완료 저장은 그대로 이어 가고 새 도입은 입문 면제로 표시한다. 입문 면제에 허위 플레이·완료 연혁을 만들지 않으며, 다시 해 보기는 선택이다.
 

@@ -1,31 +1,26 @@
 # 현재 요구사항과 구현·검증 맵
 
-이 문서는 구현 위치와 실제로 확인한 증거를 연결한다. 테스트 성공과 실기기/사람의 사용성 관찰은 별도이다.
+이 문서는 현재 로컬 코드의 책임과 확인 범위를 연결한다. 최신 결과는 [2026-09-23 검증 기록](verification.md)을 기준으로 한다. 과거 공개 배포 관찰은 그 날짜의 기록이며 현재 배포 상태를 뜻하지 않는다. 자동화 통과, 실제 API 표본, 실기기 동작, 사람 대상 플레이 관찰은 서로 다른 증거다.
 
-2026-09-22 후속 요청으로 원래 계획의 최신 지침 우선·순서 변경 금지·매회 별도 확정은 대체됐다. 현재는 손잡이 드래그 또는 메모 `···` 메뉴에서 출발 전에 우선순위를 조절하고, 화면 위쪽의 적용 가능한 한 줄을 실행한다. 첫 학습 이후에는 해석 성공 시 기억과 출발을 이어서 처리한다. 아래 표는 현재 계약이다. 검증 열의 브라우저·공개 배포 결과는 과거 관찰도 포함하며, 날짜별 근거와 최신 로컬 결과는 [검증 기록](verification.md)을 확인한다.
+| 현재 요구 | 구현 위치 | 확인 범위 |
+| --- | --- | --- |
+| 공용 플레이 진입과 개발 전용 local QA | `src/main.tsx`, `src/CampaignShell.tsx`, `src/QaShell.tsx` | 일반 진행과 QA 분기, QA localhost 조건 및 별도 저장 경로 |
+| 프롤로그와 1장 기존 플레이 | `src/App.tsx`, `src/game/`, `src/components/DungeonCanvas.tsx`, `src/render/` | 기존 1장 입력·저장·재생 회귀 검사 |
+| 2~10장 콘텐츠와 공통 실행 화면 | `src/campaign/registry.ts`, `src/campaign/level.ts`, `src/CampaignShell.tsx`, `src/components/CampaignPlay.tsx`, `src/components/CampaignCanvas.tsx` | 후속 54개 장면의 카탈로그·초기 배치 및 공용 QA 화면 |
+| 메모 누적·작성 기회·삭제 비용·우선순위 | `src/campaign/notebook.ts`, `src/campaign/run.ts`, `src/game/memory.ts` | 순수 규칙 검사와 실제 UI 흐름 검사 |
+| 구조화 지침 AST, 검증, public-kind binding | `src/campaign/types.ts`, `src/campaign/validation.ts`, `src/campaign/bindings.ts`, `src/campaign/scheduler.ts` | 허용된 노드·참조·바인딩 및 실행기의 로컬 판정 |
+| 캠페인 입력 해석 API와 제공자 경계 | `server/campaign-http.ts`, `server/campaign-service.ts`, `server/campaign-deepseek.ts`, `server/provider-http.ts`, `api/campaign-interpret.ts` | 요청 제한·타임아웃·취소·응답 검증의 테스트. 실제 API smoke는 별도 표본 증거 |
+| 캠페인 진행·활성 런·완료 기록 | `src/campaign/progress.ts`, `src/campaign/repository.ts`, `src/campaign/authority.ts` | IndexedDB 원자 갱신·revision 충돌·복구 및 저장 검증 |
+| QA 슬롯 분리 | `src/QaShell.tsx`, `server/dev.ts` | `?qa=1` localhost 진입과 `one-line-per-death:qa:shared-v1` localStorage 경로 |
+| 프롬프트와 전송 계약 | `docs/api.md`, `server/campaign-deepseek.ts`, `server/campaign-contracts.ts` | 타입·요청 검증 및 합성 fixture. 최신 프롬프트 전체 장면의 실제 정확도와는 별개 |
 
-| 현재 요구                                  | 구현                                                | 검증                                                     |
-| ------------------------------------------ | --------------------------------------------------- | -------------------------------------------------------- |
-| React + TS + Vite + Canvas, HTML 입력/메모 | src/App.tsx, components/DungeonCanvas.tsx, render/* | 타입/빌드, desktop/mobile 스크린샷                       |
-| 원본 용사/환경, 일관된 팔레트와 출처       | render/scene.ts, palette.ts, docs/art-direction.md  | 렌더된 장면 직접 확인                                    |
-| 8개 모션, 사망·부활, 저FPS 장식 축소 | render/animation.ts, DungeonCanvas                  | 브라우저 실재생, animation 테스트                        |
-| 입력/해석/확정/출발, 실제 Jev              | App, server/jev.ts                                  | scripts/browser-check.ts 실제 5회 호출로 처음부터 클리어 |
-| IME Enter, 중복/오래된 응답 무시           | App request id + AbortController + composing        | 브라우저 검증 및 오류 경계 검증                          |
-| 전진 기본값, 화면 위쪽 우선, 한 행동/80자       | game/core.ts, server/service.ts                     | core/api 테스트                                          |
-| 죽음 1회/1줄, 기회 미누적, 삭제 원자 비용  | game/core.ts                                        | core 테스트, browser 삭제/취소 검증                      |
-| 튜토리얼과 본편 기록 분리/메모 이월        | core startMain, App practice                        | 실제 AI 튜토리얼 완료 후 초기화 확인                     |
-| 순서 변경 무료·조건 집합 충돌 거부 | game/core.ts, App.tsx | core 테스트, 우선순위·드래그 브라우저 검사 |
-| 생별 연혁·장면 재생·완료 기록 보관 | game/history.ts, archive.ts, components/StageChronicle.tsx | history/storage 테스트, 연혁 브라우저 검사 |
-| 8개 방, 여러 판단점, 최종 조합             | game/content.ts                                     | 실제 8개 방 클리어, core 전체 경로 테스트                |
-| 이미 본 이벤트 3배속, 신규 방 일반속도     | core signature + Canvas                             | core 테스트, 이벤트 로그                                 |
-| 숨김/일시정지, 감소모션, 소리 저장         | DungeonCanvas + audio.ts + App                      | 브라우저 설정/정지 검증                                  |
-| 자동 저장/버전/손상/다른탭 충돌            | game/storage.ts                                     | storage 테스트, 새로고침 및 2탭 검증                     |
-| 선택적 메모 공유, 미리보기/시스템/복사     | App share dialog                                    | 실제 클리어 공유 미리보기 검증                           |
-| 비밀 서버키, 호출 중단/원문 없는 로그      | server/*, .gitignore                                | bundle 비밀값 검사, 환경 검증                            |
-| IP 분당 30회                               | server/rate-limit.ts + Vercel WAF                   | unit 31번째 차단, 공개 URL WAF 검증                      |
-| AI 한국어 60개 이상 평가                   | scripts/evaluate.ts                                 | docs/jev-evaluation-*.md (최종 결과 참조)                |
-| 공개 배포/비로그인 사용/검색 차단          | vercel.json, robots.txt                             | 최종 공개 브라우저와 HTTP 검증                           |
+## 현재 계약
 
-폰트는 @fontsource를 통해 프로젝트 의존성에 포함한 Noto Sans KR Variable와 Gowun Batang이다. 모두 SIL Open Font License이며 node_modules 해당 패키지/LICENSE 및 배포 번들에 원본 라이선스 고지를 보관한다. Google Fonts CDN 런타임 요청은 없다.
+- 콘텐츠는 서사 프롤로그와 66개 본편 장면으로 구성된다. 본편은 1장 12장면, 2~10장 각 6장면이다.
+- 입력은 Enter로 해석·저장·출발을 잇는다. 1장은 최대 80자, 후속 장은 최대 500자다.
+- 1장의 기존 Jev 판단 경로와 후속 장의 `InstructionProgram` 해석 경로는 서로 다른 입력 모델을 쓰지만, 캠페인 메모 정책·화면·재생 모듈을 공유한다.
+- 캠페인 실행은 `StageRun v3`, `contentRevision: shared-v1`을 사용한다. 진행·활성 런·완료 기록은 IndexedDB 문서로 함께 관리하고, 구버전 런은 현재 실행 콘텐츠로 재사용하지 않고 복구 영역에 보존한다.
+- QA는 개발 서버의 localhost에서만 제공하며 별도 localStorage 키에 저장한다. 실제 API를 사용한다.
+- AI는 지침을 구조화된 프로그램으로 해석한다. 대상 binding과 AST를 검증한 뒤 실행하며, 물리·성공·점수·비용은 로컬 게임 코드가 판정한다.
 
-검증 증거 파일은 `artifacts/`(git 제외)에 있으며, 배포와 최종 결과는 README 및 docs/verification.md에 기록한다. 실제 휴대전화 키보드와 사람 대상 사용성 관찰은 브라우저의 모바일 에뮬레이션 검증과 구분한다.
+구현 구조와 보존 경계는 [캠페인 구현 기록](campaign-implementation.md), API 상세는 [AI 해석 API](api.md)를 참고한다. 검증 결과는 [2026-09-23 검증 기록](verification.md)을 확인한다. 실기기 사용, 첫 플레이 사용자 이해도, 난이도와 재미는 자동화나 브라우저 에뮬레이션으로 확인한 것으로 간주하지 않는다.

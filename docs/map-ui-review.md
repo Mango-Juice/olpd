@@ -15,4 +15,4 @@
 
 `npm run test:campaign:scenes`가 후속 54개 초기 장면과 9개 장의 모바일 너비를 검사한다. 요소 이름표·좌표 경계, 가로 넘침, 내부 패널 제거와 런타임 오류를 확인하며 AI는 호출하지 않는다. 실제 캡처를 보고 짧아 보이던 양끝 바닥, 상자의 재질, 위층과 끊긴 사다리, 의자와 다리의 구분, 분기 통로, 문지기 부품의 소속을 보완했다.
 
-캡처와 보고서는 `artifacts/quiet-scenes/`, 공용 입력 검사는 `artifacts/quiet-command/`에 보관한다. 초기 장면 전수 검사와 대표 상태 검증이며 모든 가능한 중간 화면이나 사람의 직관성을 전수 검증했다는 뜻은 아니다.
+당시 캡처는 `artifacts/quiet-scenes/`, 입력 검사는 `artifacts/quiet-command/`에 보관했다. 현재 명령은 각각 `artifacts/campaign-scenes/`, `artifacts/shared-campaign/`에 새 결과를 남긴다. 초기 장면 전수 검사와 대표 상태 검증이며 모든 가능한 중간 화면이나 사람의 직관성을 전수 검증했다는 뜻은 아니다.

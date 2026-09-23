@@ -1,5 +1,7 @@
 # 캠페인 Jev 합성 추출 프로브 — 2026-09-22
 
+> 당시 코드와 실험 판단을 보존한 기록입니다. 현재 구현 기준은 [캠페인 구현 기록](campaign-implementation.md)입니다.
+
 ## 최종 상태 — 사용자 조건에 따른 중단
 
 **현재 Jev 기반 경로로 필수 2장 자유 입력 요구를 충족하지 못해 추가 구현과 goal을 중단한다.** 아래 초기 프로브의 성공 및 당시 중단 보류 판단은 과거 기록이다. 최신 판단은 이 절과 [구현 상태](campaign-implementation.md)를 우선한다.
@@ -36,7 +38,7 @@ Jev 1.13.0은 자유로운 한국어 한 줄에서 **행동 수, 순차/동시 �
 
 ## 프로브 구조
 
-실행 파일은 [`scripts/probe-campaign-jev.ts`](../scripts/probe-campaign-jev.ts)다.
+당시 실행 파일은 `scripts/probe-campaign-jev.ts`였다. 실험 실행 기록이며 현재 저장소의 코드 경로는 아니다.
 
 - 공백 기준 토큰에 문자 오프셋을 붙이고, 최대 6토큰의 모든 연속 span을 코드에서 만든다.
 - 행동절, 명시 행위자, 대상, 목적지, 조건절, 조건 주어와 기준값은 span ID를 선택지로 둔 `Choice`가 고른다. 선택 후 원문 문자열은 코드가 그대로 복사한다.
@@ -170,10 +172,10 @@ exit 0
 
 앞의 26요청 프로브는 Jev 조합 가능성을 확인한 실험이다. 이후 실제 `WorldState`를 받는 제품 경계의 컴파일러를 별도로 구현했다.
 
-- [`server/campaign-jev.ts`](../server/campaign-jev.ts): `interpretCampaignWithJev(text, world, options)`
+- 당시 `server/campaign-jev.ts`: `interpretCampaignWithJev(text, world, options)`
 - [`server/campaign-contracts.ts`](../server/campaign-contracts.ts): HTTP 요청 metadata와 반환 source span 계약
 - [`tests/campaign-jev.test.ts`](../tests/campaign-jev.test.ts): 네트워크 fallback이 없는 mocked provider 검증
-- [`scripts/evaluate-campaign-jev.ts`](../scripts/evaluate-campaign-jev.ts): 실제 장의 공개 world와 physics를 이용한 재현 스크립트
+- 당시 `scripts/evaluate-campaign-jev.ts`: 실제 장의 공개 world와 physics를 이용한 재현 스크립트
 
 요청 본문은 `text`, `stageId`, `runId`, `revision`, `attempt`, `world`를 받는다. 캠페인 상태가 클라이언트 IndexedDB에 있으므로 route가 서버 세션을 가정하지 않는다. route 통합 시에는 받은 snapshot을 canonical stage catalog와 대조하고 숨은 엔티티와 미관찰 사실을 제거해야 한다. 컴파일러는 전달된 `world.visible`의 유한 엔티티·속성·지역 후보만 쓴다. `propertyVisibility`가 명시적으로 `hidden`으로 분류한 `kind`, `driftAge`, `periodTicks` 같은 bookkeeping 값은 Jev state와 조건 후보에서 제거한다. `shown` 속성은 한국어 label/value를 함께 주고, 아직 catalog가 `unknown`인 속성은 임의로 숨기지 않는다. `phase` 같은 현재 상태와 `cycle` 같은 공개 유한 열거 선택지는 유지한다.
 

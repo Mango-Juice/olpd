@@ -1,19 +1,5 @@
 import type { InstructionProgram, StageId, WorldState } from "../src/campaign/types.js";
 
-export const CAMPAIGN_JEV_MODEL = "jev-1.13.0";
-export const CAMPAIGN_JEV_TIMEOUT_MS = 15_000;
-export const CAMPAIGN_JEV_MAX_INPUT_CODEPOINTS = 500;
-export const CAMPAIGN_JEV_MAX_TOKENS = 250;
-export const CAMPAIGN_JEV_MAX_CHOICES = 255;
-export const CAMPAIGN_JEV_MAX_REQUEST_BYTES = 768 * 1024;
-export const CAMPAIGN_JEV_MIN_CONFIDENCE = 0.6;
-
-export type CampaignJevPhase = "anchor" | "verb_scope" | "roles" | "joint";
-export type CampaignJevTraceEvent =
-  | { kind: "request"; phase: CampaignJevPhase; state: unknown; questions: unknown }
-  | { kind: "response"; phase: CampaignJevPhase; response: unknown }
-  | { kind: "rejection"; phase: CampaignJevPhase | "compiler"; field: string; code: string; message: string };
-
 export interface CampaignInterpretRequest {
   text: string;
   stageId: StageId;

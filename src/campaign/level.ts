@@ -19,7 +19,7 @@ export interface SegmentDefinition {
   /** Entry must preserve physical state when later rooms depend on it. */
   enter: (previous: WorldState | null) => WorldState;
   execute?: ActionExecutor;
-  /** Authored safe-path movement after every applicable instruction has yielded. */
+  /** Authored forward movement after every applicable instruction has yielded. */
   idleAction?: (world: WorldState) => PhysicalAction | null;
   advance: (world: WorldState) => EnvironmentStep;
   complete: (world: WorldState) => boolean;
@@ -39,9 +39,6 @@ export interface CampaignStageDefinition {
 }
 export function allStageSegments(stage: CampaignStageDefinition): readonly SegmentDefinition[] {
   return [...(stage.onboarding ?? []), ...stage.segments];
-}
-export function isOnboardingSegment(stage: CampaignStageDefinition, segmentId: string): boolean {
-  return stage.onboarding?.some((segment) => segment.id === segmentId) ?? false;
 }
 export function stageDynamics(stage: CampaignStageDefinition): StageDynamics {
   const sequence = allStageSegments(stage);
@@ -71,7 +68,6 @@ export function stageDynamics(stage: CampaignStageDefinition): StageDynamics {
     },
     // A life always retries from the chapter entrance; story seals are presentation only.
     sealAfter: () => null,
-    isOnboardingSegment: (id) => isOnboardingSegment(stage, id),
   };
 }
 export function makeEntity(id: string, name: string, region: string, x: number, patch: Partial<Entity> = {}): Entity {

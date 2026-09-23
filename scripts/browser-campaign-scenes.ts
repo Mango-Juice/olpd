@@ -2,7 +2,7 @@ import { chromium, expect } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { STAGES } from '../src/campaign/catalog';
 
-const directory = 'artifacts/quiet-scenes';
+const directory = 'artifacts/campaign-scenes';
 await mkdir(directory, { recursive: true });
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });

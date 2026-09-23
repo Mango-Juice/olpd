@@ -254,12 +254,10 @@ export interface StageDynamics {
   /** Physical goal predicates inspect the actual world, never a solution string or AI verdict. */
   segmentComplete: (world: WorldState) => boolean;
   nextSegment: (world: WorldState) => WorldState | null;
-  /** Boss checkpoints only; ordinary discovery bookmarks are never respawn points. */
+  /** Optional narrative seal marker; never changes the entrance respawn point. */
   sealAfter: (segmentId: string) => number | null;
-  /** Optional authored movement along one already-open, unambiguous core path. */
+  /** Authored default forward movement; physical hazards still apply. */
   idleAction?: (world: WorldState) => PhysicalAction | null;
-  /** Runtime classification keeps onboarding records outside core bookmarks and clears. */
-  isOnboardingSegment?: (segmentId: string) => boolean;
 }
 function validIdleMove(world: WorldState, action: PhysicalAction): boolean {
   return action.kind === "action" && action.actor === "hero" && action.verb === "move"
@@ -328,8 +326,7 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
   let stepReason = scheduled.reason;
   let hasStep = scheduled.step !== null;
   const mayAdvanceByDefault = scheduled.step === null && scheduled.execution.active === null
-    && scheduled.execution.suspended.length === 0
-    && dynamics.isOnboardingSegment?.(run.world.segmentId) !== true;
+    && scheduled.execution.suspended.length === 0;
   if (mayAdvanceByDefault && dynamics.idleAction) {
     let candidate: PhysicalAction | null;
     try {
