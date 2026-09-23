@@ -86,7 +86,7 @@ describe("explicit campaign movement", () => {
     expect(executeCalls).toBe(1);
   });
 
-  it("stops at the current position when a command is exhausted", () => {
+  it("reselects a matching written rule after its action completes", () => {
     let executeCalls = 0;
     let environmentCalls = 0;
     let run = withProgram(createStageRun("exhausted", fixtureWorld()), program("step-once", action("move", "exit")));
@@ -104,16 +104,16 @@ describe("explicit campaign movement", () => {
     expect(run.world.actors.hero.location.x).toBe(1);
     expect(executeCalls).toBe(1);
     expect(environmentCalls).toBe(1);
-    const stopped = advanceStage(acknowledgePresentation(run), engine);
-    expect(stopped.phase).toBe("blocked");
-    expect(stopped.world).toEqual(run.world);
-    expect(stopped.notebook.deaths).toBe(0);
-    expect(stopped.events.filter((event) => event.actor === "hero")).toHaveLength(1);
-    expect(executeCalls).toBe(1);
-    expect(environmentCalls).toBe(1);
+    const repeated = advanceStage(acknowledgePresentation(run), engine);
+    expect(repeated.phase).toBe("running");
+    expect(repeated.world).toEqual(run.world);
+    expect(repeated.notebook.deaths).toBe(0);
+    expect(repeated.events.filter((event) => event.actor === "hero")).toHaveLength(2);
+    expect(executeCalls).toBe(2);
+    expect(environmentCalls).toBe(2);
   });
 
-  it("leaves false and unknown conditions dormant without fallback movement", () => {
+  it("never invents movement for false or unknown conditions", () => {
     const guardCondition = { kind: "property", entity: "switch", property: "ready", comparison: "eq", value: true, source: "visible" } as const;
     for (const hidden of [false, true]) {
       let executeCalls = 0;
@@ -178,7 +178,7 @@ describe("explicit campaign movement", () => {
     const body: ProgramNode = { kind: "sequence", children: [action("push", "rain-cork", { destination: "rain-launch" }), action("board", "rain-cork")] };
     let run = withProgram(createStageRun("rain", RAIN_STAGE.segments[0].enter(null)), program("raft", body));
     for (let step = 0; step < 30 && (run.phase === "running" || run.phase === "waiting"); step++) run = advanceStage(acknowledgePresentation(run), stageDynamics(RAIN_STAGE));
-    expect(run.phase).toBe("waiting");
+    expect(run.phase).toBe("running");
     expect(run.world.actors.hero.riding).toBe("rain-cork");
     expect(run.world.entities["rain-cork"].properties.landingReachable).toBe(true);
     expect(RAIN_STAGE.segments[0].complete(run.world)).toBe(false);

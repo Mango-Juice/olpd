@@ -42,7 +42,7 @@ function load(): Record<string, Slot> {
         }
       }
       const stageId = run?.kind === "world" ? run.run.stageId : run?.save.state.tutorial ? 0 : 1;
-      return run && (String(stageId) === id || (id === "0" && run.kind === "legacy")) ? [[id, { label: value.label, run, ...(isOnboardingProgress(value.onboarding) ? { onboarding: value.onboarding } : {}) }]] : [];
+      return run && (String(stageId) === id || ((id === "0" || id === "1") && run.kind === "legacy")) ? [[id, { label: value.label, run, ...(isOnboardingProgress(value.onboarding) ? { onboarding: value.onboarding } : {}) }]] : [];
     }));
   } catch { return {}; }
 }
@@ -100,7 +100,7 @@ export default function QaShell() {
     content = <App key={current.run.save.state.id} bridge={{ initial: current.run.save,
       loadOnboarding: () => slotsRef.current[selected!]?.onboarding ?? null,
       saveOnboarding: async (progress) => persist(selected!, { ...slotsRef.current[selected!], onboarding: progress }, false) ? { ok: true, value: undefined } : { ok: false, error: { code: "write", message: "QA 도입 저장 실패" } },
-      save: async (save) => persist(selected!, { ...current, run: { kind: "legacy", save } }) ? { ok: true, value: undefined } : { ok: false, error: { code: "write", message: "QA 저장 실패" } },
+      save: async (save) => persist(selected!, { ...slotsRef.current[selected!], run: { kind: "legacy", save } }) ? { ok: true, value: undefined } : { ok: false, error: { code: "write", message: "QA 저장 실패" } },
       onRoadmap: back, onClearedPresentation: back, onArchive: back }} />;
   } else if (current?.run.kind === "world") {
     const stage = qaStage(current.run.run.stageId)!;

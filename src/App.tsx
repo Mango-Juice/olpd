@@ -1,3 +1,4 @@
+import { PlayFooter } from "./components/PlayFooter";
 import { chapterOneContactHint } from "./game/hints/chapter-one";
 import { PlayContactHint } from "./components/PlayContactHint";
 import { postInterpretJson } from "./services/interpret-api";
@@ -12,6 +13,7 @@ import {
   PlayHelpDialog,
   PlaySettingsDialog,
   PlayShareDialog,
+  PlayRestartDialog,
 } from "./components/PlayDialogs";
 import {
   PlayClearPanel,
@@ -935,6 +937,7 @@ export default function App({ bridge }: AppProps = {}) {
           </div>
         )}
         <LegacyOnboarding
+          key={onboardingProgress.ownerRunId}
           progress={onboardingProgress}
           settings={settings}
           conflict={conflict}
@@ -946,6 +949,9 @@ export default function App({ bridge }: AppProps = {}) {
             setOnboardingInitAttempt((attempt) => attempt + 1)
           }
         />
+        <PlayFooter local={!bridge} onRestart={() => setPopup("new")} disabled={!onboardingReady || conflict} />
+        {popup === "new" && <PlayRestartDialog firstChapter onRestart={() => void newChallenge()}
+          disabled={!onboardingReady || conflict} onClose={() => setPopup(null)} />}
         {popup === "help" && (
           <Modal title="네 번의 첫걸음" onClose={() => setPopup(null)}>
             <p>
@@ -1295,7 +1301,7 @@ export default function App({ bridge }: AppProps = {}) {
               }}
               disabled={conflict}
             >
-              포기하고 부활하기 · +1데스
+              부활하고 · +1데스
             </button>
           )}
           {started && !animating && state.phase === "practice" && (
@@ -1434,19 +1440,8 @@ export default function App({ bridge }: AppProps = {}) {
           ) : null}
         </MemoryNotebook>
       </PlayLayout>
-      <footer className="footer">
-        <span>
-          {bridge
-            ? "진행은 안전하게 자동 저장됩니다."
-            : "이 브라우저에 자동 저장됩니다."}
-        </span>
-        <button
-          className="subtle"
-          onClick={() => openChronicle(state.phase === "cleared")}
-        >
-          지난 모험 기록
-        </button>
-      </footer>
+      <PlayFooter local={!bridge} onRestart={() => setPopup("new")} disabled={pending || conflict}
+        onHistory={() => openChronicle(state.phase === "cleared")} />
       {showHistory && (
         <Modal
           title="용사가 기억한 순간들"
@@ -1494,23 +1489,8 @@ export default function App({ bridge }: AppProps = {}) {
           onClose={() => setPopup(null)}
         />
       )}
-      {popup === "new" && (
-        <Modal title="새 메모장을 펼칠까요?" onClose={() => setPopup(null)}>
-          <p>
-            현재 지침과 데스 기록을 초기화하고 튜토리얼부터 시작해요. 개인 최고
-            기록은 남고, 본편에서 지우개 {CONFIG.initialErasers}개를 다시
-            받아요.
-          </p>
-          <div className="action-row">
-            <button className="primary" onClick={newChallenge}>
-              새 도전 시작
-            </button>
-            <button className="secondary" onClick={() => setPopup(null)}>
-              계속할게요
-            </button>
-          </div>
-        </Modal>
-      )}
+      {popup === "new" && <PlayRestartDialog firstChapter onRestart={() => void newChallenge()}
+        disabled={pending || conflict} onClose={() => setPopup(null)} />}
       {popup === "storage" && (
         <Modal title="기록을 안전하게 보관해요" onClose={() => setPopup(null)}>
           <p>

@@ -16,7 +16,7 @@ const wait = (entity: string, property: string, value: Scalar): ProgramNode => (
 const turnTo = (route: string): ProgramNode => ({ kind: "until", body: action("turn", "10-2-vane"), condition: condition("10-2-vane", "route", route) });
 function play(index: number, body: ProgramNode, initial?: WorldState, restore = false): StageRun {
   let run = createStageRun(`warden-${index}`, initial ?? stage.segments[index].enter(null));
-  run = writeStageProgram(run, { version: 2, id: `plan-${index}`, text: "공개된 관계를 따라 실제로 조작한다.", model: "fixture", scope: { stageId: 10, region: run.world.actors.hero.location.region }, guard: false, body });
+  run = writeStageProgram(run, { version: 2, id: `plan-${index}`, text: "공개된 관계를 따라 실제로 조작한다.", model: "fixture", scope: { stageId: 10 }, guard: false, body });
   run = departStage(run);
   for (let i = 0; i < 300 && (run.phase === "running" || run.phase === "waiting"); i++) {
     run = advanceStage(acknowledgePresentation(run), dynamics);
@@ -76,7 +76,7 @@ it("requires a written move for an already opened safe approach", () => {
   short = writeStageProgram(short, { version: 2, id: "prepare-balcony", text: "발코니로 통하는 길을 연다.", model: "fixture", scope: { stageId: 10, region: "10-2" }, guard: false, body: prepared });
   short = departStage(short);
   for (let i = 0; i < 100 && (short.phase === "running" || short.phase === "waiting"); i++) short = advanceStage(acknowledgePresentation(short), dynamics);
-  expect(short.phase).toBe("blocked");
+  expect(short.phase).toBe("running");
   expect(short.world.entities["10-2-pin"].properties.latchedOut).toBe(true);
   expect(short.world.actors.hero.location.x).toBe(0);
   expect(short.notebook.deaths).toBe(0);

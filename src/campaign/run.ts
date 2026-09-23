@@ -9,7 +9,7 @@ import {
   writeProgram,
   type Notebook,
 } from "./notebook";
-import { createExecution, enterEncounter, scheduleStep, type ExecutionState } from "./scheduler";
+import { createExecution, enterEncounter, isProgramApplicable, scheduleStep, type ExecutionState } from "./scheduler";
 import type { ActionExecutor, ActionResult } from "./program";
 import type { InstructionProgram, PhysicalAction, StageId, WorldEvent, WorldState } from "./types";
 import type { CampaignStageDefinition } from "./level";
@@ -259,6 +259,16 @@ export interface StageDynamics {
   /** Optional narrative seal marker; never changes the entrance respawn point. */
   sealAfter: (segmentId: string) => number | null;
 }
+/** Resume only old exhausted-notebook stops; physical blocks and history stay intact. */
+export function resumeConsumedRules(run: StageRun): StageRun {
+  const last = run.events.at(-1);
+  if (run.phase !== "blocked" || run.presentation || run.execution.completed.length === 0
+    || last?.outcome !== "blocked" || last.actor !== null || last.instructionId !== null
+    || !run.notebook.instructions.some(program => isProgramApplicable(run.world, program))) return run;
+  return { ...run, phase: "running", revision: run.revision + 1, statusReason: null,
+    execution: createExecution(), waitingStates: [] };
+}
+
 export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
   if (run.phase !== "running" && run.phase !== "waiting") return run;
   if (run.presentation) return run;

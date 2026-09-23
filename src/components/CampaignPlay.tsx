@@ -1,7 +1,8 @@
+import { PlayFooter } from "./PlayFooter";
 import { useEffect, useRef, useState } from "react";
 import { allStageSegments, stageDynamics, type CampaignStageDefinition } from "../campaign/level";
 import {
-  acknowledgePresentation, advanceStage, abandonStage, departStage, retryStage,
+  acknowledgePresentation, advanceStage, resumeConsumedRules, abandonStage, departStage, retryStage,
   writeStageProgram, deleteStageProgram, moveStageProgram, placeStageProgram, type StageRun,
 } from "../campaign/run";
 import { CAMPAIGN_INPUT_LIMIT } from "../campaign/notebook";
@@ -24,7 +25,7 @@ import Modal from "./Modal";
 import { PlayCommandComposer } from "./PlayCommandComposer";
 import { PlayHeader, PlayUtilityActions, PlayIntro, PlayLayout, PlayHints, PlayStageProgress } from "./PlayChrome";
 import { PlaySceneCaption, PlaySceneFooter, PlaySessionControls, PlayLaunchControls, PlayDeathScore, PlayClearPanel } from "./PlaySessionControls";
-import { PlayHelpDialog, PlaySettingsDialog, PlayShareDialog } from "./PlayDialogs";
+import { PlayHelpDialog, PlaySettingsDialog, PlayShareDialog, PlayRestartDialog } from "./PlayDialogs";
 import "./CampaignPlay.css";
 
 export interface CampaignPlayProps {
@@ -125,6 +126,8 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
   // No elapsed-time timer may move the world independently of its presentation.
   useEffect(() => {
     if (paused || hidden || saving || failedSave || awaitingNext || showChronicle || run.presentation) return;
+    const resumed = resumeConsumedRules(run);
+    if (resumed !== run) { void commit(resumed); return; }
     if (run.phase !== "running" && run.phase !== "waiting") return;
     if (committing.current || live.current.revision !== run.revision) return;
     void commit(advanceStage(run, stageDynamics(stage)));
@@ -224,7 +227,7 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
           label="이번 생에서 남길 한 줄" placeholder="이럴 때는, 이렇게 해줘…" />
           <PlayHints hints={segment.hints} resetKey={`${run.id}:${segment.id}`} /></>}
         {resting && <PlayLaunchControls dead={run.phase === "failed"} canWrite={run.notebook.canWrite} disabled={saving || command.pending || !!failedSave} onLaunch={() => { void launch(); }} />}
-        {!animating && run.phase === "blocked" && <button type="button" className="primary wide" disabled={saving || !!failedSave} onClick={() => { setPaused(false); setAwaitingNext(false); void commit(abandonStage(live.current)); }}>포기하고 부활하기 · +1데스</button>}
+        {!animating && run.phase === "blocked" && <button type="button" className="primary wide" disabled={saving || !!failedSave} onClick={() => { setPaused(false); setAwaitingNext(false); void commit(abandonStage(live.current)); }}>부활하고 · +1데스</button>}
         {!animating && run.phase === "cleared" && <PlayClearPanel deaths={run.notebook.deaths} penaltyDeaths={run.notebook.penaltyDeaths} best={best}
           onChronicle={openChronicle} onShare={() => { setNotice(""); setPopup("share"); }} onNew={() => setPopup("new")}>
           {stage.id === 10 ? <button className="secondary" onClick={() => setPopup("ending")}>편지를 펼치기</button> : null}
@@ -241,15 +244,15 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
         onMove={(id, direction) => changeNotebook((current) => moveStageProgram(current, id, direction))}
         onPlace={(id, target, position) => changeNotebook((current) => placeStageProgram(current, id, target, position))} />
     </PlayLayout>
-    <footer className="footer"><span>진행은 안전하게 자동 저장됩니다.</span><button className="subtle" onClick={openChronicle}>지난 모험 기록</button></footer>
+    <PlayFooter onRestart={onNewChallenge ? () => setPopup("new") : undefined} disabled={saving || command.pending || !!failedSave} onHistory={openChronicle} />
     {showChronicle && <CampaignChronicle run={run} stage={stage} settings={settings} onClose={() => setShowChronicle(false)} />}
     {popup === "help" && <PlayHelpDialog campaign advanced onClose={() => setPopup(null)} />}
     {popup === "settings" && <PlaySettingsDialog settings={settings} onChange={(next) => onSettingsChange?.(next)} onExport={() => downloadRun(live.current)} onNew={() => setPopup("new")} onClose={() => setPopup(null)} />}
     {popup === "share" && <PlayShareDialog text={shareText} includeNotes={shareInstructions} onIncludeNotes={setShareInstructions} notice={notice} onClose={() => setPopup(null)}
       onCopy={() => { void navigator.clipboard.writeText(shareText).then(() => setNotice("모험을 복사했어요."), () => setNotice("복사하지 못했어요. 위 내용을 직접 복사해 주세요.")); }}
       onSystemShare={typeof navigator.share === "function" ? () => { void navigator.share({ title: "죽을 때마다 한 줄", text: shareText }).catch(() => setNotice("공유를 취소했어요.")); } : undefined} />}
-    {popup === "new" && <Modal title="새 메모장을 펼칠까요?" onClose={() => setPopup(null)}><p>이번 장의 지침과 데스 기록을 초기화하고 입구부터 시작해요. 완료 기록과 열린 장은 그대로 남아요.</p>
-      <div className="action-row"><button className="primary" disabled={saving} onClick={() => { cancelCommand(); onNewChallenge?.(); }}>새 도전 시작</button><button className="secondary" onClick={() => setPopup(null)}>계속할게요</button></div></Modal>}
+    {popup === "new" && <PlayRestartDialog disabled={saving || command.pending || !onNewChallenge}
+      onRestart={() => { cancelCommand(); onNewChallenge?.(); }} onClose={() => setPopup(null)} />}
     {popup === "ending" && <Modal title="편지가 닿은 곳" onClose={() => setPopup(null)}><p>편지를 펼치자, 받는 사람 칸에 용사의 이름이 적혀 있었어요.</p><blockquote>여기까지는 내가 길을 적었어. 다음 길은 네가 골라 줘.</blockquote><p>종에 머물던 작은 불빛이 곁으로 돌아왔어요. 등지기도 조용히 기다리고 있었죠.</p><p>용사는 마지막 빈 줄에 적었어요. “이제는 같이 가자.”</p><button className="primary" onClick={onRoadmap}>여정 지도로</button></Modal>}
   </div>;
 }

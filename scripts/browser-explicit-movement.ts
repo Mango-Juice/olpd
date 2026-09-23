@@ -35,7 +35,7 @@ try {
       const initial = await read();
       await page.getByRole('button', { name: '모험 출발' }).click();
       await expect.poll(async () => (await read()).phase).toBe('blocked');
-      await expect(page.getByRole('button', { name: '포기하고 부활하기 · +1데스', exact: true })).toBeVisible({ timeout: 1800 });
+      await expect(page.getByRole('button', { name: '부활하고 · +1데스', exact: true })).toBeVisible({ timeout: 1800 });
       const stopped = await read();
       expect(stopped.position).toEqual(initial.position);
       expect(stopped.deaths).toBe(0);

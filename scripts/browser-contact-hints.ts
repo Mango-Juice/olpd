@@ -23,7 +23,7 @@ try {
     await page.setViewportSize({width:390,height:844});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)).toBe(true);
     await page.screenshot({path:'artifacts/contact-hints/mobile.png',fullPage:true});
-    await page.getByRole('button',{name:'포기하고 부활하기 · +1데스',exact:true}).click();
+    await page.getByRole('button',{name:'부활하고 · +1데스',exact:true}).click();
     await page.getByRole('button',{name:/한 줄 더 쓰지 않고 다시 출발/}).click();
     await expect.poll(async()=>{const r=await state();return r.world.attempt===2&&!r.presentation&&r.phase==='blocked';},{timeout:15000}).toBe(true);
     await expect(page.locator('.play-contact-hint')).toHaveCount(0);

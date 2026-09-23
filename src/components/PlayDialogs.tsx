@@ -44,3 +44,15 @@ export function PlayShareDialog({ text, includeNotes, onIncludeNotes, notice, on
     {notice && <p role="status">{notice}</p>}
   </Modal>;
 }
+
+export function PlayRestartDialog({ onRestart, onClose, disabled = false, firstChapter = false }: {
+  onRestart: () => void; onClose: () => void; disabled?: boolean; firstChapter?: boolean;
+}) {
+  return <Modal title="새 메모장을 펼칠까요?" onClose={onClose}>
+    <p>이번 장의 메모와 데스 기록을 초기화하고 {firstChapter ? "1-1 첫걸음" : "첫 스테이지"}부터 시작해요. 완료 기록과 열린 장은 그대로 남아요.</p>
+    <div className="action-row">
+      <button type="button" className="primary" disabled={disabled} onClick={onRestart}>새 도전 시작</button>
+      <button type="button" className="secondary" onClick={onClose}>계속할게요</button>
+    </div>
+  </Modal>;
+}

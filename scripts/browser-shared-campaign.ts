@@ -71,7 +71,7 @@ try {
   }, { timeout: 18000 }).toBe(true);
   if ((await browserState(page)).phase === 'blocked') {
     const abandonStarted = Date.now();
-    await page.getByRole('button', { name: '포기하고 부활하기 · +1데스', exact: true }).click();
+    await page.getByRole('button', { name: '부활하고 · +1데스', exact: true }).click();
     await expect(page.getByText('입구에서 다시 준비할게.', { exact: true })).toBeVisible();
     await expect(page.locator('#campaign-instruction')).toBeVisible({ timeout: 2200 });
     expect(Date.now() - abandonStarted).toBeLessThan(2200);

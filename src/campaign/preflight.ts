@@ -12,13 +12,6 @@ function clarificationEvent(events: WorldEvent[]): WorldEvent | undefined {
   return events.find((event) => event.outcome === "clarification");
 }
 
-function completedCurrentEncounter(run: StageRun): boolean {
-  if (run.notebook.instructions.length === 0) return true;
-  const prefix = `${run.execution.epoch}:`;
-  const completed = new Set(run.execution.completed);
-  return run.notebook.instructions.every((program) => completed.has(`${prefix}${program.id}`));
-}
-
 /**
  * Runs a bounded, throwaway execution from the current bookmark. Only an
  * explicit interpretation/feasibility rejection is returned to the editor;
@@ -55,7 +48,9 @@ export function preflightProgram(run: StageRun, proposedNotebook: Notebook, dyna
     if (next.phase === "blocked" || next.phase === "failed") {
       return { kind: "admissible", limited: true };
     }
-    if (completedCurrentEncounter(next)) {
+    // Validate one complete traversal, not endless repetitions of a standing rule.
+    // The live scheduler still reselects it at the next decision boundary.
+    if (next.execution.active === null) {
       return { kind: "admissible", limited: false };
     }
 

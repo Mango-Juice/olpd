@@ -325,14 +325,14 @@ describe("theatre failure, clarification, and safe incomplete states", () => {
     expect(entered.visible).toEqual(expect.arrayContaining(["07-2-weight", "07-2-weight-mark"]));
   });
 
-  it("stops an unbounded moon-light hold as a safe incomplete deadlock without a bell", () => {
+  it("keeps an unbounded hold active without inventing a release or a bell", () => {
     const definition = segment("07-5");
     let run = createStageRun("theatre-infinite-hold", definition.enter(null));
     run = writeStageProgram(run, literal("hold-forever", "07-5", action("keeper", "hold", "07-5-moon-handle")));
     run = departStage(run);
     run = restored(advanceStage(acknowledgePresentation(run), stageDynamics(THEATRE_STAGE)));
     run = restored(advanceStage(acknowledgePresentation(run), stageDynamics(THEATRE_STAGE)));
-    expect(run.phase).toBe("blocked");
+    expect(run.phase).toBe("running");
     expect(run.notebook.deaths).toBe(0);
     expect(run.world.actors.keeper.holding).toBe("07-5-moon-handle");
     expect(run.world.entities["07-5-latch"].properties.locked).toBe(false);
