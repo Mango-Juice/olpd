@@ -1,326 +1,71 @@
-# 프로젝트 개발 지침
+# 프로젝트 작업 지침
 
-새 작업은 `codex/` 브랜치에서 진행하고 GitHub PR로 검토·통합한다. `main`에 직접 커밋·푸시하지 않는다.
+## 작업 방식
 
-## 구현 기준
+- 한국어로 간결하게 소통한다. 제품명·코드 식별자·명령은 원문을 유지한다.
+- 요청한 결과와 관련 검증까지 완료한다. 통상적인 구현 선택과 되돌릴 수 있는 수정은 자율적으로 진행하고, 결과를 크게 바꾸는 정보가 부족할 때만 묻는다.
+- 사용자 변경·비밀값·진행 중 저장·복구 자료를 보존한다. 지침과 설정을 정리하기 전에는 저장소 밖에 원본을 백업한다.
+- 필요한 문서만 아래 안내에 따라 읽는다. 반복된 절차나 과거 작업 기록을 이 파일에 쌓지 않는다.
 
-- 자연어 메모로 용사를 움직이는 퍼즐 게임. 신규 플레이는 프롤로그와 10장·60스테이지로 구성한다. 프롤로그를 건너뛰어도 1-1에서 시작하며, 앞 장을 완료해야 다음 장이 열린다.
-- [공통 메모 수칙](docs/game-rules.md)을 기준으로 한다. 매 행동마다 메모를 위에서부터 검사해 조건이 맞는 첫 수칙을 실행한다. 메모는 소모되지 않는다. 맞는 수칙이 없으면 멈추며, 암묵적인 전진이나 상호작용을 넣지 않는다.
-- 모든 장은 1장에서 추출한 공용 메모장·입력·재생·대사·점수·기록 UI를 사용한다. 맵과 행동 판정만 장별 어댑터로 확장한다. 복사한 별도 UI나 축소된 메모장 기능을 만들지 않는다.
-- 메모는 장 안에서 누적한다. 사망 후 한 줄을 추가하고 장 입구부터 재시작한다. 지우개 두 개를 소진한 뒤 삭제는 한 줄당 3데스다.
-- Enter 한 번으로 해석·저장·출발한다. 공용 입력에서 한글 조합, 중복 제출, 취소와 늦은 응답을 처리하며 해석 실패에는 작성 기회를 쓰지 않는다.
-- 후속 장은 스크롤 없는 한 화면에 2~4개 요소를 배치한다. 목표는 한 문장으로 알리고 관계는 물체와 움직임으로 보여 준다. 내부 수치·상세 성질표·불필요한 접기 UI를 노출하지 않는다.
+## 에이전트 선택과 위임
 
-## 구조와 AI 경계
+모델 계열은 작업의 불확실성·오류 영향·검증 난이도로 선택한다. 선택한 계열에서는 실행 환경이 제공하는 **최신 최선 버전**을 반드시 사용하며, 특정 세대 번호를 고정하지 않는다.
 
-- React + TypeScript + Vite + Canvas 2D, Node.js API를 사용한다.
-- `src/game/`: 1장 판정·비용·저장 검증·현재 행동 기록·오디오. `src/campaign/spatial/`: 2~10장 선언형 배치와 공용 이동·충돌·장치 실행기.
-- `src/App.tsx`와 `src/components/`: 입력·메모장·공용 플레이 UI. `CampaignChronicle.tsx`는 현재 실행의 행동 설명과 재생을 담당한다.
-- `src/render/`와 `DungeonCanvas.tsx`: 확정된 이벤트의 그래픽 재생. 코어가 생사·비용을 먼저 판정하고 저장하며 프레임 속도는 판정에 영향을 주지 않는다.
-- `server/`, `api/`: 입력 검증·AI 해석·호출 제한·Vercel Node API. AI는 지침만 해석하고 물리·성공 여부는 코드가 결정한다.
-- 프롤로그·1장은 TypeSafe Jev, 후속 장은 DeepSeek V4.1 Flash(`deepseek-flash`)를 사용한다. 캠페인은 기본 non-thinking(`CAMPAIGN_DEEPSEEK_THINKING=disabled`), 요청당 한 번, 최대 8초이며 자동 재호출·fallback은 없다. `low`는 서버 설정으로 비교할 수 있다.
-- 키는 서버에서만 읽고 `VITE_` 접두어를 붙이지 않는다. 키가 없으면 복구 가능한 오류를 표시한다. 실제 플레이에 모킹이나 키워드 대체 해석을 넣지 않는다.
+| 모델 계열 | 적합한 작업 |
+| --- | --- |
+| Astra | 모호한 요구사항, 원인 탐색, 아키텍처, 여러 영역에 걸친 판단과 최종 통합 |
+| Sol | 방향과 범위가 정해진 기능 구현, 리팩터링, 복잡한 수정과 검토 |
+| Luna | 명확한 반복 수정, 단순 설정, 지정된 검사 실행과 결과 수집 |
 
-## 저장과 호환성
+- 품질을 먼저 확보하고 비용·지연·재작업을 함께 줄인다. 간단한 작업은 직접 처리하며, 위임이 시간이나 품질에 이득이 있을 때만 독립적인 작업을 나눈다.
+- 주 에이전트는 요구사항 해석·설계 결정·최종 통합을 책임진다. 하위 에이전트에는 목표·범위·담당 파일·제약·완료 기준을 주고, 병렬 편집의 파일 소유권을 분리한다.
+- 하위 에이전트는 맡은 범위의 구현과 검증을 마치고 변경·검사 근거·남은 불확실성을 보고한다. 범위를 넘는 설계 판단은 주 에이전트에 돌려주며, 주 에이전트는 결과와 통합 영향을 확인한다.
+- 추론 강도는 모델과 별도로 정한다. 기계적 작업은 낮게, 복잡한 판단은 충분히 높게 설정하고 실행 환경이 지원하는 값을 사용한다.
+- 반복 실패나 개념 오류가 드러나면 근거를 넘겨 적절한 모델로 바로 전환한다. 모든 작업을 저렴한 모델부터 순차적으로 거치게 하지 않는다.
+- 모델·추론 설정은 도구의 실제 선택 기능으로 지정한다. 원하는 계열이 없으면 적절한 대안이나 직접 수행을 택하고, 요청한 설정과 확인된 실행을 구분한다.
 
-- 현재 메모·진행·행동 기록은 자동 저장한다. 완료 후에는 장별 완료·해금·최고 기록과 마지막 완료 참조/시각만 남기고 완료 회차 전체를 누적하지 않는다. 다중 창 충돌은 정지하고 알린다.
-- 저장 문서 v5는 이전 완료 상세를 검증·요약하고 새 문서 저장 성공 후 동일한 원본만 정리한다. 진행 중 실행과 개편 전 활성 복구 자료는 보존한다.
-- 1장의 무표기/버전 1 저장은 옛 도입·8방 경로를 유지한다. 신규·초기화는 `layoutVersion: 3`의 6장면이다. 버전 2 좌표는 검증용으로 보존하되 마지막 다리 이후 제거된 구간은 실행하지 않는다.
-- 규칙 변경 시 저장 버전과 명시적 마이그레이션을 함께 관리한다. 저장된 지침을 조용히 다시 해석하지 않는다.
+## 게임에서 지킬 계약
 
-## 로컬 실행과 QA
+- 자연어 메모로 용사를 움직이는 퍼즐 게임이다. 신규 플레이는 프롤로그와 10장·60스테이지이며 앞 장을 완료해야 다음 장이 열린다.
+- 메모는 매 행동마다 위에서부터 검사해 조건이 맞는 첫 수칙을 실행한다. 실행해도 소모되지 않는다. 맞는 수칙이 없으면 멈추며 시스템이 전진·상호작용을 대신 결정하지 않는다.
+- 모든 장은 1장에서 추출한 공용 메모장·입력·재생·대사·점수·기록을 사용한다. 장별 맵과 판정은 어댑터로 확장하고, 복사한 별도 UI나 축소된 메모장으로 대체하지 않는다.
+- 메모는 장 안에서 누적한다. 사망 후 한 줄을 추가하고 장 입구에서 재시작한다. 지우개 두 개 이후 삭제 비용은 한 줄당 3데스다.
+- Enter 또는 제출 버튼 한 번으로 해석·저장·출발한다. 한글 조합·중복 제출·취소·늦은 응답을 공용 입력에서 처리하고, 해석 실패에는 작성 기회를 쓰지 않는다.
+- 후속 장은 스크롤 없는 한 화면에 2~4개 요소를 배치한다. 목표는 한 문장으로 알리고 물체와 움직임으로 관계를 보여 준다. 내부 수치·상세 성질표·불필요한 접기 UI는 노출하지 않는다.
 
-- Node.js 22.x. `npm ci` 후 `.env.example`을 `.env.local`로 복사하고 두 API 키를 설정한다. `npm run dev`는 프런트엔드와 API를 `http://localhost:5173`에서 제공한다.
-- localhost 개발 서버의 `/?qa=1`에서 프롤로그·각 장·후속 개별 스테이지를 선택한다. AI는 실제 API를 사용한다.
-- QA 저장 키는 `one-line-per-death:qa:spatial-v1`이며 일반 진행과 분리한다. “새 QA 시작”은 QA 슬롯만 초기화한다. 일반 플레이는 `/`로 돌아간다.
+## 구현·저장 경계
 
-## 검사
+- React·TypeScript·Vite·Canvas 2D와 Node.js API를 사용한다. `src/game/`는 1장 코어, `src/campaign/spatial/`은 후속 장 실행기, `src/components/`는 공용 UI, `src/render/`는 재생, `server/`·`api/`는 서버 경계다.
+- AI는 메모의 행동과 조건만 해석한다. 코어가 물리·성공·비용을 확정하고 저장한 뒤 Canvas가 재생한다. 프레임 속도가 판정에 영향을 주지 않게 한다.
+- 프롤로그·1장은 Jev, 이후 장은 DeepSeek를 사용한다. 캠페인은 기본 추론 비활성화, 요청당 한 번, 최대 8초다. 자동 재호출이나 대체 해석을 넣지 않는다.
+- 현재 메모·진행·행동은 자동 저장하고, 완료 후에는 완료·해금·최고 기록·마지막 완료 참조와 시각만 남긴다. 완료 회차의 전체 기록은 누적하지 않는다. 다중 창 충돌은 정지하고 알린다.
+- 저장 문서 v5는 이전 완료 상세를 검증·요약한 뒤 새 저장 성공 후 동일한 원본만 정리한다. 진행 중 저장과 활성 복구 자료는 유지한다. 규칙 변경에는 명시적인 버전 전환을 제공하고 저장된 지침을 조용히 재해석하지 않는다.
+- 1장 신규·초기화는 `layoutVersion: 3`의 6장면이다. 무표기/버전 1의 옛 8방 경로와 버전 2 좌표 검증을 보존하되, 버전 2 마지막 다리 뒤의 제거된 구간은 실행하지 않는다.
+- Canvas는 일시정지·탭 숨김 중 반복 그리기를 멈추고 변경 시 필요한 프레임만 그린다. 고정 배경·배치를 재사용하며 배경 캐시는 캔버스당 원시 픽셀 20 MiB를 넘으면 직접 그린다.
 
-```sh
-npm test
-npm run build         # 타입 검사(미사용 코드 포함) + 프로덕션 빌드
-npm run typecheck     # 타입 검사만 필요할 때
-npx playwright install chromium
-```
+## 실행과 검증
 
-브라우저 검사는 별도 터미널에서 `npm run dev`를 실행한 상태에서 수행한다. 기본 검사는 유료 API 없이 명시적 fixture로 UI와 실제 실행기·저장을 확인한다.
+- Node.js 22.x에서 `npm ci` 후 `.env.example`을 `.env.local`로 복사해 API 키를 설정하고 `npm run dev`를 실행한다. 주소는 `http://localhost:5173`이다. `npm run preview`는 정적 화면만 제공한다.
+- localhost 개발 서버의 `/?qa=1`은 장·스테이지 바로 입장용이다. QA 저장은 일반 진행과 분리되지만 AI는 실제 API를 호출한다.
+- 변경에 맞는 검사를 골라 실행한다. 기본 명령은 `npm test`, `npm run typecheck`, `npm run build`이고 상세 명령은 `package.json`에서 확인한다. 통과한 검사는 새 변경·실패·미해결 위험이 있을 때만 반복한다. 문서만 바꾸면 링크와 변경 내용을 확인한다.
+- 브라우저 검사는 개발 서버와 Chromium이 필요하다. 기본 브라우저 검사는 고정 응답으로 UI·실행기·저장을 확인하며 실제 AI 정확도를 입증하지 않는다. `eval:*`, `test:priority:live`, `test:guards`는 유료 호출이므로 필요한 표본만 사용한다.
+- 검증 결과는 실제로 확인한 범위와 한계를 함께 기록한다. 로컬 성공·공개 배포·실제 기기·사용자 경험을 구분한다.
 
-| 명령 | 범위 | 실제 API |
-| --- | --- | --- |
-| `npm run test:browser` | 프롤로그·1장과 후속 장 공용 UI | 호출 없음 |
-| `npm run test:ui` | 1장 가독성·장면별 재생 | 호출 없음 |
-| `npm run test:drag` / `test:priority` | 메모 드래그·우선순위·충돌 | 호출 없음 |
-| `npm run test:notebook` | 삭제 비용·공유·설정 | 호출 없음 |
-| `npx tsx scripts/browser-campaign-storage.ts` | 저장 요약 전환·트랜잭션 실패·반복 완료 후 크기 | 호출 없음 |
-| `npm run test:errors` | 통신·저장 오류, IME, 늦은 응답 | 호출 없음 |
-| `npm run test:campaign:scenes` | 후속 54장면 고정 화면과 모바일 폭 | 호출 없음 |
-| `npm run test:campaign:recovery` | 옛 저장 원본·해금 보존과 새 형식 재개 | 호출 없음 |
-| `npm run eval:campaign -- --ids=02-v2-1` | 지정한 현재 장면의 한국어 해석·실행 | DeepSeek, 장면당 1회. `--all`은 최대 54회 |
-| `npm run eval:campaign:smoke` | Jev와 DeepSeek의 조건·재사용·대기·협동 표본 | 최대 4회. `--only=02-v2-1`로 1건 지정 가능 |
-| `npm run eval:jev` | 1장 한국어 행동·상황 평가 | 실제 Jev 호출 |
-| `npm run test:priority:live` / `test:guards` | 실제 API의 우선순위/입력 경계 | 실제 Jev 호출 |
+## 보안·운영·Git
 
-`test:onboarding`은 새 1장 6장면 완료·2장 해금·메모 유지·재접속 검사, `test:onboarding:legacy`는 기존 도입 저장의 이어하기 검사, `test:campaign:shared`는 후속 장 공용 UI 검사만 따로 실행한다. 자동화 성공은 실제 모델 정확도나 사람의 체감 난이도와 구분한다. 브라우저 fixture는 실제 플레이의 AI 경로에 포함되지 않는다.
+- 새 작업은 `codex/` 브랜치에서 진행하고 GitHub PR로 검토·통합한다. `main`에 직접 커밋·푸시하지 않는다.
 
-`artifacts/`는 Git에서 제외되는 로컬 결과 폴더다. 이전 콘텐츠용 실행 스크립트는 제거했으며, 당시 실험과 검증 수치는 [과거 기록 안내](docs/history/README.md)에서 구분한다. `npm run preview`는 빌드된 정적 화면만 제공하고 Node API는 띄우지 않는다.
+- API 키는 서버에서만 읽고 `VITE_` 접두어를 붙이지 않는다. 키가 없으면 복구 가능한 오류를 표시한다. 실제 플레이에 모킹·키워드 대체 해석을 넣지 않으며 지침 원문·비밀값은 로그에 남기지 않는다.
+- `.env.local`, `.vercel/`, `node_modules/`, `dist/`, `artifacts/`는 추적하지 않는다. 커밋에는 해당 작업 파일만 포함하고 `git diff --check`와 스테이징 내용을 확인한다. 커밋·원격 전송·배포의 완료 상태는 각각 보고한다.
+- Vercel 프로젝트 `olpd`에 화면과 Node API를 함께 배포한다. 환경변수 변경은 재배포해야 적용된다. `AI_ENABLED=false`로 공급자 호출을 중단하며 긴급 차단은 두 해석 API의 방화벽을 사용한다.
+- 서버의 IP별 분당 30회 제한과 Vercel 방화벽의 IP별 60초당 30회 제한은 전역 비용 상한이 아니다. 운영 작업에서는 호출·토큰·지연·오류와 공급자 사용량을 확인한다. 별도 요청 없이 유료 플랜이나 데이터베이스를 구매하지 않는다.
 
-## Canvas 성능
+## 필요할 때 읽을 문서
 
-- 공용 재생 루프는 일시정지·탭 숨김 중 반복 그리기를 멈춘다. 정지 중 설정·크기·이미지가 바뀌면 필요한 한 프레임만 다시 그린다.
-- 고정 배경은 해상도에 맞춰 캐시하고 변하지 않은 캠페인 배치는 재사용한다. 배경 캐시 원시 픽셀은 캔버스당 최대 20 MiB이며 초과하면 직접 그린다.
-- `npm run test:canvas`로 정지·재개·크기 변경·숨김·화면 이탈을 검사한다. 실측과 실제 기기 검증의 한계는 [검증 기록](docs/verification.md)에 남긴다.
+- 게임 규칙 변경: [메모 수칙](docs/game-rules.md), [공용 플레이 계약](docs/stage-design/00-play-contract.md)
+- 장·물체·연출 변경: [스테이지 설계](docs/stage-design/README.md), [공간 실행기](docs/spatial-implementation.md), [스토리](docs/story-concept.md)
+- AI 해석·비용 조정: [Jev 평가](docs/jev-evaluation-2026-09-21.md), [DeepSeek 평가](docs/campaign-deepseek-probe.md)
+- 구현 현황·호환성·실측 확인: [캠페인 구현](docs/campaign-implementation.md), [검증 기록](docs/verification.md). 과거 실험은 [기록 안내](docs/history/README.md)에서 구분한다.
+- 공개 배포·검색·공유 설정: [운영 준비](docs/publishing.md)
 
-## 배포·운영
-
-Vercel 프로젝트 `olpd`에 Vite와 Node API를 함께 배포한다. 서버 비밀값 `TYPESAFE_API_KEY`와 `DEEPSEEK_API_KEY`를 production/preview 환경에 설정한다. `.env.local`, `.vercel`, 테스트 저장 기록은 Git에서 제외한다. 운영 페이지는 검색 수집을 허용하고 API는 noindex를 유지한다. 메타 정보·공유 이미지·소유 확인·사이트맵 제출 절차는 [공개 운영 준비](docs/publishing.md)를 참고한다.
-
-```sh
-npx vercel link --project olpd --scope <본인 스코프>
-npx vercel env add TYPESAFE_API_KEY production --sensitive
-npx vercel env add DEEPSEEK_API_KEY production --sensitive
-npx tsx scripts/check-server-imports.ts
-npx vercel deploy --prod
-```
-
-`AI_ENABLED=false`로 AI 공급자 호출을 중단할 수 있다. Vercel 환경변수 변경 후 재배포해야 적용된다. 긴급 중단이 필요하면 Vercel 방화벽에서 `/api/interpret`와 `/api/campaign-interpret`를 일시 차단한다. 지침 원문·비밀값은 운영 로그에 남기지 않는다.
-
-API에는 서버 인스턴스 단위 IP 30회/분 제한과, 배포 프로젝트의 Vercel WAF IP 30회/60초 제한을 함께 적용한다. WAF는 고정 윈도와 리전별 카운터이며 전 세계에서 합산되는 비용 상한이 아니다. 호출·토큰·지연·오류 로그와 TypeSafe·DeepSeek 사용량을 확인해야 한다. 유료 플랜이나 데이터베이스는 구매하지 않는다.
-
-저장 파일은 게임/던전/해석 규칙 버전을 포함한다. 향후 규칙 변경 시 버전을 올리고 명시적인 마이그레이션을 제공해야 하며, 저장된 지침을 조용히 다시 해석하지 않는다.
-
-검사 결과와 공개 배포의 관찰 범위는 [검증 기록](docs/verification.md), AI 평가는 [Jev 평가](docs/jev-evaluation-2026-09-21.md)를 참고한다. 현재 구현은 [공간 실행기](docs/spatial-implementation.md), 공간·물체별 연출 기획은 [10장 스테이지 설계](docs/stage-design/README.md), 이야기 설정은 [스토리 구상](docs/story-concept.md)을 따른다.
-
-## Git 작업
-
-- 목적이 다른 변경은 별도 커밋으로 남긴다. 커밋 전에 `git diff --check`, 범위에 맞는 검사, `git diff --cached` 확인을 수행한다.
-- `.env.local`, `.vercel/`, `node_modules/`, `dist/`, `artifacts/`는 추적하지 않는다. 로컬 커밋과 원격 push·배포는 구분한다.
-- [DeepSeek 평가](docs/campaign-deepseek-probe.md)와 [캠페인 구현 기록](docs/campaign-implementation.md)을 참고한다. 로컬 검증과 공개 배포 상태를 구분한다.
-
-## Subagent delegation
-
-When acting as the main agent, act as the lead engineer: understand the user's intent, make design decisions, coordinate implementation, and deliver the integrated result.
-
-When acting as a subagent, complete your assigned task within its scope and report to the assigning agent. Do not take over global coordination.
-
-Bias toward completing the assigned task autonomously. Do not stop at a proposal or first implementation when the requested work and appropriate verification can be completed directly.
-
-### Keep in the main agent
-
-The main agent retains responsibility for:
-
-- interpreting ambiguous requirements and user intent
-- architecture, API design, and consequential implementation tradeoffs
-- reasoning about cross-cutting effects and changes to scope or assumptions
-- integrating, reconciling, and reviewing delegated results
-- deciding whether the integrated result is correct and complete
-
-Subagents may investigate alternatives and recommend decisions. The main agent must make the final decision with the relevant evidence; do not transfer decision ownership merely because reasoning is difficult or expensive.
-
-### Delegate bounded work
-
-Delegate when the assignment has a clear objective, bounded scope, and an independently reviewable result, and delegation is expected to improve speed, quality, or context efficiency.
-
-Good candidates include:
-
-- isolated implementation or refactoring after the relevant design is established
-- repetitive or mechanical edits
-- exploration of independent subsystems or investigation of independent hypotheses
-- bug reproduction and diagnostic collection
-- targeted tests, builds, lint, type checks, and log analysis
-- bounded reviews for correctness and regressions
-
-Subagents may make local implementation decisions within their assignment. They must report significant design questions, conflicting requirements, or necessary scope expansion to the main agent rather than silently redefining the task.
-
-### Parallelism
-
-Prefer parallel subagents for independent exploration, hypotheses, reviews, or verification. Parallelize implementation when ownership and dependencies are sufficiently clear.
-
-Give concurrent editors disjoint file ownership. Treat tightly coupled changes as dependent even when they touch different files; avoid overlapping edits.
-
-Do small tasks directly when delegation and review would cost more than the work. Do not fragment a tightly sequential task merely to use more agents.
-
-Subagents may delegate further when supported and when independent work offers a material benefit. Keep nested assignments within the original scope and avoid delegation chains without useful parallelism.
-
-### Verification
-
-The main agent remains responsible for the integrated result. After delegated work:
-
-1. Inspect the relevant changes or findings and their supporting evidence.
-2. Resolve conflicts and remaining design questions.
-3. Check that the pieces work together.
-4. Run or request checks appropriate to the scope and risk of the integrated change.
-
-Do not treat a success summary or exit status alone as proof of correctness. Inspect what was actually checked and report material gaps or blockers.
-
-Start with targeted checks and complete required verification. Add tests when they meaningfully validate behavior or prevent regressions, not solely to mirror trivial, reversible implementation details.
-
-Reuse relevant verification evidence instead of automatically repeating every subagent check. Broaden or repeat testing when subsequent changes, failures, integration risks, or unresolved concerns justify it.
-
-### Noisy work
-
-Keep large command outputs and repetitive diagnostic details in the subagent context when practical. Return enough evidence for review without forwarding full logs by default.
-
-For verification work, report:
-
-- command executed and exit status
-- relevant pass/fail results, including failing test or check names
-- concise error excerpts and likely cause, distinguishing evidence from hypotheses
-- affected files or areas
-- remaining uncertainty, skipped checks, and whether anything blocks completion
-
-Provide fuller logs when necessary for diagnosis. Do not compress away contradictory findings or information needed to judge correctness.
-
-### Delegation principle
-
-Use the main agent for global judgment, coordination, and integration. Use subagents for independent implementation, exploration, and verification.
-
-The main agent may implement directly when its existing context, task dependencies, or coordination overhead make that the better choice. Delegation is a means to complete the task, not a requirement to create workers for every step.
-
-## Model selection
-
-Choose models by uncertainty, reasoning burden, consequences of error, and verification difficulty, not file count or code volume.
-
-Prioritize correctness, then optimize total cost and latency. Use a less expensive model when it can meet the assignment's requirements reliably without disproportionate supervision, retries, or rework.
-
-Treat the following roles as routing defaults, not guaranteed capability boundaries. Adjust them using evidence from the actual task. Model choice and reasoning effort are separate decisions.
-
-### GPT-6 Astra
-
-Prefer Astra for lead-agent work requiring sustained judgment or discovery:
-
-- ambiguous requirements, architecture, and complex task decomposition
-- investigation where the problem or root cause remains poorly understood
-- consequential choices across approaches, subsystems, migrations, or infrastructure
-- revising the plan, resolving conflicting findings, and final integration judgment
-
-Do not restrict Astra to planning if direct implementation is the most effective way to finish the task.
-
-Use an Astra subagent when an independent branch needs comparable depth and parallelizing it materially improves speed or quality. Do not select Astra merely because an assignment touches many files.
-
-### GPT-5.6 Sol
-
-Use Sol for substantial implementation and demanding but bounded engineering where the objective and overall direction are sufficiently clear.
-
-Good candidates include:
-
-- complex features, nontrivial refactors, and changes spanning known modules
-- difficult debugging after the problem area has been narrowed
-- concurrency, state-management, data-consistency, or security-sensitive changes
-- rigorous code review or validation of a proposed design
-
-Prefer Sol when implementation requires significant reasoning or when a weaker model's mistakes would be difficult to detect. Return consequential architectural or scope decisions to the main agent.
-
-### GPT-5.6 Terra
-
-Use Terra for lighter exploration and straightforward, well-specified implementation with manageable risk and clear verification.
-
-Good candidates include:
-
-- repository exploration, read-heavy scans, and bounded summaries
-- conventional components, handlers, endpoints, or integrations with established patterns
-- straightforward bug fixes and localized refactors
-- focused tests for already-understood behavior
-- implementing an explicit design with limited interaction between subsystems
-
-Do not assume every ordinary-looking feature belongs to Terra. Choose Sol when the surrounding behavior, edge cases, or verification require substantial technical judgment.
-
-### GPT-5.6 Luna
-
-Use Luna for explicit, narrow, repeatable work whose result can be checked mechanically.
-
-Good candidates include:
-
-- specified renames, repetitive edits, boilerplate, formatting, or copy changes
-- simple configuration changes and lint fixes with obvious resolutions
-- executing specified tests, builds, lint, or type checks
-- targeted searches, diagnostic collection, and concise log summaries
-- applying an already-specified transformation
-
-Distinguish executing a check from diagnosing an unfamiliar failure. Luna may collect evidence and fix obvious local mistakes, but should return ambiguous debugging, design decisions, or cross-cutting changes to the main agent.
-
-### Reasoning effort
-
-Choose effort independently from the model. Use a level sufficient for reliable completion without unnecessary reasoning:
-
-- **Low** for mechanical, deterministic, narrowly scoped work.
-- **Medium** for ordinary implementation and investigation with manageable uncertainty.
-- **High** for difficult debugging, complex logic, edge cases, or substantial tradeoffs.
-- **Extra High or Max**, when available, for unusually demanding reasoning where the additional effort is justified.
-
-Extra High and Max are distinct settings; use the exact level supported by the environment.
-
-Do not automatically pair Sol with High or Luna with Low. Preserve an effective setting unless the task or evidence supports changing it.
-
-When a result is inadequate, consider both additional effort on the current model and a more capable model. Neither must always precede the other.
-
-### Escalation
-
-Escalate based on evidence, including:
-
-- inability to progress because the assignment needs deeper reasoning or judgment
-- recurring uncertainty that affects correctness
-- conceptual errors exposed by verification
-- newly discovered architectural decisions or changes beyond the assigned scope
-
-Choose the appropriate destination directly. Do not require every task to start with Luna or pass through Terra and Sol before reaching Astra.
-
-Avoid repeated speculative retries when the assignment was routed too low. Preserve useful findings and failure evidence for the next agent.
-
-Do not escalate merely because a command encounters an environmental failure, a dependency is unavailable, a deterministic local mistake needs fixing, the repository is large, or execution takes longer than expected.
-
-A subagent that reaches its decision boundary should report to the main agent rather than silently widening its authority.
-
-### Optimize total work, not per-call cost
-
-Account for model usage, transferred context, coordination, supervision, retries, review, rework, and verification when choosing a route.
-
-A cheaper invocation is not an improvement if another agent must redo the work. Conversely, do not use a stronger model when a cheaper model reliably produces an easily verified result.
-
-Do not assume that more parallel agents will reduce total usage; require a worthwhile improvement in completion time, quality, or context management.
-
-### Task shape matters more than task size
-
-Examples of routing judgments, subject to the actual risks and available checks:
-
-- A fully specified rename across 40 files may fit Luna.
-- A conventional endpoint with clear behavior and established tests may fit Terra.
-- A five-line concurrency fix may require Sol.
-- A single configuration change may require Astra when its system-wide consequences are unclear.
-
-### Context discipline
-
-Give each subagent a concise assignment containing the information needed for correctness:
-
-- objective and relevant requirements
-- constraints, relevant files or symbols, and ownership boundaries
-- decisions already made and questions still unresolved
-- authorized actions
-- expected verification
-- expected result format
-
-Prefer targeted context over unnecessary parent-history transfer when the tooling allows it. Do not omit dependencies, constraints, or contrary evidence merely to save tokens.
-
-### Routing defaults
-
-When no stronger task-specific evidence applies:
-
-- **Luna:** mechanical execution and specified verification commands.
-- **(DO NOT USE - version 6 model is not available) Terra:** lighter exploration and straightforward, readily verifiable implementation.
-- **Sol:** substantial implementation and demanding bounded engineering.
-- **Astra:** ambiguity, discovery, architecture, consequential coordination, and final judgment.
-
-When uncertain between adjacent options, choose the cheaper one only when errors are inexpensive and easy to detect. Prefer the stronger option when errors would be subtle or costly to undo.
-
-Choose **latest version of model**.
-
-### Availability and reporting
-
-Use only models and reasoning settings exposed by the current environment. Apply routing through supported tool parameters or configured agent roles; naming a model in an assignment does not by itself confirm that the runtime selected it.
-
-When routing matters, request the intended model and effort explicitly where supported. Do not assume an unspecified subagent will automatically use a cheaper model.
-
-Distinguish requested routing from confirmed execution. Do not claim that a model or effort was actually used unless the available tooling establishes it.
-
-If the preferred model or selection control is unavailable, use an appropriate available option or perform the work directly. Report limitations that materially affect the result rather than blocking routine work.
-
-The main agent retains responsibility for reviewing and integrating results regardless of which model produced them.
+이 지침은 [OpenAI의 Astra 지침 정리 가이드](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra)에 따라 작업 경계와 프로젝트 고유 계약을 중심으로 유지한다.
