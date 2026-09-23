@@ -4,7 +4,7 @@
 
 **서비스 주소: https://olpd.vercel.app**
 
-10장·66스테이지 캠페인의 [현재 구현](docs/spatial-implementation.md)과 [배포·검증 기록](docs/verification.md)을 구분해 관리한다.
+2026-09-23 운영 배포: 10장·66스테이지와 영구 메모 수칙을 반영했다. [현재 구현](docs/spatial-implementation.md)과 [배포·검증 기록](docs/verification.md)을 참고한다.
 
 작은 용사에게 자연어 지침을 남기며 탈출하는 웹 게임. React + TypeScript + Vite + Canvas 2D, Node.js API를 사용한다. 프롤로그·1장은 TypeSafe Jev, 2장 이후 캠페인은 DeepSeek V4.1 Flash(`deepseek-flash`)로 지침을 해석한다.
 

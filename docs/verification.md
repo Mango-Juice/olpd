@@ -1,5 +1,19 @@
 # 구현 검증 기록
 
+## 2026-09-23 — Vercel 운영 배포
+
+- 운영 주소: https://olpd.vercel.app
+- 배포 소스 커밋: `10aabfe` (영구 수칙·재시작·공통 UI 및 Node ESM 경로 수정 포함)
+- 정상 배포: `dpl_EUQVnXdnrGfW8RPE73gpFB5fhc8V`, https://olpd-d6akt7lxu-mangojuices-projects.vercel.app — Vercel `Ready`, 원격 빌드 27초.
+- Production에 기존 `TYPESAFE_API_KEY`를 유지하고 로컬의 `DEEPSEEK_API_KEY`를 Secret으로 등록했다. 비밀값은 문서·로그·Git에 남기지 않았다.
+- 첫 배포는 빌드가 성공했지만 `/api/status` 호출 시 `src/game/content.js`의 확장자 없는 `./memory` import로 Node ESM 기동이 실패했다. 이전 운영 배포로 롤백한 뒤 실제 API 의존 경로 14개 파일을 `.js` import로 수정했다. 34개 모듈을 별도 임시 디렉터리에 컴파일하고 TypeScript 로더 없이 Node로 실행하는 회귀 검사를 추가했다.
+- 전체 **71개 파일 823개 테스트**, 타입 검사·빌드 통과. 새 서버 검사에서 status 200, 두 해석 API의 잘못된 입력 400을 확인했다. 공급자 네트워크 호출은 금지한 검사다.
+- 최종 공개 주소에서 HTTP 200, 프롤로그 SKIP→1-1, “이 장 처음부터” 확인·취소, 모바일 가로 넘침 없음, 브라우저 오류 없음, `/api/status` 200 및 ready=true를 확인했다. `/api/interpret`와 `/api/campaign-interpret`는 잘못된 입력에 정상 JSON 400을 반환했다. `?qa=1`로 개발 QA가 노출되지 않는다.
+- 롤백 후 자동 도메인 연결은 프로젝트 기본 주소만 갱신했으므로 `olpd.vercel.app` 별칭도 수정본에 명시적으로 연결한 뒤 위 검사를 수행했다.
+- 실제 Jev·DeepSeek 문장 해석은 이번 배포 검사에서 호출하지 않았다. 키 등록·서버 기동·입력 검증과 실제 공급자 성공은 별도 증거다. 유료 호출 0회.
+
+정지 Canvas 재그리기·고정 배경 캐싱 등 앞서 진단한 성능 최적화는 이번 배포에 포함되지 않았다. 이전 절의 “미배포” 표시는 당시 상태를 기록한 것이며, 현재 배포 여부는 이 절을 기준으로 한다. 저장된 검증 자료는 Git 제외 `artifacts/production-release/`에 있다.
+
 ## 2026-09-23 — 영구 메모 수칙과 우선순위 교정 (로컬)
 
 사용자 확인에 따라 메모를 일회성 작업 목록으로 취급하던 동작을 교정했다. [공통 메모 수칙](game-rules.md)이 현재 기준이다. 아래 과거 기록 중 “지시를 모두 마치면 정지”, 완료 표식에 따른 실행 제외, guard만 선점한다는 가정은 폐기한다.
