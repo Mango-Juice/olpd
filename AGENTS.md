@@ -207,7 +207,7 @@ Prefer targeted context over unnecessary parent-history transfer when the toolin
 When no stronger task-specific evidence applies:
 
 - **Luna:** mechanical execution and specified verification commands.
-- **Terra:** lighter exploration and straightforward, readily verifiable implementation.
+- **(DO NOT USE - version 6 model is not available) Terra:** lighter exploration and straightforward, readily verifiable implementation.
 - **Sol:** substantial implementation and demanding bounded engineering.
 - **Astra:** ambiguity, discovery, architecture, consequential coordination, and final judgment.
 
