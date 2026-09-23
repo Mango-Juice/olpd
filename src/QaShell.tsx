@@ -100,7 +100,7 @@ export default function QaShell() {
       loadOnboarding: () => slotsRef.current[selected!]?.onboarding ?? null,
       saveOnboarding: async (progress) => persist(selected!, { ...slotsRef.current[selected!], onboarding: progress }, false) ? { ok: true, value: undefined } : { ok: false, error: { code: "write", message: "QA 도입 저장 실패" } },
       save: async (save) => persist(selected!, { ...slotsRef.current[selected!], run: { kind: "legacy", save } }) ? { ok: true, value: undefined } : { ok: false, error: { code: "write", message: "QA 저장 실패" } },
-      onRoadmap: back, onClearedPresentation: back, onArchive: back }} />;
+      onRoadmap: back, onClearedPresentation: back, bestScore: null }} />;
   } else if (current?.run.kind === "world") {
     const stage = qaStage(current.run.run.stageId)!;
     const displayed = current.run.run;
@@ -118,11 +118,11 @@ export default function QaShell() {
       version: 1, writer: "local-qa-map", revision: 0, settings,
       stages: STAGES.map((stage) => {
         const saved = slots[String(stage.id)]?.run;
-        return { stageId: stage.id, status: stage.id === 1 || qaStage(stage.id) ? "unlocked" : "locked", completion: null,
+        return { stageId: stage.id, status: stage.id === 1 || qaStage(stage.id) ? "unlocked" : "locked", completion: null, bestScore: null,
           activeRun: saved ? { stageId: stage.id, runId: saved.kind === "legacy" ? saved.save.state.id : saved.run.id } : null };
       }),
     };
-    content = <StageRoadmap campaign={qaCampaign} qa onSelect={(id) => open(id, false)} onArchive={() => undefined} />;
+    content = <StageRoadmap campaign={qaCampaign} qa onSelect={(id) => open(id, false)} />;
   }
   return <>{header}{error ? <p className="qa-error" role="alert">{error}</p> : null}{content}</>;
 }

@@ -35,37 +35,6 @@ function openArchive(): Promise<IDBDatabase> {
   });
 }
 
-export function stageArchive(save: SaveData): StageArchive {
-  return {
-    id: save.state.id,
-    stageId: "memory-dungeon",
-    title: "첫 번째 여정 · 기억의 던전",
-    completedAt: save.savedAt,
-    save,
-  };
-}
-
-/** A completed run is written once, outside the frequently rewritten active save. */
-export async function archiveStage(save: SaveData): Promise<void> {
-  if (save.state.phase !== "cleared" || save.state.tutorial) return;
-  const db = await openArchive();
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction(STORE, "readwrite");
-      const store = transaction.objectStore(STORE);
-      const existing = store.get(save.state.id);
-      existing.onsuccess = () => {
-        if (!existing.result) store.add(stageArchive(save));
-      };
-      transaction.oncomplete = () => resolve();
-      transaction.onerror = () => reject(transaction.error);
-      transaction.onabort = () => reject(transaction.error);
-    });
-  } finally {
-    db.close();
-  }
-}
-
 export async function listStageArchives(): Promise<StageArchive[]> {
   const db = await openArchive();
   try {
@@ -109,6 +78,31 @@ export async function listStageArchives(): Promise<StageArchive[]> {
         return { ...record, save: loaded.value } as StageArchive;
       })
       .sort((a, b) => b.completedAt - a.completedAt);
+  } finally {
+    db.close();
+  }
+}
+
+/** Remove only entries whose exact bytes were summarized by a durable campaign root. */
+export async function clearStageArchives(summarized: readonly StageArchive[]): Promise<void> {
+  if (summarized.length === 0) return;
+  const db = await openArchive();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction(STORE, "readwrite");
+      const store = transaction.objectStore(STORE);
+      for (const archived of summarized) {
+        const request = store.get(archived.id);
+        request.onsuccess = () => {
+          const current = request.result as StageArchive | undefined;
+          if (current && current.completedAt === archived.completedAt &&
+            JSON.stringify(current.save) === JSON.stringify(archived.save)) store.delete(archived.id);
+        };
+      }
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
   } finally {
     db.close();
   }

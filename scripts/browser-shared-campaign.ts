@@ -91,7 +91,7 @@ try {
   await page.reload();
   await page.locator('.roadmap-stop').filter({ has: page.getByRole('heading', { name: '비에 잠긴 회랑', exact: true }) }).getByRole('button', { name: /들어가기|이어 걷기/ }).click();
   expect((await browserState(page)).notebook.instructions).toHaveLength(2);
-  await page.getByRole('button', { name: '지난 모험 기록', exact: true }).click();
+  await page.getByRole('button', { name: '방금 무슨 일이?', exact: true }).click();
   await expect(page.getByRole('dialog')).toContainText('새로 남긴 말');
   await expect(page.getByRole('dialog')).toContainText('메모를 챙겨');
   await page.getByRole('button', { name: /장면 다시 보기/ }).first().click();

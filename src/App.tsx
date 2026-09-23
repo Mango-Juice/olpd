@@ -33,8 +33,6 @@ import {
   PlayLayout,
   PlayStageProgress,
 } from "./components/PlayChrome";
-import StageChronicle from "./components/StageChronicle";
-import { archiveStage, stageArchive, type StageArchive } from "./game/archive";
 import {
   ACTION_LABELS,
   CONFIG,
@@ -158,7 +156,7 @@ export interface LegacyStorageBridge {
   ) => Promise<StorageResult<void>>;
   onRoadmap: () => void;
   onClearedPresentation: () => void;
-  onArchive: () => void;
+  bestScore?: number | null;
 }
 
 export interface AppProps {
@@ -203,7 +201,7 @@ export default function App({ bridge }: AppProps = {}) {
     boot.data?.settings ?? initialSettings,
   );
   const settingsRef = useRef(settings);
-  const [best, setBest] = useState<number | null>(boot.data?.best ?? null);
+  const [best, setBest] = useState<number | null>(bridge?.bestScore ?? boot.data?.best ?? null);
   const bestRef = useRef(best);
   const [tutorialCompleted, setTutorialCompleted] = useState(
     boot.data?.tutorialCompleted ?? false,
@@ -243,12 +241,6 @@ export default function App({ bridge }: AppProps = {}) {
   const stepModeRef = useRef(false);
   const [awaitingNext, setAwaitingNext] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [showChronicle, setShowChronicle] = useState(false);
-  const [chronicleRecord, setChronicleRecord] = useState<StageArchive | null>(
-    null,
-  );
-  const [archiveError, setArchiveError] = useState("");
-  const archivedRuns = useRef(new Set<string>());
   useEffect(() => {
     const handler = () => setHidden(document.hidden);
     document.addEventListener("visibilitychange", handler);
@@ -277,7 +269,6 @@ export default function App({ bridge }: AppProps = {}) {
   }, [bridge]);
   useEffect(() => setAudioMuted(settings.muted), [settings.muted]);
   useEffect(() => {
-    if (showChronicle) return;
     setMusicPlayback({
       stageId: MEMORY_DUNGEON_STAGE_ID,
       playing:
@@ -305,7 +296,6 @@ export default function App({ bridge }: AppProps = {}) {
     showHistory,
     hidden,
     conflict,
-    showChronicle,
   ]);
   useEffect(
     () => () =>
@@ -436,61 +426,6 @@ export default function App({ bridge }: AppProps = {}) {
     persist,
     persistOnboarding,
   ]);
-  const archiveCleared = useCallback(
-    async (completed: RunState) => {
-      if (
-        completed.phase !== "cleared" ||
-        completed.tutorial ||
-        archivedRuns.current.has(completed.id)
-      )
-        return true;
-      if (bridge) return true;
-      try {
-        await archiveStage(
-          makeSave(completed, {
-            writer: writer.current,
-            settings: settingsRef.current,
-            best: bestRef.current,
-            tutorialCompleted: completedRef.current,
-          }),
-        );
-        archivedRuns.current.add(completed.id);
-        setArchiveError("");
-        return true;
-      } catch {
-        setArchiveError(
-          "완료한 모험을 보관하지 못했어요. 현재 기록은 남아 있으니 다시 시도해 주세요.",
-        );
-        return false;
-      }
-    },
-    [bridge],
-  );
-  useEffect(() => {
-    if (started && state.phase === "cleared" && !state.tutorial)
-      void archiveCleared(state);
-  }, [started, state, archiveCleared]);
-  const openChronicle = (includeCurrent: boolean) => {
-    setPaused(true);
-    setMusicPlayback({ stageId: MEMORY_DUNGEON_STAGE_ID, playing: false });
-    if (bridge) {
-      bridge.onArchive();
-      return;
-    }
-    setChronicleRecord(
-      includeCurrent && stateRef.current.phase === "cleared"
-        ? stageArchive(
-            makeSave(stateRef.current, {
-              writer: writer.current,
-              settings: settingsRef.current,
-              best: bestRef.current,
-              tutorialCompleted: completedRef.current,
-            }),
-          )
-        : null,
-    );
-    setShowChronicle(true);
-  };
   const presentCleared = useCallback(
     (completed: RunState) => {
       if (
@@ -615,7 +550,7 @@ export default function App({ bridge }: AppProps = {}) {
       history.replaceState(null, "", url);
       setSharedEntry(false);
       if (boot.data) {
-        await archiveAndRestart();
+        await recoverAndRestart();
         return;
       }
     }
@@ -674,11 +609,6 @@ export default function App({ bridge }: AppProps = {}) {
   const newChallenge = async () => {
     if (busy.current || conflictRef.current) return;
     busy.current = true;
-    if (!(await archiveCleared(stateRef.current))) {
-      busy.current = false;
-      setPopup(null);
-      return;
-    }
     try {
       const next = newChapterRun();
       next.revision = stateRef.current.revision + 1;
@@ -814,15 +744,14 @@ export default function App({ bridge }: AppProps = {}) {
     a.click();
     URL.revokeObjectURL(url);
   };
-  const archiveAndRestart = async () => {
+  const recoverAndRestart = async () => {
     if (bridge) {
       bridge.onRoadmap();
       return;
     }
-    if (!(await archiveCleared(stateRef.current))) return;
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw)
+      if (raw && stateRef.current.phase !== "cleared")
         localStorage.setItem(`${STORAGE_KEY}.recovery.${Date.now()}`, raw);
       localStorage.removeItem(STORAGE_KEY);
       expected.current = null;
@@ -1080,20 +1009,6 @@ export default function App({ bridge }: AppProps = {}) {
           </button>
         </div>
       )}
-      {archiveError && (
-        <div className="banner" role="alert">
-          {archiveError}{" "}
-          <button
-            className="secondary"
-            onClick={() => void archiveCleared(stateRef.current)}
-          >
-            보관 다시 시도
-          </button>{" "}
-          <button className="secondary" onClick={exportSave}>
-            기록 내보내기
-          </button>
-        </div>
-      )}
       {!started && state.tutorial && <PrologueGuide />}
       {showStory && !started && !state.tutorial && !legacyLayout ? (
         <StoryPrologue
@@ -1132,7 +1047,7 @@ export default function App({ bridge }: AppProps = {}) {
                 observation={observation}
                 event={started && !stoppedWithoutInstruction ? event : null}
                 phase={started ? state.phase : "title"}
-                paused={paused || hidden || conflict || !!popup || showHistory || showChronicle}
+                paused={paused || hidden || conflict || !!popup || showHistory}
                 reducedMotion={settings.reducedMotion}
                 onPlaybackEnd={onPlaybackEnd}
                 onSceneModeChange={(mode) => {
@@ -1394,7 +1309,6 @@ export default function App({ bridge }: AppProps = {}) {
               deaths={state.deaths}
               penaltyDeaths={state.penaltyDeaths}
               best={best}
-              onChronicle={() => openChronicle(true)}
               onShare={() => {
                 setNotice("");
                 setPopup("share");
@@ -1482,8 +1396,7 @@ export default function App({ bridge }: AppProps = {}) {
       </PlayLayout>
       </>
       )}
-      <PlayFooter local={!bridge} onRestart={() => setPopup("new")} disabled={pending || conflict}
-        onHistory={() => openChronicle(state.phase === "cleared")} />
+      <PlayFooter local={!bridge} onRestart={() => setPopup("new")} disabled={pending || conflict} />
       {showHistory && (
         <Modal
           title="용사가 기억한 순간들"
@@ -1508,13 +1421,6 @@ export default function App({ bridge }: AppProps = {}) {
               ))}
           </ol>
         </Modal>
-      )}
-      {showChronicle && (
-        <StageChronicle
-          current={chronicleRecord}
-          settings={settings}
-          onClose={() => setShowChronicle(false)}
-        />
       )}
       {popup === "help" && (
         <PlayHelpDialog
@@ -1559,7 +1465,7 @@ export default function App({ bridge }: AppProps = {}) {
                 여정 지도로 돌아가기
               </button>
             ) : (
-              <button className="secondary" onClick={archiveAndRestart}>
+              <button className="secondary" onClick={recoverAndRestart}>
                 원본 별도 보관 후 새 도전
               </button>
             )}

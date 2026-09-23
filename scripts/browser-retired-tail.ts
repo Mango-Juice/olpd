@@ -34,11 +34,10 @@ try {
       request.onerror = () => { reject(request.error); db.close(); };
     };
   }));
-  const cleared = stored.archives.find((item: any) => item.payload.save?.state.id === pending.id).payload.save.state;
-  expect(cleared.phase).toBe('cleared');
-  expect(cleared.events).toEqual(pending.events);
-  expect(cleared.instructions).toEqual(pending.instructions);
-  expect(cleared.deaths).toBe(pending.deaths);
+  expect(stored.state.stages[0].completion.run.runId).toBe(pending.id);
+  expect(stored.state.stages[0].bestScore).toBe(pending.deaths + pending.penaltyDeaths);
+  expect(stored.activeRuns).toHaveLength(0);
+  expect(stored).not.toHaveProperty('archives');
   expect(errors).toEqual([]);
-  console.log('PASS existing v2 pending tail resumes directly to clear/map/unlocked chapter2; notebook/events/costs preserved; 0 AI calls');
+  console.log('PASS existing v2 pending tail resumes directly to clear/map/unlocked chapter2; verified completion and best score retained; completed detail removed; 0 AI calls');
 } finally { await browser.close(); }

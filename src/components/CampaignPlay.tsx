@@ -229,7 +229,7 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
         {resting && <PlayLaunchControls dead={run.phase === "failed"} canWrite={run.notebook.canWrite} disabled={saving || command.pending || !!failedSave} onLaunch={() => { void launch(); }} />}
         {!animating && run.phase === "blocked" && <button type="button" className="primary wide" disabled={saving || !!failedSave} onClick={() => { setPaused(false); setAwaitingNext(false); void commit(abandonStage(live.current)); }}>부활하고 · +1데스</button>}
         {!animating && run.phase === "cleared" && <PlayClearPanel deaths={run.notebook.deaths} penaltyDeaths={run.notebook.penaltyDeaths} best={best}
-          onChronicle={openChronicle} onShare={() => { setNotice(""); setPopup("share"); }} onNew={() => setPopup("new")}>
+          onShare={() => { setNotice(""); setPopup("share"); }} onNew={() => setPopup("new")}>
           {stage.id === 10 ? <button className="secondary" onClick={() => setPopup("ending")}>편지를 펼치기</button> : null}
           <button className="secondary" onClick={onRoadmap}>여정 지도로 →</button>
         </PlayClearPanel>}
@@ -244,7 +244,7 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
         onMove={(id, direction) => changeNotebook((current) => moveStageProgram(current, id, direction))}
         onPlace={(id, target, position) => changeNotebook((current) => placeStageProgram(current, id, target, position))} />
     </PlayLayout>
-    <PlayFooter onRestart={onNewChallenge ? () => setPopup("new") : undefined} disabled={saving || command.pending || !!failedSave} onHistory={openChronicle} />
+    <PlayFooter onRestart={onNewChallenge ? () => setPopup("new") : undefined} disabled={saving || command.pending || !!failedSave} />
     {showChronicle && <CampaignChronicle run={run} stage={stage} settings={settings} onClose={() => setShowChronicle(false)} />}
     {popup === "help" && <PlayHelpDialog campaign advanced onClose={() => setPopup(null)} />}
     {popup === "settings" && <PlaySettingsDialog settings={settings} onChange={(next) => onSettingsChange?.(next)} onExport={() => downloadRun(live.current)} onNew={() => setPopup("new")} onClose={() => setPopup(null)} />}

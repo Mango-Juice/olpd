@@ -1,5 +1,6 @@
 import { isOnboardingProgress, progressBelongsToRun, type OnboardingProgress } from "../game/onboarding";
 import { loadSave } from "../game/storage";
+import { score as legacyScore } from "../game/core";
 import type { SaveData } from "../game/types";
 import { allStageSegments, type CampaignStageDefinition } from "./level";
 import type { RunCompletionAuthority } from "./progress";
@@ -60,5 +61,8 @@ export function campaignAuthority(
     isCleared: (run) => run.kind === "legacy"
       ? !run.save.state.tutorial && run.save.state.phase === "cleared"
       : run.run.phase === "cleared",
+    score: (run) => run.kind === "legacy"
+      ? legacyScore(run.save.state)
+      : run.run.notebook.deaths + run.run.notebook.penaltyDeaths,
   };
 }

@@ -11,6 +11,7 @@ import {
   type CampaignRepositoryResult,
 } from "../src/campaign/repository";
 import type { RunCompletionAuthority } from "../src/campaign/progress";
+import { createCampaignState } from "../src/campaign/progress";
 import type { StageId } from "../src/campaign/types";
 import { LEGACY_ROOMS as ROOMS } from "../src/game/chapter-layout";
 import { addInstruction, newRun } from "../src/game/core";
@@ -56,6 +57,7 @@ const authority: RunCompletionAuthority<TestRun> = {
   },
   describe: (run) => ({ runId: run.id, stageId: run.stageId }),
   isCleared: (run) => run.phase === "cleared",
+  score: (run) => run.steps,
 };
 
 const migrateLegacyRun = (save: SaveData): TestRun => ({
@@ -154,10 +156,11 @@ describe("campaign repository transactions", () => {
     expect(result.value.state.stages[0].status).toBe("unlocked");
     expect(result.value.state.stages.slice(1).every((stage) => stage.status === "locked")).toBe(true);
     expect(result.value.activeRuns).toEqual([]);
-    expect(result.value.archives).toEqual([]);
+    expect(result.value.state.stages[0].bestScore).toBeNull();
+    expect(documentStore.current).not.toHaveProperty("archives");
   });
 
-  it("atomically archives a verified completion, clears active, and unlocks next", async () => {
+  it("atomically summarizes a verified completion, clears active, and unlocks next", async () => {
     const documentStore = new MemoryDocumentStore();
     const repository = new CampaignRepository(authority, {
       documentStore,
@@ -195,17 +198,13 @@ describe("campaign repository transactions", () => {
     expect(completed.value.state.stages[0].activeRun).toBeNull();
     expect(completed.value.state.stages[1].status).toBe("unlocked");
     expect(completed.value.activeRuns).toEqual([]);
-    expect(completed.value.archives).toEqual([
-      {
-        reference: { runId: "run-1", stageId: 1 },
-        completedAt: 50,
-        run: { ...activeRun, phase: "cleared", steps: 4 },
-      },
-    ]);
+    expect(completed.value.state.stages[0].bestScore).toBe(4);
+    expect(documentStore.current).not.toHaveProperty("archives");
+    expect(JSON.stringify(documentStore.current)).not.toContain('"steps":4');
     expect((await repository.load())).toEqual(completed);
   });
 
-  it("archives completed-stage replays while preserving the first completion", async () => {
+  it("retains the best score and latest completion for replays", async () => {
     const documentStore = new MemoryDocumentStore();
     const repository = new CampaignRepository(authority, {
       documentStore,
@@ -257,12 +256,10 @@ describe("campaign repository transactions", () => {
     );
     expect(replayed.ok).toBe(true);
     if (!replayed.ok) return;
-    expect(replayed.value.state.stages[0].completion?.run.runId).toBe("first");
+    expect(replayed.value.state.stages[0].completion?.run.runId).toBe("replay");
+    expect(replayed.value.state.stages[0].bestScore).toBe(1);
     expect(replayed.value.state.stages[1].status).toBe("unlocked");
-    expect(replayed.value.archives.map((item) => item.reference.runId)).toEqual([
-      "first",
-      "replay",
-    ]);
+    expect(documentStore.current).not.toHaveProperty("archives");
   });
 
   it("rejects stale stamps and leaves the current bytes unchanged", async () => {
@@ -350,7 +347,7 @@ describe("campaign repository transactions", () => {
       muted: true,
       reducedMotion: true,
     });
-    expect(completed.value.archives).toHaveLength(1);
+    expect(completed.value.state.stages[0].bestScore).toBe(1);
   });
 
   it("commits an active run and accompanying settings in one revision", async () => {
@@ -444,7 +441,7 @@ describe("campaign repository transactions", () => {
     expect(loaded.ok).toBe(true);
     if (loaded.ok && loaded.value) {
       expect(loaded.value.state.stages[0].status).toBe("unlocked");
-      expect(loaded.value.archives).toEqual([]);
+      expect(loaded.value.state.stages[0].bestScore).toBeNull();
     }
   });
 
@@ -532,13 +529,8 @@ describe("campaign repository transactions", () => {
       },
     });
     expect(migrated.value.state.stages[1].status).toBe("unlocked");
-    expect(migrated.value.archives).toEqual([
-      {
-        reference: { runId: legacySave.state.id, stageId: 1 },
-        completedAt: 77,
-        run: migrateLegacyRun(legacySave),
-      },
-    ]);
+    expect(migrated.value.state.stages[0].bestScore).toBe(0);
+    expect(JSON.stringify(migrated.value)).not.toContain('"archives"');
     expect(legacyStorage.getItem(STORAGE_KEY)).toBe(originalBytes);
   });
 
@@ -576,10 +568,8 @@ describe("campaign repository transactions", () => {
     });
     expect(migrated.value.state.stages[1].status).toBe("unlocked");
     expect(migrated.value.activeRuns[0]?.reference.runId).toBe("legacy-replay");
-    expect(migrated.value.archives.map((item) => item.reference.runId)).toEqual([
-      "legacy-clear-1",
-      "legacy-clear-2",
-    ]);
+    expect(migrated.value.state.stages[0].bestScore).toBe(0);
+    expect(documentStore.current).not.toHaveProperty("archives");
 
     const rerun = await repository.loadOrCreate("other-tab");
     expect(rerun).toEqual(migrated);
@@ -626,7 +616,7 @@ describe("campaign repository transactions", () => {
       muted: true,
       reducedMotion: true,
     });
-    expect(result.value.archives).toEqual([]);
+    expect(result.value.state.stages[0].bestScore).toBeNull();
     expect(result.value.activeRuns[0]?.run).toMatchObject({
       kind: "legacy",
       save: {
@@ -680,7 +670,10 @@ describe("campaign repository transactions", () => {
     });
     const result = await repository.loadOrCreate("new-tab");
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.archives).toHaveLength(1);
+    if (result.ok) {
+      expect(result.value.state.stages[0].completion?.run.runId).toBe("same-clear");
+      expect(result.value.state.stages[0].bestScore).toBe(0);
+    }
   });
 
   it("rejects conflicting duplicate legacy IDs before creating the new root", async () => {
@@ -741,5 +734,71 @@ describe("campaign repository transactions", () => {
     if (!result.ok) expect(result.error.code).toBe("corrupt");
     expect(documentStore.current).toBeNull();
     expect(legacyStorage.getItem(STORAGE_KEY)).toBe("{broken");
+  });
+
+  it("compacts a validated v4 archive into score-only v5 without losing an active replay", async () => {
+    const documentStore = new MemoryDocumentStore();
+    const state = createCampaignState("old-tab");
+    state.stages[0] = {
+      ...state.stages[0], status: "completed", bestScore: null,
+      activeRun: { stageId: 1, runId: "replay" },
+      completion: { run: { stageId: 1, runId: "first" }, completedAt: 7, source: "campaign" },
+    };
+    state.stages[1] = { ...state.stages[1], status: "unlocked" };
+    const original = {
+      version: 4, state,
+      activeRuns: [{ reference: { stageId: 1, runId: "replay" }, payload: { id: "replay", stageId: 1, phase: "active", steps: 8 } }],
+      archives: [
+        { reference: { stageId: 1, runId: "first" }, completedAt: 7,
+          payload: { id: "first", stageId: 1, phase: "cleared", steps: 3 } },
+        { reference: { stageId: 1, runId: "second" }, completedAt: 9,
+          payload: { id: "second", stageId: 1, phase: "cleared", steps: 6 } },
+      ],
+      recoveries: [],
+    };
+    documentStore.current = structuredClone(original);
+    const repository = new CampaignRepository(authority, { documentStore, legacyStorage: null, legacyArchiveReader: null });
+    const migrated = await repository.loadOrCreate("new-tab");
+    expect(migrated.ok).toBe(true);
+    if (!migrated.ok) return;
+    expect(migrated.value.state.stages[0].bestScore).toBe(3);
+    expect(migrated.value.state.stages[0].completion).toMatchObject({ run: { runId: "second" }, completedAt: 9 });
+    expect(migrated.value.activeRuns[0]?.run).toEqual({ id: "replay", stageId: 1, phase: "active", steps: 8 });
+    expect(documentStore.current).toMatchObject({ version: 5 });
+    expect(documentStore.current).not.toHaveProperty("archives");
+    expect(JSON.stringify(documentStore.current)).not.toContain('"steps":3');
+    expect(JSON.stringify(documentStore.current)).not.toContain('"steps":6');
+  });
+
+  it("keeps the v4 root unchanged when compaction cannot commit", async () => {
+    const documentStore = new MemoryDocumentStore();
+    const state = createCampaignState("old-tab");
+    state.stages[0] = { ...state.stages[0], status: "completed",
+      completion: { run: { stageId: 1, runId: "first" }, completedAt: 7, source: "campaign" } };
+    state.stages[1] = { ...state.stages[1], status: "unlocked" };
+    documentStore.current = { version: 4, state, activeRuns: [],
+      archives: [{ reference: { stageId: 1, runId: "first" }, completedAt: 7,
+        payload: { id: "first", stageId: 1, phase: "cleared", steps: 3 } }], recoveries: [] };
+    const original = structuredClone(documentStore.current);
+    documentStore.failNextWrite = true;
+    const repository = new CampaignRepository(authority, { documentStore, legacyStorage: null, legacyArchiveReader: null });
+    const failed = await repository.loadOrCreate("new-tab");
+    expect(failed.ok).toBe(false);
+    expect(documentStore.current).toEqual(original);
+  });
+
+  it("keeps a legacy active save's remembered best without inventing completion", async () => {
+    const legacyStorage = new MemoryStorage();
+    const active = makeLegacyFixture("ongoing", false, 20);
+    expect(writeSave({ ...active, best: 2 }, { storage: legacyStorage, expected: null }).ok).toBe(true);
+    const repository = new CampaignRepository<CampaignStoredRun>(campaignAuthority(() => null), {
+      documentStore: new MemoryDocumentStore(), legacyStorage,
+      migrateLegacyRun: (save) => ({ kind: "legacy", save }), legacyArchiveReader: null,
+    });
+    const migrated = await repository.loadOrCreate("new-tab");
+    expect(migrated.ok).toBe(true);
+    if (!migrated.ok) return;
+    expect(migrated.value.state.stages[0]).toMatchObject({ status: "unlocked", completion: null, bestScore: null });
+    expect(migrated.value.activeRuns[0]?.run).toMatchObject({ kind: "legacy", save: { best: 2 } });
   });
 });

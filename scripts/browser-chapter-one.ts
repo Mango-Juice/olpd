@@ -27,8 +27,12 @@ async function documentFor(page: Page): Promise<any> {
 }
 async function run(): Promise<RunState> {
   const data = await documentFor(page);
-  return (data.activeRuns.find((item: any) => item.payload.kind === "legacy") ??
-    data.archives.find((item: any) => item.payload.kind === "legacy")).payload.save.state;
+  return data.activeRuns.find((item: any) => item.payload.kind === "legacy").payload.save.state;
+}
+async function phase() {
+  const data = await documentFor(page);
+  const active = data.activeRuns.find((item: any) => item.payload.kind === "legacy");
+  return active ? active.payload.save.state.phase : data.state.stages[0].completion ? "cleared" : null;
 }
 let calls = 0;
 try {
@@ -59,7 +63,7 @@ try {
   expect(calls).toBe(1);
   await input.dispatchEvent("compositionend");
   await input.press("Enter");
-  await expect.poll(async () => (await run()).phase, { timeout: 20000 }).toBe("dead");
+  await expect.poll(async () => phase(), { timeout: 20000 }).toBe("dead");
   await expect(input).toBeVisible({ timeout: 12000 });
   expect((await run()).room).toBe(1);
   const originalId = (await run()).instructions[0].id;
@@ -72,17 +76,19 @@ try {
     await input.fill(notes[i].text);
     await input.press("Enter");
     await expect.poll(async () => (await run()).instructions.length).toBe(i + 1);
-    await expect.poll(async () => (await run()).phase, { timeout: 30000 }).toBe(i === 3 ? "cleared" : "dead");
+    await expect.poll(async () => phase(), { timeout: 30000 }).toBe(i === 3 ? "cleared" : "dead");
   }
-  const final = await run();
-  expect(final).toMatchObject({ layoutVersion: 3, tutorial: false, room: 5, point: 1, deaths: 3, erasers: 2 });
-  expect(final.instructions[0].id).toBe(originalId);
-  expect(final.instructions).toHaveLength(4);
+  const final = await documentFor(page);
+  expect(final.state.stages[0].bestScore).toBe(3);
+  expect(final.state.stages[0].status).toBe("completed");
+  expect(final.activeRuns).toHaveLength(0);
+  expect(final).not.toHaveProperty("archives");
+  await expect(page.getByRole("button", { name: "지난 메모 보기", exact: true })).toHaveCount(0);
   const chapter2 = page.locator(".roadmap-stop").filter({ has: page.getByRole("heading", { name: "비에 잠긴 회랑", exact: true }) });
   await expect(chapter2.getByRole("button", { name: /들어가기|이어 걷기/ })).toBeEnabled({ timeout: 15000 });
   await page.screenshot({ path: "artifacts/chapter-six/unlocked.png", fullPage: true });
   await page.locator(".roadmap-stop").filter({ has: page.getByRole("heading", { name: "기억의 던전", exact: true }) }).getByRole("button", { name: /새 모험 시작/ }).click();
-  // A completed chapter creates a new six-scene run, preserving its archive.
+  // A completed chapter creates a new six-scene run, preserving only its summary.
   await page.getByRole("button", { name: /모험 이어하기/ }).click();
   expect((await run()).layoutVersion).toBe(3);
   expect((await run()).instructions).toHaveLength(0);

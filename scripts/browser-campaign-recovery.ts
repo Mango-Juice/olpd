@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { createCampaignState } from '../src/campaign/progress';
 import { QUIET_RAIN_STAGE } from '../tests/fixtures/quiet-worlds/early';
 const state = createCampaignState('historical-browser');
-state.stages[0] = { stageId: 1, status: 'completed', activeRun: null, completion: { run: { stageId: 1, runId: 'old-one' }, completedAt: 1234, source: 'legacy' } };
+state.stages[0] = { stageId: 1, bestScore: null, status: 'completed', activeRun: null, completion: { run: { stageId: 1, runId: 'old-one' }, completedAt: 1234, source: 'legacy' } };
 // Frozen v2 shape: building it with createStageRun would silently make a v3 fixture.
 const world = QUIET_RAIN_STAGE.segments[0].enter(null);
 const oldRun = { version: 2, contentRevision: 'quiet-v1', id: 'old-two', stageId: 2,
@@ -13,7 +13,7 @@ const oldRun = { version: 2, contentRevision: 'quiet-v1', id: 'old-two', stageId
   execution: { active: null, suspended: [], completed: [], epoch: 0, matches: {} },
   statusReason: null, waitingStates: [], events: [], clearedSegments: [], seal: 0, sceneNotes: [] };
 const payload = { kind: 'world', run: oldRun };
-state.stages[1] = { stageId: 2, status: 'unlocked', activeRun: { stageId: 2, runId: oldRun.id }, completion: null };
+state.stages[1] = { stageId: 2, bestScore: null, status: 'unlocked', activeRun: { stageId: 2, runId: oldRun.id }, completion: null };
 const document = { version: 2, state, activeRuns: [{ reference: state.stages[1].activeRun, payload }], archives: [] };
 const browser = await chromium.launch();
 const page = await browser.newPage();
@@ -49,7 +49,8 @@ try {
     const record = await new Promise<any>((resolve, reject) => { const request = db.transaction('campaign').objectStore('campaign').get('root'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
     db.close(); return record;
   });
-  expect(root.version).toBe(4);
+  expect(root.version).toBe(5);
+  expect(root).not.toHaveProperty("archives");
   expect(root.recoveries[0].payload).toEqual(payload);
   expect(root.activeRuns[0].payload.run.contentRevision).toBe('spatial-v1');
   expect(root.activeRuns[0].payload.run.world.segmentId).toBe('02-v2-1');

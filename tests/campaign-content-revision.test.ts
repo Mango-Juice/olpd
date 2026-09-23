@@ -36,6 +36,7 @@ function unlocked(writer: string) {
     status: "completed",
     activeRun: null,
     completion: { run: { stageId: 1, runId: "chapter-one" }, completedAt: 1, source: "legacy" },
+    bestScore: null,
   };
   state.stages[1] = { ...state.stages[1], status: "unlocked" };
   return state;
@@ -72,7 +73,7 @@ describe("spatial-v1 content migration", () => {
       reference: { stageId: 2, runId: "old-active" },
       payload,
     }));
-    expect(store.current).toMatchObject({ version: 4 });
+    expect(store.current).toMatchObject({ version: 5 });
   });
 
   it("keeps completed unlock evidence while moving the old archive bytes to recovery", async () => {
@@ -83,6 +84,7 @@ describe("spatial-v1 content migration", () => {
       status: "completed",
       activeRun: null,
       completion: { run: { stageId: 2, runId: "old-clear" }, completedAt: 88, source: "campaign" },
+      bestScore: null,
     };
     state.stages[2] = { ...state.stages[2], status: "unlocked" };
     const payload = { kind: "world", run: oldRun("old-clear", "cleared") };
@@ -107,7 +109,9 @@ describe("spatial-v1 content migration", () => {
       completion: { completedAt: 88, source: "content-recovery" },
     });
     expect(migrated.value.state.stages[2].status).toBe("unlocked");
-    expect(migrated.value.archives).toEqual([]);
-    expect(migrated.value.recoveries[0]).toMatchObject({ kind: "archive", payload });
+    expect(migrated.value.state.stages[1].bestScore).toBeNull();
+    expect(migrated.value.recoveries).toEqual([]);
+    expect(store.current).not.toHaveProperty("archives");
+    expect(JSON.stringify(store.current)).not.toContain('"contentRevision":"quiet-v1"');
   });
 });

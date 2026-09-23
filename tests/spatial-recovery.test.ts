@@ -35,12 +35,12 @@ function oldActivePayload() {
 }
 function v3Root(payload = oldActivePayload()) {
   const state = createCampaignState("old-writer");
-  state.stages[0] = { stageId: 1, status: "completed", activeRun: null, completion: { run: { stageId: 1, runId: "old-one" }, completedAt: 17, source: "legacy" } };
-  state.stages[1] = { stageId: 2, status: "unlocked", activeRun: reference, completion: null };
+  state.stages[0] = { stageId: 1, status: "completed", activeRun: null, completion: { run: { stageId: 1, runId: "old-one" }, completedAt: 17, source: "legacy" }, bestScore: null };
+  state.stages[1] = { stageId: 2, status: "unlocked", activeRun: reference, completion: null, bestScore: null };
   return { version: 3, state, activeRuns: [{ reference, payload }], archives: [] as { reference: typeof reference; payload: unknown; completedAt: number }[], recoveries: [] as CampaignRecoveryRecord[] };
 }
 
-it("moves a v3 shared-v1 active run into exact raw recovery, then loads a new v4 spatial run", async () => {
+it("moves a v3 shared-v1 active run into exact raw recovery, then loads a new v5 spatial run", async () => {
   const payload = oldActivePayload();
   const root = v3Root(payload);
   const store = new MemoryDocumentStore();
@@ -49,7 +49,7 @@ it("moves a v3 shared-v1 active run into exact raw recovery, then loads a new v4
   const migrated = await repository.loadOrCreate("new-writer");
   expect(migrated.ok).toBe(true);
   if (!migrated.ok) return;
-  expect((store.current as { version: number }).version).toBe(4);
+  expect((store.current as { version: number }).version).toBe(5);
   expect(migrated.value.state.stages[0].completion).toEqual(root.state.stages[0].completion);
   expect(migrated.value.state.stages[1].activeRun).toBeNull();
   expect(migrated.value.state.stages[1].status).toBe("unlocked");
@@ -70,7 +70,7 @@ it("moves a v3 shared-v1 active run into exact raw recovery, then loads a new v4
   expect(reloaded.value.recoveries[0].payload).toEqual(payload);
 });
 
-it("continues migrating a v2 quiet-v1 root directly to v4", async () => {
+it("continues migrating a v2 quiet-v1 root directly to v5", async () => {
   const root = v3Root();
   const payload = { kind: "world", run: { version: 2, contentRevision: "quiet-v1", id: reference.runId, stageId: 2, phase: "bookmark" } };
   const store = new MemoryDocumentStore();
@@ -78,7 +78,7 @@ it("continues migrating a v2 quiet-v1 root directly to v4", async () => {
   const migrated = await new CampaignRepository(authority, { documentStore: store, legacyStorage: null, legacyArchiveReader: null }).loadOrCreate("new-writer");
   expect(migrated.ok).toBe(true);
   if (!migrated.ok) return;
-  expect((store.current as { version: number }).version).toBe(4);
+  expect((store.current as { version: number }).version).toBe(5);
   expect(migrated.value.recoveries[0].payload).toEqual(payload);
   expect(migrated.value.state.stages[1].activeRun).toBeNull();
 });
@@ -94,7 +94,7 @@ it("preserves a v3 shared-v1 completion and previous v2 recovery without grantin
   const root = v3Root(payload);
   root.activeRuns = [];
   root.archives = [{ reference, payload, completedAt: 29 }];
-  root.state.stages[1] = { stageId: 2, status: "completed", activeRun: null, completion: { run: reference, completedAt: 29, source: "campaign" } };
+  root.state.stages[1] = { stageId: 2, status: "completed", activeRun: null, completion: { run: reference, completedAt: 29, source: "campaign" }, bestScore: null };
   root.state.stages[2] = { ...root.state.stages[2], status: "unlocked" };
   const olderPayload = { kind: "world", run: { version: 2, contentRevision: "quiet-v1", id: "older-three", stageId: 3, phase: "bookmark" } };
   root.recoveries = [{ kind: "active", reference: { stageId: 3, runId: "older-three" }, payload: olderPayload, recoveredAt: 11 }];
@@ -103,11 +103,11 @@ it("preserves a v3 shared-v1 completion and previous v2 recovery without grantin
   const migrated = await new CampaignRepository(authority, { documentStore: store, legacyStorage: null, legacyArchiveReader: null }).loadOrCreate("new-writer");
   expect(migrated.ok).toBe(true);
   if (!migrated.ok) return;
-  expect(migrated.value.archives).toEqual([]);
+  expect(store.current).not.toHaveProperty("archives");
   expect(migrated.value.state.stages[1].completion).toEqual({ run: reference, completedAt: 29, source: "content-recovery" });
+  expect(migrated.value.state.stages[1].bestScore).toBe(0);
   expect(migrated.value.state.stages[2].status).toBe("unlocked");
   expect(migrated.value.recoveries).toMatchObject([
-    { kind: "archive", reference, payload, completedAt: 29 },
     { kind: "active", reference: { stageId: 3, runId: "older-three" }, payload: olderPayload, recoveredAt: 11 },
   ]);
 });

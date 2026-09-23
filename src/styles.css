@@ -1655,8 +1655,7 @@ textarea {
   padding: 4px 8px;
   border-radius: 6px;
 }
-.chronicle-life ol,
-.chronicle-archives {
+.chronicle-life ol {
   padding: 0;
   margin: 0;
   list-style: none;
@@ -1770,23 +1769,6 @@ textarea {
 .chronicle-replay > span {
   font-size: 12px;
   color: #b1bea9;
-}
-.chronicle-archives button {
-  display: flex;
-  flex-direction: column;
-  text-align: left;
-  gap: 8px;
-  width: 100%;
-  background: #ffffff05;
-  border: 1px solid #b4cba233;
-  border-radius: 9px;
-  padding: 17px;
-  margin: 12px 0;
-  color: #dae5ce;
-}
-.chronicle-archives span {
-  color: #a7aebb;
-  font-size: 12px;
 }
 .footer > .subtle,
 .play-footer-actions .subtle {

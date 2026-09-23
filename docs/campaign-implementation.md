@@ -13,7 +13,7 @@
 | 캐릭터·동작 | `HeroFrame`, `drawHero`, 사망·부활·기쁨 포즈 | 새 물체 행동의 접근·접촉·조작 동작 추가 |
 | 헤딩·대사·재생·출발·점수·완료 화면 | `PlaySceneHeading`, `PlaySceneCaption`, `PlaySceneFooter`, `PlaySessionControls`, `PlayLaunchControls`, `PlayDeathScore`, `PlayClearPanel` | 장 이름·목적·현재 상태·콜백 |
 | 도움말·설정·공유 | `PlayDialogs` | 물체 행동 설명과 저장 어댑터; 기존 프롤로그 특화 안내는 보존 |
-| 모험 기록·장면 재생 | `Chronicle` | StageChronicle/CampaignChronicle이 공통 view model을 생성 |
+| 현재 모험 기록·장면 재생 | `Chronicle` | CampaignChronicle이 현재 실행의 view model을 생성. 과거 완료 보관함은 제거 |
 | 모바일 키보드 | `useMobileKeyboardLayout`와 공용 CSS | 없음 |
 | 제공자 HTTP | `server/provider-http.ts` | Jev Choice와 DeepSeek AST 해석·검증은 분리 |
 
@@ -25,7 +25,7 @@
 - 본편에서는 죽은 뒤 한 줄을 쓸 수 있다. 삭제는 죽은 뒤에만 가능하며 지우개 2개 이후 한 줄마다 삭제 패널티 3데스다. 삭제가 작성 기회를 만들지는 않는다.
 - 장면 통과는 무료 작성 기회나 새 메모장을 만들지 않는다. 재시도는 메모를 챙겨 장의 입구로 돌아간다. 막힘은 포기 후 1데스를 받아 새 지침을 쓸 수 있다.
 - 자동 진행은 재생 완료 콜백으로만 다음 물리 판단을 요청한다. 별도 1.3초 캠페인 진행 타이머는 없다. 탭 숨김·일시정지·한 장면씩 보기가 재생과 진행을 함께 멈춘다.
-- 장면별 이전/이후 세계, 행동, 결과와 메모 변경 이력을 보존한다. 완료 기록에서 실제 애니메이션을 독립적으로 다시 볼 수 있다.
+- 현재 실행의 장면별 이전/이후 세계, 행동, 결과와 메모 변경 이력을 유지한다. 현재 플레이 중 “방금 무슨 일이?”로 확인할 수 있다. 완료 시에는 장별 요약만 남기며 과거 회차의 전체 재생은 제거했다.
 - 960×500 고정 장면, 필수 요소 2~4개, 한 문장 목적, 내부 수치 비노출을 유지한다. 선택 점선 원은 제거한다.
 
 ## AI와 비용 경계

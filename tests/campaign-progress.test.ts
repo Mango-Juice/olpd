@@ -257,7 +257,7 @@ describe("campaign progression", () => {
     expect(validateCampaignState(state).ok).toBe(true);
   });
 
-  it("allows a completed stage replay without replacing its first completion", () => {
+  it("records the latest replay completion", () => {
     const firstRun: TestRun = { id: "first", stageId: 1, phase: "cleared" };
     const started = setActiveRun(
       createCampaignState("tab-a"),
@@ -297,7 +297,7 @@ describe("campaign progression", () => {
     );
     expect(replayed.ok).toBe(true);
     if (!replayed.ok) return;
-    expect(replayed.value.stages[0].completion?.run.runId).toBe("first");
+    expect(replayed.value.stages[0].completion?.run.runId).toBe("replay");
     expect(replayed.value.stages[0].activeRun).toBeNull();
     expect(replayed.value.stages[1].status).toBe("unlocked");
     expect(validateCampaignState(replayed.value).ok).toBe(true);

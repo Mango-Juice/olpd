@@ -12,7 +12,7 @@
 | 메모 누적·작성 기회·삭제 비용·우선순위 | `src/campaign/notebook.ts`, `src/campaign/run.ts`, `src/game/memory.ts` | 순수 규칙 검사와 실제 UI 흐름 검사 |
 | 구조화 지침 AST, 검증, public-kind binding | `src/campaign/types.ts`, `src/campaign/validation.ts`, `src/campaign/bindings.ts`, `src/campaign/scheduler.ts` | 허용된 노드·참조·바인딩 및 실행기의 로컬 판정 |
 | 캠페인 입력 해석 API와 제공자 경계 | `server/campaign-http.ts`, `server/campaign-service.ts`, `server/campaign-deepseek.ts`, `server/provider-http.ts`, `api/campaign-interpret.ts` | 요청 제한·타임아웃·취소·응답 검증의 테스트. 실제 API smoke는 별도 표본 증거 |
-| 캠페인 진행·활성 런·완료 기록 | `src/campaign/progress.ts`, `src/campaign/repository.ts`, `src/campaign/authority.ts` | IndexedDB 원자 갱신·revision 충돌·복구 및 저장 검증 |
+| 캠페인 진행·활성 런·완료 요약 | `src/campaign/progress.ts`, `src/campaign/repository.ts`, `src/campaign/authority.ts` | IndexedDB 원자 갱신·revision 충돌·복구 및 저장 검증 |
 | QA 슬롯 분리 | `src/QaShell.tsx`, `server/dev.ts` | `?qa=1` localhost 진입과 `one-line-per-death:qa:spatial-v1` localStorage 경로 |
 | 프롬프트와 전송 계약 | `docs/api.md`, `server/campaign-deepseek.ts`, `server/campaign-contracts.ts` | 타입·요청 검증 및 합성 fixture. 최신 프롬프트 전체 장면의 실제 정확도와는 별개 |
 
@@ -21,7 +21,7 @@
 - 새 콘텐츠는 서사 프롤로그와 60개 본편 장면으로 구성된다. 1~10장 각 6장면이며 프롤로그를 읽거나 SKIP해도 1-1로 간다. 기존 진행 중인 1장 저장은 옛 경로를 유지한다.
 - 입력은 Enter로 해석·저장·출발을 잇는다. 1장은 최대 80자, 후속 장은 최대 500자다.
 - 1장의 기존 Jev 판단 경로와 후속 장의 `InstructionProgram` 해석 경로는 서로 다른 입력 모델을 쓰지만, 캠페인 메모 정책·화면·재생 모듈을 공유한다.
-- 캠페인 실행은 `StageRun v3`, `contentRevision: spatial-v1`을 사용한다. 진행·활성 런·완료 기록은 IndexedDB 문서로 함께 관리하고, 구버전 런은 현재 실행 콘텐츠로 재사용하지 않고 복구 영역에 보존한다.
+- 캠페인 실행은 `StageRun v3`, `contentRevision: spatial-v1`을 사용한다. 진행·활성 런·완료 요약은 IndexedDB 문서 v5로 함께 관리한다. 완료한 실행본은 더 쌓지 않고 장별 클리어·해금·최고 기록만 유지한다. 이전 상세 완료 기록은 검증 후 요약하며, 구버전 활성 런의 복구 원본은 유지한다.
 - QA는 개발 서버의 localhost에서만 제공하며 별도 localStorage 키에 저장한다. 실제 API를 사용한다.
 - AI는 지침을 구조화된 프로그램으로 해석한다. 대상 binding과 AST를 검증한 뒤 실행하며, 물리·성공·점수·비용은 로컬 게임 코드가 판정한다.
 

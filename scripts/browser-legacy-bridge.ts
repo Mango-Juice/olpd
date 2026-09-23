@@ -13,7 +13,6 @@ type Evidence = {
   pending: number;
   roadmap: number;
   cleared: number;
-  archive: number;
 };
 
 function html(initial: SaveData | null) {
@@ -27,7 +26,7 @@ function html(initial: SaveData | null) {
     window.$RefreshSig$ = () => (type) => type;
     window.__vite_plugin_react_preamble_installed__ = true;
     const { default: App } = await import("/src/App.tsx");
-    const evidence = { saves: [], pending: [], roadmap: 0, cleared: 0, archive: 0 };
+    const evidence = { saves: [], pending: [], roadmap: 0, cleared: 0 };
     window.__bridgeEvidence = evidence;
     window.__bridgeResolve = (result) => {
       const resolve = evidence.pending.shift();
@@ -42,7 +41,6 @@ function html(initial: SaveData | null) {
       },
       onRoadmap() { evidence.roadmap++; },
       onClearedPresentation() { evidence.cleared++; },
-      onArchive() { evidence.archive++; },
     };
     ReactDOMClient.createRoot(document.getElementById("root")).render(React.createElement(App, { bridge }));
   </script></body></html>`;
@@ -85,8 +83,7 @@ const evidence = (page: Page) =>
           pending: unknown[];
           roadmap: number;
           cleared: number;
-          archive: number;
-        };
+                };
       }
     ).__bridgeEvidence;
     return {
@@ -94,7 +91,6 @@ const evidence = (page: Page) =>
       pending: value.pending.length,
       roadmap: value.roadmap,
       cleared: value.cleared,
-      archive: value.archive,
     } satisfies Evidence;
   });
 
@@ -218,14 +214,11 @@ try {
   await expect.poll(async () => (await evidence(final)).cleared, {
     timeout: 4000,
   }).toBe(1);
-  await expect(
-    final.getByRole("button", { name: "우리의 모험 돌아보기" }),
-  ).toBeVisible();
-  await final.getByRole("button", { name: "우리의 모험 돌아보기" }).click();
-  expect((await evidence(final)).archive).toBe(1);
+  await expect(final.getByRole("button", { name: "우리의 모험 돌아보기" })).toHaveCount(0);
+  await expect(final.getByRole("button", { name: "지난 모험 기록" })).toHaveCount(0);
   await final.getByRole("button", { name: "여정 지도" }).click();
   expect((await evidence(final)).roadmap).toBe(1);
-  checks.push("clear handoff waits for final presentation and archive/roadmap delegate outward");
+  checks.push("clear handoff waits for final presentation; roadmap works without archive UI");
   await final.screenshot({
     path: `artifacts/${label}-legacy-bridge-clear.png`,
     fullPage: true,

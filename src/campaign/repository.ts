@@ -1,5 +1,5 @@
-import { listStageArchives } from "../game/archive";
-import { loadSave, type StorageLike } from "../game/storage";
+import { clearStageArchives, listStageArchives } from "../game/archive";
+import { loadSave, STORAGE_KEY, type StorageLike } from "../game/storage";
 import type { SaveData, Settings } from "../game/types";
 import { isStageId } from "./catalog";
 import { parseStageRun } from "./run-validation";
@@ -21,7 +21,8 @@ export const CAMPAIGN_DATABASE = "one-line-per-death:campaign";
 export const CAMPAIGN_DATABASE_VERSION = 1;
 export const CAMPAIGN_STORE = "campaign";
 const ROOT_KEY = "root";
-const CAMPAIGN_DOCUMENT_VERSION = 4 as const;
+const CAMPAIGN_DOCUMENT_VERSION = 5 as const;
+const PREVIOUS_DOCUMENT_VERSION = 4 as const;
 
 export type CampaignRepositoryErrorCode =
   | "unavailable"
@@ -53,32 +54,41 @@ interface StoredArchive extends StoredRun {
 }
 
 export interface CampaignRecoveryRecord {
-  kind: "active" | "archive";
+  kind: "active";
   reference: CampaignRunReference;
   payload: unknown;
   recoveredAt: number;
+}
+
+interface PreviousRecoveryRecord extends Omit<CampaignRecoveryRecord, "kind"> {
+  kind: "active" | "archive";
   completedAt?: number;
 }
 
-/** One root record keeps progression, active runs, and archives in one IDB commit. */
+/** One root record keeps progression and active runs in one IDB commit. */
 interface CampaignDocument {
   version: typeof CAMPAIGN_DOCUMENT_VERSION;
   state: CampaignState;
   activeRuns: StoredRun[];
-  archives: StoredArchive[];
   recoveries: CampaignRecoveryRecord[];
+}
+
+interface PreviousCampaignDocument extends Omit<CampaignDocument, "version" | "recoveries"> {
+  version: typeof PREVIOUS_DOCUMENT_VERSION;
+  archives: StoredArchive[];
+  recoveries: PreviousRecoveryRecord[];
 }
 
 export interface CampaignRepositorySnapshot<Run> {
   state: CampaignState;
   activeRuns: { reference: CampaignRunReference; run: Run }[];
-  archives: {
-    reference: CampaignRunReference;
-    completedAt: number;
-    run: Run;
-  }[];
   /** Raw runs from retired content retained outside the current playable campaign. */
   recoveries: CampaignRecoveryRecord[];
+}
+
+interface PreviousSnapshot<Run> extends Omit<CampaignRepositorySnapshot<Run>, "recoveries"> {
+  archives: { reference: CampaignRunReference; completedAt: number; run: Run }[];
+  recoveries: PreviousRecoveryRecord[];
 }
 
 export interface CampaignWriteOptions {
@@ -167,7 +177,7 @@ function retiredWorldRun(payload: unknown): { reference: CampaignRunReference; c
   return { reference: { runId: run.id, stageId: run.stageId }, cleared: run.phase === "cleared" };
 }
 
-function validRecovery(value: unknown): value is CampaignRecoveryRecord {
+function validRecovery(value: unknown): value is PreviousRecoveryRecord {
   if (!isRecord(value) || (value.kind !== "active" && value.kind !== "archive") ||
     !validReference(value.reference) || value.reference.stageId === 1 ||
     typeof value.recoveredAt !== "number" || !Number.isFinite(value.recoveredAt) || value.recoveredAt < 0) return false;
@@ -175,6 +185,10 @@ function validRecovery(value: unknown): value is CampaignRecoveryRecord {
   if (!described || !sameReference(described.reference, value.reference)) return false;
   if (value.kind === "active") return value.completedAt === undefined && !described.cleared;
   return typeof value.completedAt === "number" && Number.isFinite(value.completedAt) && value.completedAt >= 0 && described.cleared;
+}
+
+function validActiveRecovery(value: unknown): value is CampaignRecoveryRecord {
+  return validRecovery(value) && value.kind === "active";
 }
 
 function sameStoredValue(
@@ -424,6 +438,7 @@ export class CampaignRepository<Run extends object> {
   private readonly legacyArchiveReader:
     | (() => Promise<readonly SaveData[]>)
     | null;
+  private readonly usesDefaultLegacyArchiveReader: boolean;
 
   constructor(
     private readonly authority: RunCompletionAuthority<Run>,
@@ -438,6 +453,7 @@ export class CampaignRepository<Run extends object> {
       );
     this.legacyStorage = options.legacyStorage;
     this.migrateLegacyRun = options.migrateLegacyRun;
+    this.usesDefaultLegacyArchiveReader = options.legacyArchiveReader === undefined;
     this.legacyArchiveReader =
       options.legacyArchiveReader === undefined
         ? async () => (await listStageArchives()).map(({ save }) => save)
@@ -462,12 +478,12 @@ export class CampaignRepository<Run extends object> {
     }
   }
 
-  private decodeDocument(
+  private decodePreviousDocument(
     value: unknown,
-  ): CampaignRepositoryResult<CampaignRepositorySnapshot<Run>> {
+  ): CampaignRepositoryResult<PreviousSnapshot<Run>> {
     if (
       !isRecord(value) ||
-      value.version !== CAMPAIGN_DOCUMENT_VERSION ||
+      value.version !== PREVIOUS_DOCUMENT_VERSION ||
       !Array.isArray(value.activeRuns) ||
       !Array.isArray(value.archives) ||
       !Array.isArray(value.recoveries)
@@ -479,7 +495,7 @@ export class CampaignRepository<Run extends object> {
       return failure("corrupt", stateResult.error.message);
     }
 
-    const activeRuns: CampaignRepositorySnapshot<Run>["activeRuns"] = [];
+    const activeRuns: PreviousSnapshot<Run>["activeRuns"] = [];
     for (const raw of value.activeRuns) {
       if (!isRecord(raw) || !isRecord(raw.reference)) {
         return failure("corrupt", "활성 실행 기록의 구조가 올바르지 않습니다.");
@@ -496,7 +512,7 @@ export class CampaignRepository<Run extends object> {
       activeRuns.push({ reference: described, run });
     }
 
-    const archives: CampaignRepositorySnapshot<Run>["archives"] = [];
+    const archives: PreviousSnapshot<Run>["archives"] = [];
     const storedRunIds = new Set(activeRuns.map(({ reference }) => reference.runId));
     for (const raw of value.archives) {
       if (
@@ -531,7 +547,7 @@ export class CampaignRepository<Run extends object> {
       archives.push({ reference: described, completedAt: raw.completedAt, run });
     }
 
-    const recoveries: CampaignRecoveryRecord[] = [];
+    const recoveries: PreviousRecoveryRecord[] = [];
     const recoveryRunIds = new Set<string>();
     for (const raw of value.recoveries) {
       if (!validRecovery(raw) || storedRunIds.has(raw.reference.runId) || recoveryRunIds.has(raw.reference.runId)) {
@@ -591,6 +607,40 @@ export class CampaignRepository<Run extends object> {
     };
   }
 
+  private decodeDocument(value: unknown): CampaignRepositoryResult<CampaignRepositorySnapshot<Run>> {
+    if (!isRecord(value) || value.version !== CAMPAIGN_DOCUMENT_VERSION ||
+      !Array.isArray(value.activeRuns) || !Array.isArray(value.recoveries) ||
+      Object.hasOwn(value, "archives")) {
+      return failure("corrupt", "캠페인 저장 데이터의 구조가 올바르지 않습니다.");
+    }
+    const validated = validateCampaignState(value.state);
+    if (!validated.ok) return failure("corrupt", validated.error.message);
+    const activeRuns: CampaignRepositorySnapshot<Run>["activeRuns"] = [];
+    const seen = new Set<string>();
+    for (const raw of value.activeRuns) {
+      if (!isRecord(raw) || !validReference(raw.reference) || !Object.hasOwn(raw, "payload") || seen.has(raw.reference.runId)) {
+        return failure("corrupt", "활성 실행 기록의 구조가 올바르지 않습니다.");
+      }
+      const parsed = this.parseStoredRun(raw.payload);
+      if (!parsed.ok) return parsed;
+      if (!sameReference(parsed.value.reference, raw.reference)) return failure("corrupt", "활성 실행 기록을 검증하지 못했습니다.");
+      seen.add(raw.reference.runId);
+      activeRuns.push({ reference: raw.reference, run: parsed.value.run });
+    }
+    const recoveries: CampaignRecoveryRecord[] = [];
+    const completedIds = new Set(validated.value.stages.flatMap((stage) => stage.completion ? [stage.completion.run.runId] : []));
+    for (const raw of value.recoveries) {
+      if (!validActiveRecovery(raw) || seen.has(raw.reference.runId) || completedIds.has(raw.reference.runId)) return failure("corrupt", "개편 전 활성 실행 기록을 검증하지 못했습니다.");
+      seen.add(raw.reference.runId);
+      recoveries.push(structuredClone(raw));
+    }
+    const expected = validated.value.stages.flatMap((stage) => stage.activeRun ? [stage.activeRun] : []);
+    if (expected.length !== activeRuns.length || expected.some((reference) => !activeRuns.some((entry) => sameReference(entry.reference, reference)))) {
+      return failure("corrupt", "캠페인 진행 상태와 활성 실행 기록이 서로 맞지 않습니다.");
+    }
+    return { ok: true, value: { state: validated.value, activeRuns, recoveries } };
+  }
+
   private documentFromSnapshot(
     snapshot: CampaignRepositorySnapshot<Run>,
   ): CampaignDocument {
@@ -599,11 +649,6 @@ export class CampaignRepository<Run extends object> {
       state: snapshot.state,
       activeRuns: snapshot.activeRuns.map(({ reference, run }) => ({
         reference,
-        payload: this.authority.serialize(run),
-      })),
-      archives: snapshot.archives.map(({ reference, completedAt, run }) => ({
-        reference,
-        completedAt,
         payload: this.authority.serialize(run),
       })),
       recoveries: snapshot.recoveries.map((recovery) => structuredClone(recovery)),
@@ -656,7 +701,7 @@ export class CampaignRepository<Run extends object> {
 
   private async initialSnapshot(
     writer: string,
-  ): Promise<CampaignRepositoryResult<CampaignRepositorySnapshot<Run>>> {
+  ): Promise<CampaignRepositoryResult<PreviousSnapshot<Run>>> {
     let currentSave: SaveData | null = null;
     if (this.legacyStorage !== null) {
       const loaded = loadSave(this.legacyStorage);
@@ -703,7 +748,7 @@ export class CampaignRepository<Run extends object> {
       }
     }
 
-    const archives: (CampaignRepositorySnapshot<Run>["archives"][number] & {
+    const archives: (PreviousSnapshot<Run>["archives"][number] & {
       payload: unknown;
     })[] = [];
     const addArchive = (
@@ -741,7 +786,7 @@ export class CampaignRepository<Run extends object> {
       if (!added.ok) return added;
     }
 
-    let activeRun: CampaignRepositorySnapshot<Run>["activeRuns"][number] | null =
+    let activeRun: PreviousSnapshot<Run>["activeRuns"][number] | null =
       null;
     let currentCompletion: CampaignRunReference | null = null;
     if (applicableCurrent !== null) {
@@ -766,13 +811,12 @@ export class CampaignRepository<Run extends object> {
       }
     }
 
-    const canonical =
-      currentCompletion === null
-        ? archives[0] ?? null
-        : archives.find((item) => sameReference(item.reference, currentCompletion));
-    if (currentCompletion !== null && canonical === undefined) {
+    if (currentCompletion !== null && !archives.some((item) => sameReference(item.reference, currentCompletion))) {
       return failure("conflict", "현재 완료 실행을 보관 기록에서 확인하지 못했습니다.");
     }
+    const canonical = archives.length > 0
+      ? archives.reduce((latest, item) => item.completedAt > latest.completedAt ? item : latest)
+      : null;
     let state: CampaignState;
     try {
       const fresh = createCampaignState(writer);
@@ -796,6 +840,7 @@ export class CampaignRepository<Run extends object> {
               ...stage,
               status: canonical ? "completed" : "unlocked",
               activeRun: activeRun?.reference ?? null,
+              bestScore: canonical ? currentSave?.best ?? null : null,
               completion: canonical
                 ? {
                     run: canonical.reference,
@@ -830,6 +875,114 @@ export class CampaignRepository<Run extends object> {
     };
   }
 
+  private scoreOf(run: Run): number | null {
+    try {
+      const score = this.authority.score?.(run) ?? null;
+      return typeof score === "number" && Number.isInteger(score) && score >= 0 ? score : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private scoreInLegacyPayload(payload: unknown): number | null {
+    if (!isRecord(payload) || payload.kind !== "legacy" || !isRecord(payload.save)) return null;
+    const best = payload.save.best;
+    return typeof best === "number" && Number.isInteger(best) && best >= 0 ? best : null;
+  }
+
+  private scoreInRetiredRecovery(recovery: PreviousRecoveryRecord): number | null {
+    if (recovery.kind !== "archive" || !isRecord(recovery.payload) || !isRecord(recovery.payload.run)) return null;
+    const notebook = recovery.payload.run.notebook;
+    if (!isRecord(notebook)) return null;
+    const { deaths, penaltyDeaths } = notebook;
+    return typeof deaths === "number" && Number.isInteger(deaths) && deaths >= 0 &&
+      typeof penaltyDeaths === "number" && Number.isInteger(penaltyDeaths) && penaltyDeaths >= 0
+      ? deaths + penaltyDeaths : null;
+  }
+
+  private compactPreviousSnapshot(
+    previous: PreviousSnapshot<Run>,
+    standaloneArchives: readonly SaveData[] = [],
+  ): CampaignRepositoryResult<CampaignDocument> {
+    const scores = previous.state.stages.map((stage) => stage.bestScore);
+    const completions = previous.state.stages.map((stage) => stage.completion);
+    const advanceCompletion = (
+      reference: CampaignRunReference,
+      completedAt: number,
+      source: "campaign" | "legacy" | "content-recovery",
+    ) => {
+      const index = reference.stageId - 1;
+      if (completions[index] === null || completedAt > completions[index].completedAt) {
+        completions[index] = { run: reference, completedAt, source };
+      }
+    };
+    const addScore = (stageId: number, score: number | null) => {
+      if (score === null) return;
+      const index = stageId - 1;
+      scores[index] = scores[index] === null ? score : Math.min(scores[index]!, score);
+    };
+    for (const archive of previous.archives) {
+      addScore(archive.reference.stageId, this.scoreOf(archive.run));
+      addScore(archive.reference.stageId, this.scoreInLegacyPayload(this.authority.serialize(archive.run)));
+      advanceCompletion(archive.reference, archive.completedAt, "campaign");
+    }
+    for (const recovery of previous.recoveries) {
+      addScore(recovery.reference.stageId, this.scoreInRetiredRecovery(recovery));
+      if (recovery.kind === "archive" && recovery.completedAt !== undefined) {
+        advanceCompletion(recovery.reference, recovery.completedAt, "content-recovery");
+      }
+    }
+    for (const active of previous.activeRuns) {
+      if (previous.state.stages[active.reference.stageId - 1].completion !== null) {
+        addScore(active.reference.stageId, this.scoreInLegacyPayload(this.authority.serialize(active.run)));
+      }
+    }
+    const standalone: { reference: CampaignRunReference; completedAt: number; score: number | null; payload: unknown }[] = [];
+    for (const save of standaloneArchives) {
+      const mapped = this.mapLegacySave(save, true);
+      if (!mapped.ok) return mapped;
+      const prior = standalone.find((item) => item.reference.runId === mapped.value.reference.runId);
+      const existing = previous.archives.find((item) => item.reference.runId === mapped.value.reference.runId);
+      if (prior && (prior.completedAt !== save.savedAt || !sameStoredValue(prior.payload, mapped.value.payload))) {
+        return failure("conflict", "같은 ID의 완료 기록 내용이 서로 달라 마이그레이션하지 않았습니다.");
+      }
+      if (existing && (existing.completedAt !== save.savedAt || !sameStoredValue(this.authority.serialize(existing.run), mapped.value.payload))) {
+        return failure("conflict", "보관함과 캠페인의 완료 기록 내용이 서로 다릅니다.");
+      }
+      if (previous.activeRuns.some((item) => item.reference.runId === mapped.value.reference.runId)) {
+        return failure("conflict", "진행 중인 실행 ID가 완료 보관 기록과 겹칩니다.");
+      }
+      if (!prior) standalone.push({ reference: mapped.value.reference, completedAt: save.savedAt,
+        score: this.scoreOf(mapped.value.run), payload: mapped.value.payload });
+      addScore(1, this.scoreOf(mapped.value.run));
+      addScore(1, save.best);
+    }
+    const latestStandalone = standalone.length > 0
+      ? standalone.reduce((latest, item) => item.completedAt > latest.completedAt ? item : latest)
+      : null;
+    const newlyCompleted = latestStandalone &&
+      (completions[0] === null || latestStandalone.completedAt > completions[0].completedAt)
+      ? latestStandalone : null;
+    if (newlyCompleted) advanceCompletion(newlyCompleted.reference, newlyCompleted.completedAt, "legacy");
+    const state = validateCampaignState({
+      ...previous.state,
+      stages: previous.state.stages.map((stage, index) => index === 0 && newlyCompleted
+        ? { ...stage, status: "completed", bestScore: scores[index],
+            completion: completions[index] }
+        : index === 1 && newlyCompleted && stage.status === "locked"
+          ? { ...stage, status: "unlocked", bestScore: scores[index] }
+          : { ...stage, bestScore: scores[index], completion: completions[index] }),
+    });
+    if (!state.ok) return failure("corrupt", state.error.message);
+    const document = this.documentFromSnapshot({
+      state: state.value,
+      activeRuns: previous.activeRuns,
+      recoveries: previous.recoveries.filter((recovery): recovery is CampaignRecoveryRecord => recovery.kind === "active"),
+    });
+    const decoded = this.decodeDocument(document);
+    return decoded.ok ? { ok: true, value: document } : decoded;
+  }
+
   /**
    * Detaches retired stage 2+ runs before current content validation.
    * The transform is fail-closed and is committed with the replacement root.
@@ -837,10 +990,10 @@ export class CampaignRepository<Run extends object> {
   private migrateContentDocument(
     value: unknown,
     writer: string,
-  ): CampaignRepositoryResult<CampaignDocument> {
-    if (isRecord(value) && value.version === CAMPAIGN_DOCUMENT_VERSION) {
-      const decoded = this.decodeDocument(value);
-      return decoded.ok ? { ok: true, value: value as unknown as CampaignDocument } : decoded;
+  ): CampaignRepositoryResult<PreviousCampaignDocument> {
+    if (isRecord(value) && value.version === PREVIOUS_DOCUMENT_VERSION) {
+      const decoded = this.decodePreviousDocument(value);
+      return decoded.ok ? { ok: true, value: value as unknown as PreviousCampaignDocument } : decoded;
     }
     if (!isRecord(value) ||
       (Object.hasOwn(value, "version") && value.version !== 2 && value.version !== 3) ||
@@ -853,7 +1006,7 @@ export class CampaignRepository<Run extends object> {
 
     const retainedActive: StoredRun[] = [];
     const retainedArchives: StoredArchive[] = [];
-    const recoveries: CampaignRecoveryRecord[] = [];
+    const recoveries: PreviousRecoveryRecord[] = [];
     const seen = new Set<string>();
     const recoveredAt = Date.now();
     const activeReferences: CampaignRunReference[] = [];
@@ -929,7 +1082,7 @@ export class CampaignRepository<Run extends object> {
     for (const stage of stateResult.value.stages) {
       const completion = stage.completion;
       if (completion?.source !== "campaign") continue;
-      const archive = [...retainedArchives, ...recoveries.filter((item): item is CampaignRecoveryRecord & { completedAt: number } => item.kind === "archive")]
+      const archive = [...retainedArchives, ...recoveries.filter((item): item is PreviousRecoveryRecord & { completedAt: number } => item.kind === "archive")]
         .find((item) => sameReference(item.reference, completion.run) && item.completedAt === completion.completedAt);
       if (!archive) return failure("corrupt", "완료 증거를 보관 기록에서 확인하지 못했습니다.");
     }
@@ -952,7 +1105,7 @@ export class CampaignRepository<Run extends object> {
     return {
       ok: true,
       value: {
-        version: CAMPAIGN_DOCUMENT_VERSION,
+        version: PREVIOUS_DOCUMENT_VERSION,
         state: migratedState.value,
         activeRuns: retainedActive,
         archives: retainedArchives,
@@ -977,6 +1130,92 @@ export class CampaignRepository<Run extends object> {
     return { ok: true, value: state };
   }
 
+  private migrateToCurrentDocument(
+    value: unknown,
+    writer: string,
+    standaloneArchives: readonly SaveData[] = [],
+  ): CampaignRepositoryResult<CampaignDocument> {
+    const previous = this.migrateContentDocument(value, writer);
+    if (!previous.ok) return previous;
+    const decoded = this.decodePreviousDocument(previous.value);
+    if (!decoded.ok) return decoded;
+    return this.compactPreviousSnapshot(decoded.value, standaloneArchives);
+  }
+
+  private async readStandaloneBeforeMigration(): Promise<CampaignRepositoryResult<readonly SaveData[]>> {
+    const saves: SaveData[] = [];
+    const storage = this.resolveLegacyStorage();
+    if (storage) {
+      const loaded = loadSave(storage);
+      if (!loaded.ok) return failure(loaded.error.code === "read" ? "read" : "corrupt", loaded.error.message, loaded.error.cause);
+      if (loaded.value && loaded.value.state.phase === "cleared" && !loaded.value.state.tutorial) saves.push(loaded.value);
+    }
+    if (this.legacyArchiveReader === null) return { ok: true, value: saves };
+    try {
+      const archived = await this.legacyArchiveReader();
+      return Array.isArray(archived) ? { ok: true, value: [...saves, ...archived] }
+        : failure("corrupt", "기존 모험 보관함 응답이 올바르지 않습니다.");
+    } catch (cause) {
+      return failure("read", "기존 모험 보관함을 모두 읽지 못해 마이그레이션하지 않았습니다.", cause);
+    }
+  }
+
+  private resolveLegacyStorage(): (StorageLike & { removeItem?: (key: string) => void }) | null {
+    if (this.legacyStorage === null) return null;
+    if (this.legacyStorage !== undefined) return this.legacyStorage;
+    try { return typeof localStorage === "undefined" ? null : localStorage; }
+    catch { return null; }
+  }
+
+  private async reconcileStandaloneArchives(
+    snapshot: CampaignRepositorySnapshot<Run>,
+    writer: string,
+  ): Promise<CampaignRepositoryResult<CampaignRepositorySnapshot<Run>>> {
+    let records: Awaited<ReturnType<typeof listStageArchives>> = [];
+    if (this.usesDefaultLegacyArchiveReader) {
+      try { records = await listStageArchives(); }
+      catch { return { ok: true, value: snapshot }; }
+    }
+    const storage = this.resolveLegacyStorage();
+    let localCompleted: { save: SaveData; bytes: string } | null = null;
+    if (storage && this.migrateLegacyRun) {
+      try {
+        const bytes = storage.getItem(STORAGE_KEY);
+        if (bytes !== null) {
+          const loaded = loadSave({ getItem: () => bytes, setItem: () => undefined });
+          if (loaded.ok && loaded.value && loaded.value.state.phase === "cleared" && !loaded.value.state.tutorial) {
+            localCompleted = { save: loaded.value, bytes };
+          }
+        }
+      } catch { /* Keep a local save that cannot be read safely. */ }
+    }
+    if (records.length === 0 && localCompleted === null) return { ok: true, value: snapshot };
+    const saves = [...records.map((record) => record.save), ...(localCompleted ? [localCompleted.save] : [])];
+    const committed = await this.store.mutate((current) => {
+      if (current === null) return failure("conflict", "캠페인 저장 데이터가 다른 창에서 바뀌었습니다.");
+      const decoded = this.decodeDocument(current);
+      if (!decoded.ok) return decoded;
+      const previous: PreviousSnapshot<Run> = { ...decoded.value, archives: [] };
+      const compacted = this.compactPreviousSnapshot(previous, saves);
+      if (!compacted.ok) return compacted;
+      const nextState = (compacted.value.state.stages.some((stage, index) =>
+        !sameStoredValue(stage, decoded.value.state.stages[index])))
+        ? { ...compacted.value.state, writer, revision: decoded.value.state.revision + 1 }
+        : compacted.value.state;
+      const document = { ...compacted.value, state: nextState };
+      const result = this.decodeDocument(document);
+      return result.ok ? { ok: true, value: { document, result: result.value } } : result;
+    });
+    if (!committed.ok) return committed;
+    try { await clearStageArchives(records); } catch { /* Retry after a later load. */ }
+    if (storage && localCompleted && typeof storage.removeItem === "function") {
+      try {
+        if (storage.getItem(STORAGE_KEY) === localCompleted.bytes) storage.removeItem(STORAGE_KEY);
+      } catch { /* Retry after a later load. */ }
+    }
+    return committed;
+  }
+
   async loadOrCreate(
     writer: string,
   ): Promise<CampaignRepositoryResult<CampaignRepositorySnapshot<Run>>> {
@@ -984,25 +1223,37 @@ export class CampaignRepository<Run extends object> {
     if (!read.ok) return read;
     if (read.value !== null) {
       if (isRecord(read.value) && read.value.version === CAMPAIGN_DOCUMENT_VERSION) {
-        return this.decodeDocument(read.value);
+        const decoded = this.decodeDocument(read.value);
+        if (!decoded.ok) return decoded;
+        const reconciled = await this.reconcileStandaloneArchives(decoded.value, writer);
+        return reconciled;
       }
+      const standalone = await this.readStandaloneBeforeMigration();
+      if (!standalone.ok) return standalone;
       const migrated = await this.store.mutate((current) => {
         if (current === null) return failure("conflict", "캠페인 저장 데이터가 다른 창에서 바뀌었습니다.");
-        const document = this.migrateContentDocument(current, writer);
+        const document = isRecord(current) && current.version === CAMPAIGN_DOCUMENT_VERSION
+          ? { ok: true as const, value: current as unknown as CampaignDocument }
+          : this.migrateToCurrentDocument(current, writer, standalone.value);
         if (!document.ok) return document;
         const decoded = this.decodeDocument(document.value);
         if (!decoded.ok) return decoded;
         return { ok: true, value: { document: document.value, result: decoded.value } };
       });
-      return migrated;
+      if (!migrated.ok) return migrated;
+      const reconciled = await this.reconcileStandaloneArchives(migrated.value, writer);
+      return reconciled;
     }
 
     const prepared = await this.initialSnapshot(writer);
     if (!prepared.ok) return prepared;
-    const initial = this.documentFromSnapshot(prepared.value);
+    const initial = this.compactPreviousSnapshot(prepared.value);
+    if (!initial.ok) return initial;
     const created = await this.store.mutate((current) => {
       if (current !== null) {
-        const migrated = this.migrateContentDocument(current, writer);
+        const migrated = isRecord(current) && current.version === CAMPAIGN_DOCUMENT_VERSION
+          ? { ok: true as const, value: current as unknown as CampaignDocument }
+          : this.migrateToCurrentDocument(current, writer);
         if (!migrated.ok) return migrated;
         const decoded = this.decodeDocument(migrated.value);
         if (!decoded.ok) return decoded;
@@ -1011,11 +1262,11 @@ export class CampaignRepository<Run extends object> {
           value: { document: migrated.value, result: decoded.value },
         };
       }
-      const decoded = this.decodeDocument(initial);
+      const decoded = this.decodeDocument(initial.value);
       if (!decoded.ok) return decoded;
       return {
         ok: true,
-        value: { document: initial, result: decoded.value },
+        value: { document: initial.value, result: decoded.value },
       };
     });
     if (!created.ok) return created;
@@ -1024,7 +1275,10 @@ export class CampaignRepository<Run extends object> {
     if (reread.value === null) {
       return failure("write", "저장한 캠페인 상태를 다시 확인하지 못했습니다.");
     }
-    return this.decodeDocument(reread.value);
+    const decoded = this.decodeDocument(reread.value);
+    if (!decoded.ok) return decoded;
+    const reconciled = await this.reconcileStandaloneArchives(decoded.value, writer);
+    return reconciled;
   }
 
   async load(): Promise<
@@ -1033,6 +1287,10 @@ export class CampaignRepository<Run extends object> {
     const read = await this.store.read();
     if (!read.ok) return read;
     if (read.value === null) return { ok: true, value: null };
+    if (!isRecord(read.value) || read.value.version !== CAMPAIGN_DOCUMENT_VERSION) {
+      return this.loadOrCreate(isRecord(read.value) && isRecord(read.value.state) &&
+        typeof read.value.state.writer === "string" ? read.value.state.writer : "migration");
+    }
     return this.decodeDocument(read.value);
   }
 
@@ -1075,14 +1333,6 @@ export class CampaignRepository<Run extends object> {
         if (!withSettings.ok) return mapProgressError(withSettings.error);
         nextState.value = withSettings.value;
       }
-      if (
-        decoded.value.archives.some(
-          (archive) => archive.reference.runId === storedReference.runId,
-        )
-      ) {
-        return failure("invalid-run", "이미 보관된 실행 ID는 다시 사용할 수 없습니다.");
-      }
-
       const next: CampaignRepositorySnapshot<Run> = {
         ...decoded.value,
         state: nextState.value,
@@ -1170,6 +1420,19 @@ export class CampaignRepository<Run extends object> {
         completedAt,
       );
       if (!nextState.ok) return mapProgressError(nextState.error);
+      const previousActive = decoded.value.activeRuns.find((item) =>
+        sameReference(item.reference, verified.value.reference));
+      if (previousActive) {
+        const remembered = this.scoreInLegacyPayload(this.authority.serialize(previousActive.run));
+        if (remembered !== null) {
+          const index = verified.value.reference.stageId - 1;
+          const stage = nextState.value.stages[index];
+          nextState.value.stages[index] = {
+            ...stage,
+            bestScore: stage.bestScore === null ? remembered : Math.min(stage.bestScore, remembered),
+          };
+        }
+      }
       if (options.settings !== undefined) {
         const withSettings = validateCampaignState({ ...nextState.value, settings: options.settings });
         if (!withSettings.ok) return mapProgressError(withSettings.error);
@@ -1181,21 +1444,9 @@ export class CampaignRepository<Run extends object> {
         activeRuns: decoded.value.activeRuns.filter(
           (item) => item.reference.stageId !== verified.value.reference.stageId,
         ),
-        archives: [
-          ...decoded.value.archives,
-          {
-            reference: verified.value.reference,
-            completedAt,
-            run: verified.value.run,
-          },
-        ],
         recoveries: decoded.value.recoveries,
       };
       const document = this.documentFromSnapshot(next);
-      const archived = document.archives.find((item) =>
-        sameReference(item.reference, verified.value.reference),
-      );
-      if (archived) archived.payload = verified.value.serialized;
       return { ok: true, value: { document, result: next } };
     });
     if (!saved.ok) return saved;

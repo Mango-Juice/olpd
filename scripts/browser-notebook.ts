@@ -127,7 +127,7 @@ try {
     "penalty does not grant new writing chance",
     "penalty survives refresh once",
     "deleting jump rules changes earlier pit outcome",
-    "shared link archives existing record and starts new",
+    "shared link starts a new run without completed archive accumulation",
     "mute/reduced-motion persistence",
     "mobile clear restore and actual clipboard share",
   ];

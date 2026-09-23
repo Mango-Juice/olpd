@@ -58,17 +58,16 @@ export function PlayDeathScore({ deaths, penaltyDeaths, best, tutorial = false }
   </div>;
 }
 
-export function PlayClearPanel({ deaths, penaltyDeaths, best, onChronicle, onShare, onNew, children }: {
+export function PlayClearPanel({ deaths, penaltyDeaths, best, onShare, onNew, children }: {
   deaths: number; penaltyDeaths: number; best?: number | null;
-  onChronicle: () => void; onShare: () => void; onNew: () => void; children?: ReactNode;
+  onShare: () => void; onNew: () => void; children?: ReactNode;
 }) {
   return <div className="composer">
     <span className="eyebrow">A SMALL HERO, A BIG ADVENTURE</span>
     <div className="win-score">{deaths + penaltyDeaths} <span style={{ fontSize: 18 }}>데스의 기억</span></div>
     <p className="helper">사망·자진 부활 {deaths} + 삭제 패널티 {penaltyDeaths} · 최고 기록 {best ?? deaths + penaltyDeaths}데스</p>
     <div className="action-row">
-      <button className="primary" onClick={onChronicle}>우리의 모험 돌아보기</button>
-      <button className="secondary" onClick={onShare}>우리의 모험 공유하기 ↗</button>
+      <button className="primary" onClick={onShare}>우리의 모험 공유하기 ↗</button>
       <button className="secondary" onClick={onNew}>새로운 도전</button>
       {children}
     </div>

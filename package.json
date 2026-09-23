@@ -17,7 +17,6 @@
     "test:priority": "tsx scripts/browser-priority.ts",
     "test:priority:live": "LIVE_AI=true tsx scripts/browser-priority.ts",
     "test:drag": "tsx scripts/browser-drag.ts",
-    "test:chronicle": "tsx scripts/browser-chronicle.ts",
     "test:guards": "tsx scripts/check-guards.ts",
     "eval:campaign": "tsx --env-file=.env.local scripts/evaluate-campaign-live.ts",
     "test:campaign:scenes": "tsx scripts/browser-campaign-scenes.ts",

@@ -9,7 +9,6 @@ interface StageRoadmapProps {
   busy?: boolean;
   qa?: boolean;
   onSelect: (id: StageId, mode: "resume" | "new") => void;
-  onArchive: (id: StageId) => void;
   onClose?: () => void;
 }
 const WHISPERS = [
@@ -25,7 +24,7 @@ const WHISPERS = [
   "마지막 문 너머로, 아직 전하지 못한 편지 한 통.",
 ];
 
-export function StageRoadmap({ campaign, busy = false, qa = false, onSelect, onArchive, onClose }: StageRoadmapProps) {
+export function StageRoadmap({ campaign, busy = false, qa = false, onSelect, onClose }: StageRoadmapProps) {
   const completed = campaign.stages.filter((stage) => stage.status === "completed").length;
   const bookmark = [...campaign.stages].reverse().find((stage) => stage.activeRun && stage.status !== "locked")
     ?? campaign.stages.find((stage) => stage.status === "unlocked")
@@ -77,7 +76,6 @@ export function StageRoadmap({ campaign, busy = false, qa = false, onSelect, onA
                   >
                     {locked ? "아직 닫힌 문" : resumable ? "이어 걷기 →" : cleared ? "새 모험 시작 →" : "들어가기 →"}
                   </button>
-                  {cleared ? <button type="button" className="roadmap-archive" onClick={() => onArchive(stage.id)} disabled={busy}>지난 메모 보기</button> : null}
                 </div>
                 {locked ? <small id={`stage-${stage.id}-lock`}>{stage.id - 1}장을 완료하면 열려요.</small> : null}
               </div>
@@ -87,7 +85,7 @@ export function StageRoadmap({ campaign, busy = false, qa = false, onSelect, onA
       </ol>
       <div className="roadmap-book-ending" aria-hidden="true">한 줄의 기억, 그리고 다음 페이지. <span>✧</span></div>
       </div>
-      <p className="roadmap-footnote">{qa ? "QA 여행책에서는 모든 장을 바로 펼칠 수 있어요. 일반 모험의 기록과는 따로 보관됩니다." : "앞 장을 마치면 다음 장이 열립니다. 완료한 장의 새 모험은 새 메모장으로 시작해요. 이전 기록과 열린 문은 그대로 남아요."}</p>
+      <p className="roadmap-footnote">{qa ? "QA 여행책에서는 모든 장을 바로 펼칠 수 있어요. 일반 모험의 기록과는 따로 보관됩니다." : "앞 장을 마치면 다음 장이 열립니다. 완료한 장의 새 모험은 새 메모장으로 시작해요. 완료 상태와 열린 문은 그대로 남아요."}</p>
     </section>
   );
 }

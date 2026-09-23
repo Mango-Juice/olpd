@@ -23,6 +23,8 @@ export interface CampaignStageProgress {
   status: CampaignStageStatus;
   activeRun: CampaignRunReference | null;
   completion: CampaignCompletion | null;
+  /** Lowest verified death/penalty score for this chapter. */
+  bestScore: number | null;
 }
 
 /** JSON/structured-clone-safe campaign state. Runtime payloads live in the repository. */
@@ -61,6 +63,8 @@ export interface RunCompletionAuthority<Run> {
   serialize(run: Run): unknown;
   describe(run: Run): CampaignRunReference | null;
   isCleared(run: Run): boolean;
+  /** Optional for generic authorities; production campaign runs supply a score. */
+  score?(run: Run): number | null;
 }
 
 const verifiedCompletion = Symbol("verified campaign run completion");
@@ -69,6 +73,7 @@ export interface VerifiedRunCompletion<Run> {
   readonly run: Run;
   readonly reference: CampaignRunReference;
   readonly serialized: unknown;
+  readonly score: number | null;
   readonly [verifiedCompletion]: true;
 }
 
@@ -89,6 +94,10 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function validScore(value: unknown): value is number | null {
+  return value === null || isNonNegativeInteger(value);
 }
 
 function validSettings(value: unknown): value is Settings | null {
@@ -158,7 +167,8 @@ export function validateCampaignState(
         raw.status !== "unlocked" &&
         raw.status !== "completed") ||
       !(raw.activeRun === null || validRunReference(raw.activeRun)) ||
-      !(raw.completion === null || validCompletion(raw.completion, expectedId))
+      !(raw.completion === null || validCompletion(raw.completion, expectedId)) ||
+      !validScore(raw.bestScore === undefined ? null : raw.bestScore)
     ) {
       return failure("invalid-state", "단계 진행 상태가 올바르지 않습니다.");
     }
@@ -170,7 +180,8 @@ export function validateCampaignState(
     }
     if (
       (raw.status === "completed") !== (completion !== null) ||
-      (raw.status === "locked" && activeRun !== null)
+      (raw.status === "locked" && activeRun !== null) ||
+      (completion === null && raw.bestScore != null)
     ) {
       return failure("invalid-state", "단계 상태와 실행 참조가 서로 맞지 않습니다.");
     }
@@ -194,6 +205,7 @@ export function validateCampaignState(
       status: raw.status,
       activeRun,
       completion,
+      bestScore: raw.bestScore === undefined ? null : raw.bestScore as number | null,
     });
   }
 
@@ -229,6 +241,7 @@ export function createCampaignState(writer: string): CampaignState {
       status: index === 0 ? "unlocked" : "locked",
       activeRun: null,
       completion: null,
+      bestScore: null,
     })),
   };
 }
@@ -269,11 +282,13 @@ export function verifyRunCompletion<Run>(
   let parsed: Run | null;
   let reference: CampaignRunReference | null;
   let cleared: boolean;
+  let score: number | null;
   try {
     serialized = authority.serialize(run);
     parsed = authority.parse(serialized);
     reference = parsed === null ? null : authority.describe(parsed);
     cleared = parsed !== null && authority.isCleared(parsed);
+    score = parsed === null ? null : authority.score?.(parsed) ?? null;
   } catch {
     return failure("invalid-run", "실행 기록을 검증하지 못했습니다.");
   }
@@ -281,7 +296,8 @@ export function verifyRunCompletion<Run>(
     parsed === null ||
     reference === null ||
     !validRunReference(reference) ||
-    !cleared
+    !cleared ||
+    !validScore(score)
   ) {
     return failure("invalid-run", "완료가 검증된 실행 기록이 아닙니다.");
   }
@@ -291,6 +307,7 @@ export function verifyRunCompletion<Run>(
       run: parsed,
       reference,
       serialized,
+      score,
       [verifiedCompletion]: true,
     },
   };
@@ -371,9 +388,6 @@ export function completeVerifiedRun<Run>(
       writer,
       revision: valid.value.revision + 1,
       stages: valid.value.stages.map((item) => {
-        if (item.stageId === reference.stageId && item.status === "completed") {
-          return { ...item, activeRun: null };
-        }
         if (item.stageId === reference.stageId) {
           return {
             ...item,
@@ -384,6 +398,8 @@ export function completeVerifiedRun<Run>(
               completedAt,
               source: "campaign",
             },
+            bestScore: completion.score === null ? item.bestScore :
+              item.bestScore === null ? completion.score : Math.min(item.bestScore, completion.score),
           };
         }
         if (item.stageId === nextStageId && item.status === "locked") {
