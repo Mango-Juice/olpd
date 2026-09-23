@@ -2,6 +2,7 @@ import { resolveActionReferences } from "../conditions";
 import { makeEntity, makeHero, makeWorld } from "../level";
 import type { ActionResult } from "../program";
 import type { Actor, Entity, PhysicalAction, Scalar, StageId, WorldState } from "../types";
+import { authoredPublicKind } from "./public-kinds";
 
 export function quietEntity(
   id: string,
@@ -14,6 +15,7 @@ export function quietEntity(
 ): Entity {
   return makeEntity(id, name, region, x, {
     description: name,
+    publicKind: authoredPublicKind(id),
     location: { region, x, y },
     properties: { kind: "object", ...properties },
     ...patch,

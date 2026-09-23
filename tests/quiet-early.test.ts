@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createCursor, stepProgram, type ProgramCursor } from "../src/campaign/program";
 import { stageDynamics, type CampaignStageDefinition, type SegmentDefinition } from "../src/campaign/level";
 import { propertyVisibility } from "../src/campaign/presentation";
-import { advanceStage, createCampaignRun, departStage } from "../src/campaign/run";
+import { acknowledgePresentation, advanceStage, createCampaignRun, departStage } from "../src/campaign/run";
 import { writeProgram } from "../src/campaign/notebook";
 import {
   QUIET_EARLY_INTENT_CASES,
@@ -59,6 +59,7 @@ function playInRuntime(intent: QuietEarlyIntentCase): WorldState {
   const dynamics = stageDynamics(isolated);
   for (let boundary = 0; boundary < 32 && (run.phase === "running" || run.phase === "waiting"); boundary += 1) {
     run = advanceStage(run, dynamics);
+    if (run.presentation) run = acknowledgePresentation(run);
   }
   expect(run.phase, `${intent.segmentId}: ${run.statusReason}`).toBe("cleared");
   expect(run.clearedSegments).toContain(intent.segmentId);
@@ -123,8 +124,8 @@ const bypasses: Record<string, PhysicalAction> = {
 };
 
 describe("quiet early campaign", () => {
-  it("defines six quiet-v1 spatial scenes per chapter without onboarding", () => {
-    expect(stages.map((stage) => stage.contentRevision)).toEqual(["quiet-v1", "quiet-v1", "quiet-v1"]);
+  it("defines six shared-v1 spatial scenes per chapter without onboarding", () => {
+    expect(stages.map((stage) => stage.contentRevision)).toEqual(["shared-v1", "shared-v1", "shared-v1"]);
     expect(stages.map((stage) => stage.segments.map((item) => item.id))).toEqual([
       ["02-v2-1", "02-v2-2", "02-v2-3", "02-v2-4", "02-v2-5", "02-v2-6"],
       ["03-v2-1", "03-v2-2", "03-v2-3", "03-v2-4", "03-v2-5", "03-v2-6"],

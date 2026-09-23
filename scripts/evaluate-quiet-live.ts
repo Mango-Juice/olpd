@@ -33,7 +33,7 @@ async function worker() {
     try {
       let run = createCampaignRun(`probe-${scene.id}`, stage);
       run.world = scene.enter(null); run.checkpoint = structuredClone(run.world);
-      run.notebook = createNotebook(scene.id, true);
+      run.notebook = createNotebook();
       run.clearedSegments = stage.segments.slice(0, stage.segments.indexOf(scene)).map((item) => item.id);
       run.seal = run.clearedSegments.reduce((seal, id) => stageDynamics(stage).sealAfter(id) ?? seal, 0);
       const canonical = campaignContext({ text, world: run.world, stageId: stage.id, runId: run.id, revision: run.revision, attempt: run.world.attempt });

@@ -1,14 +1,14 @@
+import { postInterpretJson } from "./services/interpret-api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import App, { type LegacyStorageBridge } from "./App";
 import { StageRoadmap } from "./components/StageRoadmap";
 import { CampaignPlay } from "./components/CampaignPlay";
-import { CampaignCanvas } from "./components/CampaignCanvas";
+import { CampaignChronicle } from "./components/CampaignChronicle";
 import StageChronicle from "./components/StageChronicle";
 import { CampaignRepository, type CampaignRepositoryResult, type CampaignRepositorySnapshot } from "./campaign/repository";
 import { campaignAuthority, type CampaignStoredRun } from "./campaign/authority";
 import { resolveStage } from "./campaign/registry";
-import { createCampaignRun, createPracticeRun, type StageRun } from "./campaign/run";
-import { createExecution } from "./campaign/scheduler";
+import { createCampaignRun, type StageRun } from "./campaign/run";
 import { parseProgram } from "./campaign/validation";
 import { stageSummary } from "./campaign/catalog";
 import { loadOnboardingProgress, progressBelongsToRun, type OnboardingProgress } from "./game/onboarding";
@@ -32,13 +32,7 @@ function download(value: unknown, filename = "one-line-per-death-campaign.json")
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 async function interpret(text: string, run: StageRun, signal: AbortSignal): Promise<InstructionProgram> {
-  const response = await fetch("/api/campaign-interpret", { method: "POST", headers: { "Content-Type": "application/json" }, signal, body: JSON.stringify({ text, stageId: run.stageId, runId: run.id, revision: run.revision, attempt: run.world.attempt, world: run.world }) });
-  const value: unknown = await response.json();
-  if (!response.ok) {
-    const error = value && typeof value === "object" && "error" in value ? value.error : null;
-    const message = error && typeof error === "object" && "message" in error ? String(error.message) : "뜻을 확인하지 못했어요. 작성 기회는 그대로예요.";
-    throw new Error(message);
-  }
+  const value = await postInterpretJson("/api/campaign-interpret", { text, stageId: run.stageId, runId: run.id, revision: run.revision, attempt: run.world.attempt, world: run.world }, signal);
   const program = value && typeof value === "object" && "program" in value ? parseProgram(value.program) : null;
   if (!program) throw new Error("해석 결과를 읽지 못했어요. 작성 기회는 그대로예요.");
   return program;
@@ -55,7 +49,6 @@ export default function CampaignShell() {
   const writing = useRef(false);
   const conflicted = useRef(false);
   const channel = useRef<BroadcastChannel | null>(null);
-  const [practice, setPractice] = useState<StageRun | null>(null);
   const [finished, setFinished] = useState<StageRun | null>(null);
   const [selectedArchive, setSelectedArchive] = useState<CampaignStoredRun | null>(null);
   const settings = snapshot?.state.settings ?? defaults();
@@ -125,7 +118,7 @@ export default function CampaignShell() {
       return repository.saveActiveRun(run, options);
     });
   }
-  function map() { setPractice(null); setFinished(null); setSelectedArchive(null); setRoute({ kind: "map" }); }
+  function map() { setFinished(null); setSelectedArchive(null); setRoute({ kind: "map" }); }
   async function select(id: StageId, mode: "resume" | "new") {
     const current = snapshotRef.current;
     if (!current || current.state.stages[id - 1].status === "locked" || writing.current) return;
@@ -169,29 +162,25 @@ export default function CampaignShell() {
   const stage = active?.kind === "world" ? resolveStage(active.run.stageId) : null;
   const sharedHeader = <header className="campaign-controls" style={{ maxWidth: 1052, margin: "20px auto", padding: "0 24px" }}><button type="button" className="subtle" disabled={busy} onClick={() => void mutate((current) => repository.updateSettings({ ...settings, muted: !settings.muted }, { writer, expected: current.state }))}>{settings.muted ? "소리 켜기" : "소리 끄기"}</button><label><input type="checkbox" checked={settings.reducedMotion} disabled={busy} onChange={(event) => { const checked = event.target.checked; void mutate((current) => repository.updateSettings({ ...settings, reducedMotion: checked }, { writer, expected: current.state })); }} /> 움직임 줄이기</label>{error ? <p role="alert">{error}</p> : null}</header>;
   if (route.kind === "world" && active?.kind === "world" && stage) {
-    const displayed = practice ?? active.run;
-    const definition = practice ? { ...stage, onboarding: [], segments: [stage.practice] } : stage;
-    return <><CampaignPlay key={displayed.id} run={displayed} stage={definition} settings={settings} practice={!!practice} interpret={interpret} onSettingsChange={(next) => { void mutate((current) => repository.updateSettings(next, { writer, expected: current.state })); }}
+    return <CampaignPlay key={active.run.id} run={active.run} stage={stage} settings={settings} interpret={interpret}
+      best={snapshot.archives.reduce<number | null>((best, item) => { if (item.run.kind !== "world" || item.run.run.stageId !== stage.id) return best; const score = item.run.run.notebook.deaths + item.run.run.notebook.penaltyDeaths; return best === null ? score : Math.min(best, score); }, null)}
+      onSettingsChange={(next) => { void mutate((current) => repository.updateSettings(next, { writer, expected: current.state })); }}
       onCommit={async (next) => {
-        if (practice) {
-          const stopped = next.phase === "blocked" || next.phase === "failed";
-          setPractice({ ...next, phase: stopped ? "bookmark" : next.phase, notebook: { ...next.notebook, bells: 0, erasers: 2, canWrite: next.phase === "bookmark" || stopped, editing: next.phase === "bookmark" || stopped }, execution: stopped ? createExecution() : next.execution });
-          return true;
-        }
         const result = await save({ kind: "world", run: next });
         if (result.ok && next.phase === "cleared") setFinished(next);
         return result.ok;
       }}
-      onRoadmap={() => practice ? setPractice(null) : map()}
-      onPractice={() => setPractice(createPracticeRun(crypto.randomUUID(), stage.practice.enter(null)))}
-      archivedTexts={snapshot.archives.flatMap((item) => item.run.kind === "legacy" ? item.run.save.state.instructions : [])}
-      archivedPrograms={snapshot.archives.flatMap((item) => item.run.kind === "world" ? item.run.run.notebook.instructions : [])} /></>;
+      onRoadmap={map}
+      onNewChallenge={() => { setFinished(null); void select(stage.id, "new"); }} />;
   }
   if (route.kind === "archive") {
     const records = snapshot.archives.filter((item) => !route.stageId || item.reference.stageId === route.stageId);
     const historical = snapshot.recoveries.filter((item) => item.kind === "archive" && (!route.stageId || item.reference.stageId === route.stageId));
     if (selectedArchive?.kind === "legacy") return <StageChronicle current={stageArchive(selectedArchive.save)} archives={records.flatMap((item) => item.run.kind === "legacy" ? [stageArchive(item.run.save)] : [])} settings={settings} onClose={() => setSelectedArchive(null)} />;
-    if (selectedArchive?.kind === "world") return <main className="stage-roadmap"><button type="button" onClick={() => setSelectedArchive(null)}>기록 목록으로</button><h1>{stageSummary(selectedArchive.run.stageId).title}의 발자국</h1><CampaignCanvas world={selectedArchive.run.world} title="마지막 장면" reducedMotion={settings.reducedMotion} paused /><ol>{selectedArchive.run.sceneNotes?.length ? selectedArchive.run.sceneNotes.map((note, index) => <li key={`${note.segmentId}-${index}`}>{note.text}</li>) : selectedArchive.run.notebook.instructions.map((program) => <li key={program.id}>{program.text}</li>)}</ol><ol>{selectedArchive.run.events.map((event) => <li key={event.id}>{event.reason}</li>)}</ol></main>;
+    if (selectedArchive?.kind === "world") {
+      const archivedStage = resolveStage(selectedArchive.run.stageId);
+      if (archivedStage) return <CampaignChronicle run={selectedArchive.run} stage={archivedStage} settings={settings} onClose={() => setSelectedArchive(null)} />;
+    }
     return <main className="stage-roadmap"><button type="button" onClick={map}>여정 지도로</button><h1>지난 모험의 메모</h1>{records.length || historical.length ? <ul>{records.map((item) => <li key={item.reference.runId}><button type="button" onClick={() => setSelectedArchive(item.run)}>{stageSummary(item.reference.stageId).title} · {new Date(item.completedAt).toLocaleDateString("ko-KR")}</button></li>)}{historical.map((item) => <li key={`historical-${item.reference.runId}`}><span>{stageSummary(item.reference.stageId).title} · 개편 전 기록 · {new Date(item.completedAt ?? item.recoveredAt).toLocaleDateString("ko-KR")}</span> <button type="button" onClick={() => download(item.payload, `one-line-per-death-chapter-${item.reference.stageId}-historical.json`)}>원본 내려받기</button></li>)}</ul> : <p>아직 완료한 모험 기록이 없어요.</p>}</main>;
   }
   const recoveredActive = snapshot.recoveries.filter((item) => item.kind === "active");

@@ -14,6 +14,7 @@ import {
   resolved,
   tick,
 } from "./late-helpers";
+import { authoredDefaultWalk } from "./public-kinds";
 
 const act = (actor: "hero" | "keeper", verb: PhysicalAction["verb"], target: string, extra: Partial<PhysicalAction> = {}): PhysicalAction => ({ kind: "action", actor, verb, target, ...extra });
 const seq = (...children: ProgramNode[]): ProgramNode => ({ kind: "sequence", children });
@@ -172,7 +173,7 @@ const fogStairs: SegmentDefinition = {
       next.entities["08-v2-4-upper-floor"].properties.accessible = true;
       return done(next, "등불을 계단 쪽으로 돌리자 안개 속 단차가 드러났어요.");
     }
-    if (parsed.actor === "hero" && parsed.verb === "climb" && parsed.target === "08-v2-4-stairs") {
+    if (parsed.actor === "hero" && (parsed.verb === "climb" || parsed.verb === "move") && parsed.target === "08-v2-4-stairs") {
       if (world.entities[parsed.target].properties.climbable !== true) return blocked(world, "계단 모서리가 안개에 가려져 있어요.");
       return moveActor(world, "hero", "08-v2-4-upper-floor", "밝아진 계단을 따라 위층에 올랐어요.");
     }
@@ -242,6 +243,9 @@ const signalBoat: SegmentDefinition = {
     if (parsed.actor === "hero" && parsed.verb === "dismount" && parsed.target === "08-v2-6-boat") {
       if (world.entities[parsed.target].properties.landingReachable !== true || parsed.destination !== "08-v2-6-dock") return blocked(world, "배가 아직 선착장에 닿지 않았어요.");
       return physical(world, parsed);
+    }
+    if (parsed.actor === "hero" && parsed.verb === "move" && parsed.target === "08-v2-6-boat") {
+      return moveActor(world, "hero", parsed.target, "용사가 묶인 나룻배 앞까지 걸어갔어요.");
     }
     return clarification(world, "신호를 기다린 뒤 배에 타고 선착장에서 내릴 수 있어요.");
   },
@@ -357,6 +361,9 @@ const windLift: SegmentDefinition = {
       return done(next, "풍향기의 바람이 승강기 날개로 향했어요.");
     }
     if (parsed.actor === "hero" && parsed.verb === "board" && parsed.target === "09-v2-3-lift") return physical(world, parsed);
+    if (parsed.actor === "hero" && parsed.verb === "move" && parsed.target === "09-v2-3-lift") {
+      return moveActor(world, "hero", parsed.target, "용사가 멈춘 승강대 앞까지 걸어갔어요.");
+    }
     if (parsed.actor === "hero" && parsed.verb === "dismount" && parsed.target === "09-v2-3-lift") {
       if (world.entities[parsed.target].properties.raised !== true || parsed.destination !== "09-v2-3-upper-floor") return blocked(world, "승강기가 아직 위층에 닿지 않았어요.");
       return physical(world, parsed);
@@ -616,6 +623,9 @@ const foldedWing: SegmentDefinition = {
       if (world.entities[parsed.target].properties.form !== "folded") return blocked(world, "날개가 펼쳐져 있어 오를 수 없어요.");
       return moveActor(world, "hero", "10-v2-4-chest", "접힌 날개를 올라 둘째 봉인의 상자에 닿았어요.");
     }
+    if (parsed.actor === "hero" && parsed.verb === "move" && parsed.target === "10-v2-4-wing") {
+      return blocked(world, "펼쳐진 날개가 앞길을 막고 있어요.");
+    }
     return clarification(world, "송풍 날개를 큰 날개로 돌리거나 접힌 날개를 오를 수 있어요.");
   },
   advance: (world) => ({ world: tick(world), events: [], canChange: false }),
@@ -650,6 +660,9 @@ const finalLatch: SegmentDefinition = {
       const next = structuredClone(world); next.entities[parsed.target].properties.open = true; next.entities[parsed.target].properties.strokes = 1;
       return done(next, "마지막 걸쇠가 풀리며 셋째 봉인이 열렸어요.");
     }
+    if (parsed.actor === "hero" && parsed.verb === "move" && parsed.target === "10-v2-5-latch") {
+      return moveActor(world, "hero", parsed.target, "용사가 마지막 걸쇠 앞까지 걸어갔어요.");
+    }
     return clarification(world, "등지기와 용사에게 서로 떨어진 두 역할을 맡겨 주세요.");
   },
   advance: (world) => ({ world: tick(world), events: [], canChange: false }),
@@ -681,6 +694,9 @@ const finalDoor: SegmentDefinition = {
       next.entities[parsed.target].properties.open = true;
       return done(next, "편지를 댄 문이 조용히 열렸어요.");
     }
+    if (parsed.actor === "hero" && parsed.verb === "move" && parsed.target === "10-v2-6-door") {
+      return moveActor(world, "hero", parsed.target, "용사가 닫힌 마지막 문 앞까지 걸어갔어요.");
+    }
     if ((parsed.actor === "hero" || parsed.actor === "keeper") && parsed.verb === "move" && parsed.target === "10-v2-6-beyond") {
       if (world.entities["10-v2-6-door"].properties.open !== true) return blocked(world, "마지막 문이 아직 닫혀 있어요.");
       const moved = moveActor(world, parsed.actor, parsed.target, `${parsed.actor === "hero" ? "용사" : "등지기"}가 문 너머에 닿았어요.`);
@@ -693,9 +709,10 @@ const finalDoor: SegmentDefinition = {
   complete: (world) => world.entities["10-v2-6-door"].properties.open === true && world.entities["10-v2-6-beyond"].properties.heroArrived === true && world.entities["10-v2-6-beyond"].properties.keeperArrived === true && world.entities.letter.parent === "hero",
 };
 
-const fogSegments = [fogBridge, forkedBridges, windFlag, fogStairs, viewingWindow, signalBoat] as const;
-const towerSegments = [supportedStairs, bellPendulum, windLift, darkStairs, sharedBridge, observedBellDoor] as const;
-const wardenSegments = [foldingArm, armorWalkway, cooledArmor, foldedWing, finalLatch, finalDoor] as const;
+const withSharedDefaults = (segment: SegmentDefinition): SegmentDefinition => ({ ...segment, idleAction: authoredDefaultWalk });
+const fogSegments = [fogBridge, forkedBridges, windFlag, fogStairs, viewingWindow, signalBoat].map(withSharedDefaults);
+const towerSegments = [supportedStairs, bellPendulum, windLift, darkStairs, sharedBridge, observedBellDoor].map(withSharedDefaults);
+const wardenSegments = [foldingArm, armorWalkway, cooledArmor, foldedWing, finalLatch, finalDoor].map(withSharedDefaults);
 
 export const QUIET_LATE_REPRESENTATIVE_PROGRAMS: Readonly<Record<string, InstructionProgram>> = {
   "08-v2-1": program("08-v2-1", "안개를 살펴보고 드러난 돌다리를 건너 출구로 가.", seq(act("hero", "observe", "08-v2-1-mist"), act("hero", "move", "08-v2-1-exit"))),
@@ -725,8 +742,8 @@ export const QUIET_LATE_REPRESENTATIVE_COMMANDS: Readonly<Record<string, string>
 export const QUIET_FOG_STAGE: CampaignStageDefinition = {
   id: 8,
   title: "안개 신호장",
-  contentRevision: "quiet-v1",
-  practice: fogBridge,
+  contentRevision: "shared-v1",
+  practice: fogSegments[0],
   segments: fogSegments,
   story: { afterSegment: "08-v2-6", object: "08-v2-6-flag", text: "먼저 보고 말해 주던 네가 있었지." },
 };
@@ -734,8 +751,8 @@ export const QUIET_FOG_STAGE: CampaignStageDefinition = {
 export const QUIET_TOWER_STAGE: CampaignStageDefinition = {
   id: 9,
   title: "종탑의 안쪽",
-  contentRevision: "quiet-v1",
-  practice: supportedStairs,
+  contentRevision: "shared-v1",
+  practice: towerSegments[0],
   segments: towerSegments,
   story: { afterSegment: "09-v2-6", object: "09-v2-6-bell", text: "큰 종의 잔향 사이로 지나온 탑의 모든 방이 하나의 기계였다는 윤곽이 남았다." },
 };
@@ -743,8 +760,8 @@ export const QUIET_TOWER_STAGE: CampaignStageDefinition = {
 export const QUIET_WARDEN_STAGE: CampaignStageDefinition = {
   id: 10,
   title: "돌아오지 못한 문지기",
-  contentRevision: "quiet-v1",
-  practice: foldingArm,
+  contentRevision: "shared-v1",
+  practice: wardenSegments[0],
   segments: wardenSegments,
   story: { afterSegment: "10-v2-6", object: "letter", text: "여기까지는 내가 길을 적었어. 다음 길은 네가 골라 줘. 이제는 같이 가자." },
 };

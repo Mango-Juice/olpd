@@ -1,6 +1,7 @@
 import { chromium, expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createFirstForkDeathSave } from "./browser-fixtures";
+import { installLegacyBrowserHarness } from "./legacy-browser-harness";
 
 const base = process.env.APP_URL ?? "http://localhost:5173";
 const label = process.env.CHECK_LABEL ?? "v2-local";
@@ -11,6 +12,7 @@ const fixture = JSON.stringify(originalSave);
 const original = originalSave.state;
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+await installLegacyBrowserHarness(page);
 const errors: string[] = [];
 page.on("pageerror", (e) => errors.push(e.message));
 const saved = () =>
@@ -25,7 +27,7 @@ const install = async () => {
   );
   await page.reload();
   await page.getByRole("button", { name: "모험 이어하기" }).click();
-  await page.locator("summary").click();
+  await page.locator(".notebook-summary").click();
 };
 try {
   await install();
@@ -61,7 +63,7 @@ try {
   expect(reordered.events).toEqual(original.events);
   await page.reload();
   await page.getByRole("button", { name: "모험 이어하기" }).click();
-  await page.locator("summary").click();
+  await page.locator(".notebook-summary").click();
   expect((await saved()).instructions).toEqual(reordered.instructions);
   await page.screenshot({
     path: `artifacts/${label}-priority-mobile.png`,

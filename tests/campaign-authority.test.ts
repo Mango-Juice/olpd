@@ -1,8 +1,8 @@
 import { expect, it } from "vitest";
 import { campaignAuthority } from "../src/campaign/authority";
-import { createCampaignRun, createStageRun } from "../src/campaign/run";
+import { createCampaignRun, createStageRun, departStage, writeStageProgram } from "../src/campaign/run";
 import { parseStageRun } from "../src/campaign/run-validation";
-import { RAIN_INTRO, RAIN_PRACTICE } from "../src/campaign/stages/rain";
+import { RAIN_INTRO, RAIN_PRACTICE } from "./fixtures/campaign-worlds/rain";
 import type { CampaignStageDefinition } from "../src/campaign/level";
 import { makeSave } from "../src/game/storage";
 import { newRun } from "../src/game/core";
@@ -11,7 +11,7 @@ import type { InstructionProgram } from "../src/campaign/types";
 import { resolveStage } from "../src/campaign/registry";
 
 const fixtureStage: CampaignStageDefinition = {
-  id: 2, title: "validation fixture", practice: RAIN_PRACTICE,
+  id: 2, title: "validation fixture", contentRevision: "shared-v1", practice: RAIN_PRACTICE,
   segments: Array.from({ length: 5 }, (_, index) => ({ ...RAIN_INTRO, id: `02-${index + 1}` })),
   story: { afterSegment: "02-1", object: "fixture", text: "" },
 };
@@ -66,7 +66,9 @@ it("does not accept a cleared string without all segments and the actual final p
   expect(authority.parse({ kind: "world", run })).toBeNull();
   run.clearedSegments = fixtureStage.segments.map((segment) => segment.id);
   run.world.segmentId = "02-5";
-  run.notebook.visitedBookmarks = [...run.clearedSegments];
+  run.notebook.canWrite = false;
+  run.notebook.departed = true;
+  run.notebook.editing = false;
   expect(authority.parse({ kind: "world", run })).toBeNull();
   run.world.actors.hero.location = { ...run.world.entities["rain-platform"].location };
   expect(authority.parse({ kind: "world", run })).not.toBeNull();
@@ -80,12 +82,12 @@ it("delegates legacy save semantics to the existing validated loader", () => {
 });
 
 it("validates saved execution positions against the corresponding instruction tree", () => {
-  const run = createStageRun("cursor", RAIN_INTRO.enter(null));
+  let run = createStageRun("cursor", RAIN_INTRO.enter(null));
   const program: InstructionProgram = { version: 2, id: "line", text: "상자를 관찰하고 발판을 관찰해", model: "fixture", scope: {}, guard: false, body: { kind: "sequence", children: [
     { kind: "action", actor: "hero", verb: "observe", target: "rain-cork" },
     { kind: "action", actor: "hero", verb: "observe", target: "rain-platform" },
   ] } };
-  run.notebook.instructions = [program];
+  run = departStage(writeStageProgram(run, program));
   const first = stepProgram(run.world, program.body, createCursor(), (world) => ({ world, outcome: "done", reason: "관찰" }));
   run.execution.active = { instructionId: program.id, cursor: first.cursor };
   expect(parseStageRun(run)).not.toBeNull();

@@ -6,12 +6,12 @@ import {
   formatScalar,
   propertyVisibility,
 } from "../src/campaign/presentation";
-import { FORGE_STAGE } from "../src/campaign/stages/forge";
-import { GARDEN_PUBLIC_CATALOG, GARDEN_STAGE } from "../src/campaign/stages/garden";
-import { KITCHEN_STAGE } from "../src/campaign/stages/kitchen";
-import { RAIN_STAGE } from "../src/campaign/stages/rain";
-import { STOREHOUSE_PUBLIC_CATALOG, STOREHOUSE_STAGE } from "../src/campaign/stages/storehouse";
-import { THEATRE_PUBLIC_CATALOG, THEATRE_STAGE } from "../src/campaign/stages/theatre";
+import { FORGE_STAGE } from "./fixtures/campaign-worlds/forge";
+import { GARDEN_PUBLIC_CATALOG, GARDEN_STAGE } from "./fixtures/campaign-worlds/garden";
+import { KITCHEN_STAGE } from "./fixtures/campaign-worlds/kitchen";
+import { RAIN_STAGE } from "./fixtures/campaign-worlds/rain";
+import { STOREHOUSE_PUBLIC_CATALOG, STOREHOUSE_STAGE } from "./fixtures/campaign-worlds/storehouse";
+import { THEATRE_PUBLIC_CATALOG, THEATRE_STAGE } from "./fixtures/campaign-worlds/theatre";
 
 const stages = [RAIN_STAGE, KITCHEN_STAGE, FORGE_STAGE];
 const laterStages = [GARDEN_STAGE, STOREHOUSE_STAGE];

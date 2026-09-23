@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RAIN_BOATS, RAIN_ORGAN, RAIN_REACH } from "../src/campaign/stages/rain-late";
+import { RAIN_BOATS, RAIN_ORGAN, RAIN_REACH } from "./fixtures/campaign-worlds/rain-late";
 import type { SegmentDefinition } from "../src/campaign/level";
 import type { PhysicalAction, WorldState } from "../src/campaign/types";
 

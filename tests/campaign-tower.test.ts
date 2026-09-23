@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { stageDynamics, type SegmentDefinition } from "../src/campaign/level";
-import { copyArchivedProgram, writeProgram } from "../src/campaign/notebook";
-import { advanceStage, createStageRun, departStage } from "../src/campaign/run";
-import { TOWER_STAGE } from "../src/campaign/stages/tower";
+import { writeProgram } from "../src/campaign/notebook";
+import { acknowledgePresentation, advanceStage, createStageRun, departStage } from "../src/campaign/run";
+import { TOWER_STAGE } from "./fixtures/campaign-worlds/tower";
 import type { InstructionProgram, PhysicalAction, ProgramNode, WorldState } from "../src/campaign/types";
 
 const action = (
@@ -184,13 +184,14 @@ describe("tower documented physical alternatives", () => {
       action("hero", "move", "09-4-handle-socket"), action("hero", "take", "09-4-weight"),
       action("hero", "move", "09-4-hero-exit"), action("keeper", "move", "09-4-keeper-exit"),
     ] };
-    const preparation: InstructionProgram = { version: 2, id: "tower-observe", text: "추를 걸고 연결 표본을 관측한다", model: "typed-regression", scope: { stageId: 9, region: "09-4" }, guard: false, body: prepare };
-    const program: InstructionProgram = { version: 2, id: "tower-observed-weight", text: "관측한 종줄과 추로 연결축을 고정해 둘이 나간다", model: "typed-regression", scope: { stageId: 9, region: "09-4" }, guard: false, body };
+    const program: InstructionProgram = { version: 2, id: "tower-observed-weight", text: "추를 걸고 연결을 관측한 뒤 종줄로 연결축을 고정해 둘이 나간다", model: "typed-regression", scope: { stageId: 9, region: "09-4" }, guard: false, body: {
+      kind: "sequence", children: [...prepare.children, ...body.children],
+    } };
     let run = createStageRun("tower-observed-weight", segment("09-4").enter(null));
-    run = { ...run, notebook: copyArchivedProgram(writeProgram(run.notebook, preparation), program) };
+    run = { ...run, notebook: writeProgram(run.notebook, program) };
     run = departStage(run);
     for (let step = 0; step < 120 && run.world.segmentId === "09-4"; step += 1) {
-      run = advanceStage(run, stageDynamics(TOWER_STAGE));
+      run = advanceStage(acknowledgePresentation(run), stageDynamics(TOWER_STAGE));
       expect(run.phase, `${run.statusReason ?? "tower run stopped"} / ${JSON.stringify(run.events.slice(-3))}`).not.toBe("blocked");
     }
     expect(run.world.segmentId).toBe("09-5");

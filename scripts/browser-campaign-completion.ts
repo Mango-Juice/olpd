@@ -107,7 +107,7 @@ async function injectFinalStageRun() {
         import(/* @vite-ignore */ path);
       const [{ RAIN_STAGE }, { createStageRun, departStage }, { writeProgram }] =
         await Promise.all([
-          load("/src/campaign/stages/rain.ts"),
+          load("/tests/fixtures/campaign-worlds/rain.ts"),
           load("/src/campaign/run.ts"),
           load("/src/campaign/notebook.ts"),
         ]);

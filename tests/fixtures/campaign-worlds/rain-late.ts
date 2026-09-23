@@ -1,7 +1,7 @@
-import { at, makeEntity, makeWorld, type SegmentDefinition } from "../level";
-import { currentLoad, executePhysicalAction } from "../physics";
-import type { ActionResult } from "../program";
-import type { Entity, PhysicalAction, WorldState } from "../types";
+import { at, makeEntity, makeWorld, type SegmentDefinition } from "../../../src/campaign/level";
+import { currentLoad, executePhysicalAction } from "../../../src/campaign/physics";
+import type { ActionResult } from "../../../src/campaign/program";
+import type { Entity, PhysicalAction, WorldState } from "../../../src/campaign/types";
 
 function clarification(world: WorldState, reason: string): ActionResult {
   return { world, outcome: "clarification", reason };

@@ -9,6 +9,7 @@ import {
 } from "../src/game/core";
 import { makeSave } from "../src/game/storage";
 import { createFirstForkDeathSave } from "./browser-fixtures";
+import { installLegacyBrowserHarness } from "./legacy-browser-harness";
 const base = process.env.APP_URL ?? "http://localhost:5173";
 await mkdir("artifacts", { recursive: true });
 const original = createFirstForkDeathSave("browser-ui");
@@ -25,6 +26,7 @@ const practice = makeSave(tutorial, {
 });
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+await installLegacyBrowserHarness(page);
 const errors: string[] = [];
 page.on("pageerror", (e) => errors.push(e.message));
 try {

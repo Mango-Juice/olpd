@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { stageDynamics, type SegmentDefinition } from "../src/campaign/level";
-import { advanceStage, createStageRun, departStage } from "../src/campaign/run";
-import { FORGE_STAGE } from "../src/campaign/stages/forge";
-import { GARDEN_STAGE } from "../src/campaign/stages/garden";
-import { KITCHEN_STAGE } from "../src/campaign/stages/kitchen";
-import { RAIN_STAGE } from "../src/campaign/stages/rain";
-import { STOREHOUSE_STAGE } from "../src/campaign/stages/storehouse";
-import { THEATRE_STAGE } from "../src/campaign/stages/theatre";
+import { acknowledgePresentation, advanceStage, createStageRun, departStage } from "../src/campaign/run";
+import { FORGE_STAGE } from "./fixtures/campaign-worlds/forge";
+import { GARDEN_STAGE } from "./fixtures/campaign-worlds/garden";
+import { KITCHEN_STAGE } from "./fixtures/campaign-worlds/kitchen";
+import { RAIN_STAGE } from "./fixtures/campaign-worlds/rain";
+import { STOREHOUSE_STAGE } from "./fixtures/campaign-worlds/storehouse";
+import { THEATRE_STAGE } from "./fixtures/campaign-worlds/theatre";
 import type { PhysicalAction, WorldState } from "../src/campaign/types";
 
 const action = (
@@ -84,11 +84,11 @@ describe("authored safe walking for core chapters 2-7", () => {
     world.entities["04-4-bridge"].properties.safeToCross = true;
     let run = departStage(createStageRun("forge-idle-bridge", world));
     for (let boundary = 0; boundary < 8 && run.world.segmentId === "04-4"; boundary += 1) {
-      run = advanceStage(run, stageDynamics(FORGE_STAGE));
+      run = advanceStage(acknowledgePresentation(run), stageDynamics(FORGE_STAGE));
     }
     expect(run.clearedSegments).toContain("04-4");
     expect(run.world.segmentId).toBe("04-5");
-    expect(run.notebook.bells).toBe(0);
+    expect(run.notebook.deaths).toBe(0);
     expect(run.events.filter((event) => event.segmentId === "04-4" && event.actor === "hero").every((event) => event.instructionId === null)).toBe(true);
   });
 

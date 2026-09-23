@@ -2,12 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   FLOOR_Y,
   START_X,
+  campaignActorVerb,
+  campaignHeroFrame,
+  campaignPresentationDuration,
+  campaignSoundCuesBetween,
   detourPathPoint,
   eventDuration,
   eventHeroFrame,
   reviveHeroFrame,
   soundCuesBetween,
 } from "../src/render/animation";
+import { makeHero, makeWorld } from "../src/campaign/level";
+import type { StagePresentation } from "../src/campaign/run";
 import type { Action, ExecutionEvent, ObservationId } from "../src/game/types";
 
 function fatalEvent(
@@ -124,5 +130,117 @@ describe("renderer animation contract", () => {
       "death",
     ]);
     expect(soundCuesBetween(fatalJump, 0.65, 1, false)).toEqual([]);
+  });
+
+  it("gives campaign actions the Chapter 1 playback lifecycle", () => {
+    const before = makeWorld(2, "02-1", [], makeHero("02-1", 0));
+    const after = makeWorld(2, "02-1", [], makeHero("02-1", 4));
+    const presentation: StagePresentation = {
+      id: "move-once",
+      before,
+      after,
+      events: [{
+        id: "move-event",
+        segmentId: "02-1",
+        tick: 1,
+        attempt: 1,
+        instructionId: "instruction",
+        actor: "hero",
+        target: "exit",
+        verb: "move",
+        outcome: "safe",
+        reason: "걸어갔어요.",
+        changes: [],
+      }],
+      outcome: "safe",
+      repeated: false,
+      life: 1,
+      attempt: 1,
+    };
+    expect(campaignPresentationDuration(presentation)).toBe(4200);
+    expect(
+      campaignPresentationDuration({ ...presentation, repeated: true }),
+    ).toBe(1400);
+    expect(campaignHeroFrame({
+      presentation,
+      progress: 0.5,
+      from: { x: 100, y: 400, rotation: 0 },
+      to: { x: 700, y: 400, rotation: 0 },
+    }).pose).toBe("walk");
+    expect(campaignSoundCuesBetween(presentation, 0, 0.3)).toEqual([
+      "step",
+      "step",
+    ]);
+  });
+
+  it("renders campaign contact, death, revive and clear as distinct poses", () => {
+    const world = makeWorld(2, "02-1", [], makeHero("02-1", 1));
+    const base: StagePresentation = {
+      id: "interaction",
+      before: world,
+      after: structuredClone(world),
+      events: [{
+        id: "push-event",
+        segmentId: "02-1",
+        tick: 1,
+        attempt: 1,
+        instructionId: "instruction",
+        actor: "hero",
+        target: "crate",
+        verb: "push",
+        outcome: "safe",
+        reason: "밀었어요.",
+        changes: [],
+      }],
+      outcome: "safe",
+      repeated: false,
+      life: 1,
+      attempt: 1,
+    };
+    const motion = {
+      presentation: base,
+      progress: 0.55,
+      from: { x: 300, y: 400, rotation: 0 },
+      to: { x: 450, y: 400, rotation: 0 },
+      contact: { x: 380, y: 360 },
+    };
+    const contactFrame = campaignHeroFrame(motion);
+    expect(contactFrame).toMatchObject({
+      pose: "push",
+      contact: { x: 380, y: 360 },
+    });
+    expect(Math.abs(contactFrame.contact!.x - contactFrame.x)).toBeLessThan(85);
+    expect(campaignHeroFrame({ ...motion, progress: 0.1 }).pose).toBe("walk");
+    expect(campaignHeroFrame({ ...motion, progress: 0.9 }).pose).toBe("idle");
+    expect(campaignHeroFrame({
+      ...motion,
+      presentation: { ...base, outcome: "death" },
+      progress: 0.9,
+    }).pose).toBe("death");
+    expect(campaignHeroFrame({
+      ...motion,
+      presentation: { ...base, outcome: "revive", events: [] },
+      progress: 0.5,
+    }).pose).toBe("revive");
+    expect(campaignHeroFrame({
+      ...motion,
+      presentation: { ...base, outcome: "cleared" },
+      progress: 0.95,
+    }).pose).toBe("joy");
+
+    const parallel: StagePresentation = {
+      ...base,
+      events: [
+        ...base.events,
+        {
+          ...base.events[0],
+          id: "keeper-hold",
+          actor: "keeper",
+          verb: "hold",
+        },
+      ],
+    };
+    expect(campaignActorVerb(parallel, "hero")).toBe("push");
+    expect(campaignActorVerb(parallel, "keeper")).toBe("hold");
   });
 });

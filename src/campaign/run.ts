@@ -1,21 +1,22 @@
-import { evaluateCondition } from "./conditions";
-import { clarifyNotebook, createNotebook, departNotebook, rewindNotebook, visitBookmark, type Notebook } from "./notebook";
+import {
+  createNotebook,
+  deleteProgram,
+  departNotebook,
+  killNotebook,
+  moveProgram,
+  placeProgram,
+  retryNotebook,
+  writeProgram,
+  type Notebook,
+} from "./notebook";
 import { createExecution, enterEncounter, scheduleStep, type ExecutionState } from "./scheduler";
 import type { ActionExecutor, ActionResult } from "./program";
-import type { PhysicalAction, StageId, WorldEvent, WorldState } from "./types";
+import type { InstructionProgram, PhysicalAction, StageId, WorldEvent, WorldState } from "./types";
 import type { CampaignStageDefinition } from "./level";
 
-export interface OnboardingLearning {
-  /** Ordered prefix of the stage's required onboarding IDs. */
-  completedSegmentIds: string[];
-  /** Original confirmed input, separate from the active notebook and core chronicle. */
-  attemptedSentences: { segmentId: string; text: string }[];
-}
-
 export interface StageRun {
-  version: 2;
-  /** Authored content contract. Absent only on runs saved before revisioned stages. */
-  contentRevision?: "quiet-v1";
+  version: 3;
+  contentRevision: "shared-v1";
   id: string;
   stageId: StageId;
   revision: number;
@@ -28,47 +29,216 @@ export interface StageRun {
   execution: ExecutionState;
   events: WorldEvent[];
   clearedSegments: string[];
-  /** Confirmed quiet-scene input, kept after each fresh scratch notebook replaces the last. */
-  sceneNotes?: { segmentId: string; text: string }[];
   seal: number;
-  /** Absent only on compatible version-2 runs saved before onboarding existed. */
-  learning?: OnboardingLearning;
+  history: CampaignRunHistory;
+  presentation: StagePresentation | null;
+  presentationHistory: StagePresentation[];
 }
-export function createStageRun(id: string, initial: WorldState, contentRevision?: StageRun["contentRevision"]): StageRun {
+
+export type CampaignHistoryEntry =
+  | { kind: "write"; revision: number; life: number; instruction: InstructionProgram }
+  | { kind: "delete"; revision: number; life: number; instructionId: string; instructionText: string; eraserCost: number; deathCost: number }
+  | { kind: "reorder"; revision: number; life: number; instructionId: string; instructionText: string; from: number; to: number }
+  | { kind: "action"; revision: number; life: number; eventIds: string[] }
+  | { kind: "revive"; revision: number; life: number }
+  | { kind: "abandon"; revision: number; life: number };
+
+export interface CampaignRunHistory {
+  version: 1;
+  initialInstructions: InstructionProgram[];
+  entries: CampaignHistoryEntry[];
+}
+
+export interface StagePresentation {
+  id: string;
+  before: WorldState;
+  after: WorldState;
+  events: WorldEvent[];
+  outcome: "safe" | "death" | "blocked" | "revive" | "cleared";
+  repeated: boolean;
+  life: number;
+  attempt: number;
+  completedSegmentId?: string;
+  nextSegmentId?: string;
+}
+
+export function createStageRun(id: string, initial: WorldState): StageRun {
   if (initial.stageId === 1) throw new Error("1장은 기존 실행기를 사용해요.");
-  return { version: 2, ...(contentRevision ? { contentRevision } : {}), id, stageId: initial.stageId, revision: 0, statusReason: null, waitingStates: [], phase: "bookmark", world: structuredClone(initial), checkpoint: structuredClone(initial), notebook: createNotebook(initial.segmentId), execution: createExecution(), events: [], clearedSegments: [], seal: 0 };
-}
-export function createPracticeRun(id: string, initial: WorldState): StageRun {
-  const run = createStageRun(id, initial);
-  return { ...run, notebook: createNotebook(initial.segmentId, true) };
+  return {
+    version: 3,
+    contentRevision: "shared-v1",
+    id,
+    stageId: initial.stageId,
+    revision: 0,
+    statusReason: null,
+    waitingStates: [],
+    phase: "bookmark",
+    world: structuredClone(initial),
+    checkpoint: structuredClone(initial),
+    notebook: createNotebook(),
+    execution: createExecution(),
+    events: [],
+    clearedSegments: [],
+    seal: 0,
+    history: { version: 1, initialInstructions: [], entries: [] },
+    presentation: null,
+    presentationHistory: [],
+  };
 }
 /** Starts a new campaign with the notebook contract owned by its content revision. */
 export function createCampaignRun(id: string, stage: CampaignStageDefinition): StageRun {
-  const first = stage.onboarding?.[0] ?? stage.segments[0];
+  const first = stage.segments[0];
   if (!first) throw new Error("시작할 구간이 없어요.");
   const initial = first.enter(null);
-  const run = createStageRun(id, initial, stage.contentRevision);
-  if (stage.contentRevision === "quiet-v1") {
-    return { ...run, notebook: createNotebook(first.id, true), sceneNotes: [] };
-  }
-  return { ...run, notebook: createNotebook(first.id, !!stage.onboarding?.length), learning: { completedSegmentIds: [], attemptedSentences: [] } };
+  return createStageRun(id, initial);
 }
 export function departStage(run: StageRun): StageRun {
   if (run.phase !== "bookmark") return run;
-  const learning = run.learning && run.notebook.scratch && run.notebook.instructions[0]
-    ? { ...run.learning, attemptedSentences: [...run.learning.attemptedSentences, { segmentId: run.world.segmentId, text: run.notebook.instructions[0].text }] }
-    : run.learning;
-  const sentence = run.contentRevision === "quiet-v1" && run.notebook.scratch ? run.notebook.instructions[0]?.text : undefined;
-  const sceneNotes = sentence ? [...(run.sceneNotes ?? []), { segmentId: run.world.segmentId, text: sentence }] : run.sceneNotes;
-  return { ...run, phase: "running", statusReason: null, waitingStates: [], revision: run.revision + 1, notebook: departNotebook(run.notebook), ...(learning ? { learning } : {}), ...(sceneNotes ? { sceneNotes } : {}) };
+  return { ...run, phase: "running", statusReason: null, waitingStates: [], revision: run.revision + 1, notebook: departNotebook(run.notebook) };
 }
-/** The notebook and discovery ledger remain outside every world rewind snapshot. */
+
+function visibleIndex(run: StageRun, id: string): number {
+  const stored = run.notebook.instructions.findIndex((item) => item.id === id);
+  return stored < 0 ? -1 : run.notebook.instructions.length - 1 - stored;
+}
+
+export function writeStageProgram(run: StageRun, program: InstructionProgram): StageRun {
+  if ((run.phase !== "bookmark" && run.phase !== "failed") || !run.notebook.canWrite) return run;
+  const notebook = writeProgram(run.notebook, program);
+  const revision = run.revision + 1;
+  return {
+    ...run,
+    revision,
+    notebook,
+    history: {
+      ...run.history,
+      entries: [...run.history.entries, {
+        kind: "write",
+        revision,
+        life: run.notebook.deaths + 1,
+        instruction: structuredClone(program),
+      }],
+    },
+  };
+}
+
+export function deleteStageProgram(run: StageRun, instructionId: string): StageRun {
+  if (run.phase !== "failed") return run;
+  const instruction = run.notebook.instructions.find((item) => item.id === instructionId);
+  if (!instruction) return run;
+  const beforeErasers = run.notebook.erasers;
+  const beforePenalty = run.notebook.penaltyDeaths;
+  const notebook = deleteProgram(run.notebook, instructionId);
+  const revision = run.revision + 1;
+  return {
+    ...run,
+    revision,
+    notebook,
+    history: {
+      ...run.history,
+      entries: [...run.history.entries, {
+        kind: "delete",
+        revision,
+        life: run.notebook.deaths + 1,
+        instructionId,
+        instructionText: instruction.text,
+        eraserCost: beforeErasers - notebook.erasers,
+        deathCost: notebook.penaltyDeaths - beforePenalty,
+      }],
+    },
+  };
+}
+
+export function moveStageProgram(run: StageRun, instructionId: string, direction: "up" | "down"): StageRun {
+  if (run.phase !== "bookmark" && run.phase !== "failed") return run;
+  const from = visibleIndex(run, instructionId);
+  if (from < 0) return run;
+  const notebook = moveProgram(run.notebook, instructionId, direction);
+  if (notebook === run.notebook) return run;
+  const to = notebook.instructions.length - 1 - notebook.instructions.findIndex((item) => item.id === instructionId);
+  const revision = run.revision + 1;
+  const instruction = run.notebook.instructions.find((item) => item.id === instructionId)!;
+  return { ...run, revision, notebook, history: { ...run.history, entries: [...run.history.entries,
+    { kind: "reorder", revision, life: run.notebook.deaths + 1, instructionId, instructionText: instruction.text, from, to }] } };
+}
+
+export function placeStageProgram(run: StageRun, instructionId: string, targetId: string, position: "before" | "after"): StageRun {
+  if (run.phase !== "bookmark" && run.phase !== "failed") return run;
+  const from = visibleIndex(run, instructionId);
+  if (from < 0) return run;
+  const notebook = placeProgram(run.notebook, instructionId, targetId, position);
+  if (notebook === run.notebook) return run;
+  const to = notebook.instructions.length - 1 - notebook.instructions.findIndex((item) => item.id === instructionId);
+  const revision = run.revision + 1;
+  const instruction = run.notebook.instructions.find((item) => item.id === instructionId)!;
+  return { ...run, revision, notebook, history: { ...run.history, entries: [...run.history.entries,
+    { kind: "reorder", revision, life: run.notebook.deaths + 1, instructionId, instructionText: instruction.text, from, to }] } };
+}
+
+export function acknowledgePresentation(run: StageRun): StageRun {
+  return run.presentation ? { ...run, revision: run.revision + 1, presentation: null } : run;
+}
+/** Returns after a death to the chapter entrance. The unused writing chance expires. */
 export function rewindStage(run: StageRun): StageRun {
-  if (run.phase === "cleared" || run.notebook.clarificationId) return run;
+  if (run.phase !== "failed") return run;
+  const before = structuredClone(run.world);
   const world = structuredClone(run.checkpoint);
   world.attempt = run.world.attempt + 1;
-  world.facts = run.notebook.scratch ? [...run.checkpoint.facts] : [...run.world.facts];
-  return { ...run, revision: run.revision + 1, phase: "bookmark", world, waitingStates: [], notebook: rewindNotebook(run.notebook), execution: createExecution() };
+  const revision = run.revision + 1;
+  const presentation: StagePresentation = {
+    id: `${run.id}:${revision}:revive`,
+    before,
+    after: structuredClone(world),
+    events: [],
+    outcome: "revive",
+    repeated: false,
+    life: run.notebook.deaths + 1,
+    attempt: before.attempt,
+  };
+  return {
+    ...run,
+    revision,
+    phase: "bookmark",
+    world,
+    waitingStates: [],
+    notebook: retryNotebook(run.notebook),
+    execution: createExecution(),
+    clearedSegments: [],
+    seal: 0,
+    history: { ...run.history, entries: [...run.history.entries, { kind: "revive", revision, life: run.notebook.deaths + 1 }] },
+    presentation,
+    presentationHistory: [...run.presentationHistory, presentation],
+  };
+}
+
+export const retryStage = rewindStage;
+
+/** A blocked run yields a writing chance only after accepting one death. */
+export function abandonStage(run: StageRun): StageRun {
+  if (run.phase !== "blocked") return run;
+  const revision = run.revision + 1;
+  const notebook = killNotebook(run.notebook);
+  const presentation: StagePresentation = {
+    id: `${run.id}:${revision}:abandon`,
+    before: structuredClone(run.world),
+    after: structuredClone(run.world),
+    events: [],
+    outcome: "death",
+    repeated: false,
+    life: run.notebook.deaths + 1,
+    attempt: run.world.attempt,
+  };
+  return {
+    ...run,
+    revision,
+    phase: "failed",
+    notebook,
+    statusReason: "막힌 길에서 돌아오기로 했어요. · +1데스",
+    history: { ...run.history, entries: [...run.history.entries,
+      { kind: "abandon", revision, life: run.notebook.deaths + 1 }] },
+    presentation,
+    presentationHistory: [...run.presentationHistory, presentation],
+  };
 }
 export interface EnvironmentStep {
   world: WorldState;
@@ -98,9 +268,10 @@ function validIdleMove(world: WorldState, action: PhysicalAction): boolean {
     && Object.hasOwn(world.entities, action.target) && world.visible.includes(action.target);
 }
 function stopUnsafeIdle(run: StageRun, execution: ExecutionState, reason: string, action?: PhysicalAction): StageRun {
+  const revision = run.revision + 1;
   const event: WorldEvent = {
     segmentId: run.world.segmentId,
-    id: `${run.id}:${run.revision + 1}:idle-stop`,
+    id: `${run.id}:${revision}:idle-stop`,
     tick: run.world.tick,
     attempt: run.world.attempt,
     instructionId: null,
@@ -110,29 +281,45 @@ function stopUnsafeIdle(run: StageRun, execution: ExecutionState, reason: string
     reason,
     changes: [],
   };
-  return { ...run, revision: run.revision + 1, phase: "blocked", statusReason: reason, waitingStates: [], execution, events: [...run.events, event] };
+  const presentation: StagePresentation = {
+    id: `${run.id}:${revision}:presentation`,
+    before: structuredClone(run.world),
+    after: structuredClone(run.world),
+    events: [structuredClone(event)],
+    outcome: "blocked",
+    repeated: false,
+    life: run.notebook.deaths + 1,
+    attempt: run.world.attempt,
+  };
+  return {
+    ...run,
+    revision,
+    phase: "blocked",
+    statusReason: reason,
+    waitingStates: [],
+    execution,
+    events: [...run.events, event],
+    history: { ...run.history, entries: [...run.history.entries,
+      { kind: "action", revision, life: run.notebook.deaths + 1, eventIds: [event.id] }] },
+    presentation,
+    presentationHistory: [...run.presentationHistory, presentation],
+  };
 }
 export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
   if (run.phase !== "running" && run.phase !== "waiting") return run;
+  if (run.presentation) return run;
+  const before = structuredClone(run.world);
+  const priorityPrograms = [...run.notebook.instructions].reverse();
   const traces: { before: WorldState; result: ActionResult }[] = [];
-  const scheduled = scheduleStep(run.world, run.notebook.instructions, run.execution, (world, action) => {
+  const scheduled = scheduleStep(run.world, priorityPrograms, run.execution, (world, action) => {
     const before = structuredClone(world);
     const result = dynamics.execute(world, action);
     traces.push({ before, result });
     return result;
   });
-  let waitingForRule = false;
-  let unresolvedConditionalRule = false;
-  if (scheduled.step === null) {
-    for (const program of run.notebook.instructions) {
-      if (!program.condition || (program.scope.stageId !== undefined && program.scope.stageId !== run.world.stageId)
-        || (program.scope.region !== undefined && program.scope.region !== run.world.actors.hero.location.region)) continue;
-      const value = evaluateCondition(run.world, program.condition);
-      // A false guard is dormant until a later atomic boundary; it is not a wait instruction.
-      if (value === false && !program.guard) waitingForRule = true;
-      if (value === "unknown") unresolvedConditionalRule = true;
-    }
-  }
+  // A non-matching conditional rule is dormant. It never freezes default movement;
+  // only an explicit wait/until node can keep the world in a waiting phase.
+  const waitingForRule = false;
   let world = scheduled.step?.world ?? run.world;
   const events: WorldEvent[] = [];
   const instructionId = scheduled.instructionId;
@@ -140,9 +327,8 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
   let stepOutcome = scheduled.step?.outcome;
   let stepReason = scheduled.reason;
   let hasStep = scheduled.step !== null;
-  let idleAction: PhysicalAction | null = null;
-  const mayAdvanceByDefault = scheduled.step === null && !waitingForRule && !unresolvedConditionalRule && scheduled.execution.active === null
-    && scheduled.execution.suspended.length === 0 && run.notebook.scratch !== true
+  const mayAdvanceByDefault = scheduled.step === null && scheduled.execution.active === null
+    && scheduled.execution.suspended.length === 0
     && dynamics.isOnboardingSegment?.(run.world.segmentId) !== true;
   if (mayAdvanceByDefault && dynamics.idleAction) {
     let candidate: PhysicalAction | null;
@@ -157,11 +343,7 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
     if (candidate) {
       const before = structuredClone(run.world);
       const result = dynamics.execute(structuredClone(run.world), candidate);
-      if (result.outcome !== "done" && result.outcome !== "progress") {
-        return stopUnsafeIdle(run, scheduled.execution, `기본 전진 경로가 더 이상 안전하지 않아 원래 자리에서 멈췄어요. ${result.reason}`, candidate);
-      }
       traces.push({ before, result });
-      idleAction = candidate;
       world = result.world;
       actions = [candidate];
       stepOutcome = result.outcome;
@@ -178,18 +360,12 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
   if (scheduled.interrupted) events.unshift({ segmentId: world.segmentId, id: `${run.id}:${run.revision + 1}:interrupt`, tick: world.tick, attempt: world.attempt, instructionId: scheduled.interrupted, actor: null, target: null, outcome: "interrupted", reason: "더 높은 경계 지침을 먼저 실행하고 중단 지점을 보관했어요.", changes: [] });
   if (scheduled.step?.outcome === "clarification" && instructionId) {
     if (!events.some((event) => event.outcome === "clarification")) events.push({ segmentId: world.segmentId, id: `${run.id}:${run.revision + 1}:clarification`, tick: world.tick, attempt: world.attempt, instructionId, actor: null, target: null, outcome: "clarification", reason: scheduled.reason ?? "지침의 뜻을 확인해야 해요.", changes: [] });
-    const checkpoint = structuredClone(run.checkpoint);
-    checkpoint.attempt = run.world.attempt + 1;
-    checkpoint.facts = [...run.world.facts];
-    return { ...run, revision: run.revision + 1, phase: "bookmark", world: checkpoint, waitingStates: [],
-      notebook: clarifyNotebook(run.notebook, instructionId), execution: createExecution(), events: [...run.events, ...events],
-      statusReason: run.contentRevision === "quiet-v1"
-        ? scheduled.reason ?? "문장을 조금만 바꿔 주세요."
-        : `${scheduled.reason ?? "지침의 뜻을 확인해야 해요."} 종을 쓰지 않고 돌아왔어요. 해당 메모를 무료로 고칠 수 있어요.` };
+    stepOutcome = "blocked";
+    stepReason = scheduled.reason ?? "지침의 뜻을 확인하지 못해 안전한 곳에서 멈췄어요.";
   }
   // A commanded ride keeps moving after the boarding action has finished.
   // This advances the environment only; it never invents a landing/action.
-  const autonomousRide = run.contentRevision === "quiet-v1" && !hasStep && !waitingForRule
+  const autonomousRide = !hasStep && !waitingForRule
     && Object.values(world.actors).some((actor) => actor.riding !== null);
   let phase: StageRun["phase"] = stepOutcome === "failure" ? "failed" : (!hasStep && !waitingForRule && !autonomousRide) || stepOutcome === "blocked" ? "blocked" : "running";
   let statusReason = waitingForRule ? "메모의 조건이 바뀌기를 안전한 곳에서 기다리고 있어요." : stepReason;
@@ -201,7 +377,6 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
     const changes = worldChanges(beforeEnvironment, world);
     if (changes.length > 0) events.push({ segmentId: world.segmentId, id: `${run.id}:${run.revision + 1}:reaction`, tick: world.tick, attempt: world.attempt, instructionId, actor: null, target: null, outcome: "observed", reason: environment.reason ?? "물체와 장치의 상태가 바뀌었어요.", changes });
     if (environment.failure) {
-      if (idleAction) return stopUnsafeIdle(run, scheduled.execution, `기본 전진 뒤 세계가 안전하지 않아 원래 자리에서 멈췄어요. ${environment.failure}`, idleAction);
       phase = "failed";
       statusReason = environment.failure;
       events.push({ segmentId: world.segmentId, id: `${run.id}:${run.revision + 1}:environment`, tick: world.tick, attempt: world.attempt, instructionId, actor: null, target: null, outcome: "failure", reason: environment.failure, changes: [] });
@@ -222,56 +397,84 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
       statusReason = "장치가 같은 상태로 되돌아왔지만 대기 조건은 이루어지지 않았어요. 현재 조건과 연결을 확인해 주세요.";
     } else waitingStates = [...run.waitingStates, signature];
   }
-  let next: StageRun = { ...run, waitingStates, revision: run.revision + 1, world, phase, statusReason, execution: scheduled.execution, events: [...run.events, ...events] };
-  if (phase === "failed") return rewindStage(next);
-  if (dynamics.segmentComplete(world)) {
-    const segmentId = world.segmentId;
-    const following = dynamics.nextSegment(world);
-    if (dynamics.isOnboardingSegment?.(segmentId)) {
-      if (!next.learning) throw new Error("도입 진행 기록이 없어요.");
-      next.learning = { ...next.learning, completedSegmentIds: next.learning.completedSegmentIds.includes(segmentId)
-        ? next.learning.completedSegmentIds : [...next.learning.completedSegmentIds, segmentId] };
-      if (!following) return { ...next, phase: "cleared" };
-      const remainsOnboarding = dynamics.isOnboardingSegment(following.segmentId);
-      return {
-        ...next,
-        world: following,
-        checkpoint: structuredClone(following),
-        phase: "bookmark",
-        statusReason: null,
-        waitingStates: [],
-        notebook: createNotebook(following.segmentId, remainsOnboarding),
-        execution: createExecution(),
-        // Onboarding actions live in the learning record, not the core adventure chronicle.
-        events: [],
-      };
-    }
-    next.clearedSegments = [...new Set([...run.clearedSegments, segmentId])];
-    if (!following) return { ...next, phase: "cleared" };
-    if (run.contentRevision === "quiet-v1") {
-      const seal = dynamics.sealAfter(segmentId);
-      return {
-        ...next,
-        world: following,
-        checkpoint: structuredClone(following),
-        phase: "bookmark",
-        statusReason: null,
-        waitingStates: [],
-        notebook: createNotebook(following.segmentId, true),
-        execution: createExecution(),
-        seal: seal ?? next.seal,
-      };
-    }
-    const firstVisit = !next.notebook.visitedBookmarks.includes(following.segmentId);
-    next = { ...next, world: following, phase: firstVisit ? "bookmark" : "running", execution: enterEncounter(next.execution), notebook: visitBookmark(next.notebook, following.segmentId) };
-    const seal = dynamics.sealAfter(segmentId);
-    if (seal !== null) {
-      if (run.stageId !== 10) throw new Error("일반 장의 책갈피를 부활 지점으로 바꿀 수 없어요.");
-      next.seal = seal;
-      next.checkpoint = structuredClone(following);
+  if (phase === "blocked" && !events.some((event) => event.outcome === "blocked" || event.outcome === "clarification")) {
+    events.push({
+      segmentId: world.segmentId,
+      id: `${run.id}:${run.revision + 1}:blocked`,
+      tick: world.tick,
+      attempt: world.attempt,
+      instructionId,
+      actor: null,
+      target: null,
+      outcome: "blocked",
+      reason: statusReason ?? "현재 메모로 더 진행할 수 없어 안전한 곳에서 멈췄어요.",
+      changes: [],
+    });
+  }
+  const completedSegmentId = phase !== "failed" && dynamics.segmentComplete(world) ? world.segmentId : undefined;
+  const following = completedSegmentId ? dynamics.nextSegment(world) : null;
+  if (completedSegmentId && !following) phase = "cleared";
+  const outcome: StagePresentation["outcome"] = phase === "failed"
+    ? "death"
+    : phase === "blocked"
+      ? "blocked"
+      : phase === "cleared"
+        ? "cleared"
+        : "safe";
+  const revision = run.revision + 1;
+  const actionEvents = events.filter((event) => event.actor !== null && event.outcome === "safe");
+  const presentation: StagePresentation = {
+    id: `${run.id}:${revision}:presentation`,
+    before,
+    after: structuredClone(world),
+    events: structuredClone(events),
+    outcome,
+    repeated: actionEvents.length > 0 && actionEvents.every((event) => event.repeated === true),
+    life: run.notebook.deaths + 1,
+    attempt: before.attempt,
+    ...(completedSegmentId ? { completedSegmentId } : {}),
+    ...(following ? { nextSegmentId: following.segmentId } : {}),
+  };
+  let notebook = phase === "failed" ? killNotebook(run.notebook) : run.notebook;
+  let execution = phase === "failed" || phase === "blocked" ? createExecution() : scheduled.execution;
+  let nextWorld = world;
+  let clearedSegments = run.clearedSegments;
+  let seal = run.seal;
+  if (completedSegmentId) {
+    clearedSegments = [...run.clearedSegments, completedSegmentId];
+    if (following) {
+      nextWorld = following;
+      execution = enterEncounter(scheduled.execution);
+      phase = "running";
+      statusReason = null;
+      waitingStates = [];
+      seal = dynamics.sealAfter(completedSegmentId) ?? seal;
     }
   }
-  return next;
+  return {
+    ...run,
+    waitingStates,
+    revision,
+    world: nextWorld,
+    phase,
+    statusReason,
+    execution,
+    notebook,
+    events: [...run.events, ...events],
+    clearedSegments,
+    seal,
+    history: {
+      ...run.history,
+      entries: [...run.history.entries, {
+        kind: "action",
+        revision,
+        life: run.notebook.deaths + 1,
+        eventIds: events.map((event) => event.id),
+      }],
+    },
+    presentation,
+    presentationHistory: [...run.presentationHistory, presentation],
+  };
 }
 
 function worldChanges(before: WorldState, after: WorldState): WorldEvent["changes"] {

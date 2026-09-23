@@ -1,10 +1,11 @@
+import { MEMORY_INITIAL_ERASERS, MEMORY_DELETE_PENALTY } from "./memory";
 import type { Action, Observation, ObservationId, Room } from "./types";
 export const GAME_VERSION = "1";
 export const DUNGEON_VERSION = "1";
 export const RULES_VERSION = "1";
 export const CONFIG = {
-  initialErasers: 2,
-  deletionPenalty: 3,
+  initialErasers: MEMORY_INITIAL_ERASERS,
+  deletionPenalty: MEMORY_DELETE_PENALTY,
   maxInstructionLength: 80,
   requestTimeoutMs: 15000,
   requestsPerMinute: 30,

@@ -3,6 +3,7 @@ import { resolveActionReferences } from "../conditions";
 import { executePhysicalAction } from "../physics";
 import type { ActionExecutor, ActionResult } from "../program";
 import type { Entity, InstructionProgram, PhysicalAction, ProgramNode, Scalar, WorldState } from "../types";
+import { authoredDefaultWalk, authoredPublicKind } from "./public-kinds";
 
 type EarlyStageId = 2 | 3 | 4;
 
@@ -37,6 +38,7 @@ function quietEntity(
 ): Entity {
   return makeEntity(id, name, region, x, {
     description: name,
+    publicKind: authoredPublicKind(id),
     reach: 1.25,
     properties,
     ...patch,
@@ -136,6 +138,10 @@ function practiceFrom(segment: SegmentDefinition, id: string): SegmentDefinition
     },
     complete: () => false,
   };
+}
+
+function withSharedDefaults(segment: SegmentDefinition): SegmentDefinition {
+  return { ...segment, idleAction: authoredDefaultWalk };
 }
 
 const FULL_FLOOR: SceneComposition = { floors: [{ from: 0, to: 10, y: 0 }], ceiling: true };
@@ -749,27 +755,27 @@ const forge6: SegmentDefinition = {
 export const QUIET_RAIN_STAGE: CampaignStageDefinition = {
   id: 2,
   title: "비에 잠긴 회랑",
-  contentRevision: "quiet-v1",
-  segments: [rain1, rain2, rain3, rain4, rain5, rain6],
-  practice: practiceFrom(rain1, "02-v2-practice"),
+  contentRevision: "shared-v1",
+  segments: [rain1, rain2, rain3, rain4, rain5, rain6].map(withSharedDefaults),
+  practice: practiceFrom(withSharedDefaults(rain1), "02-v2-practice"),
   story: { afterSegment: "02-v2-6", object: "02-v2-6-exit", text: "빗소리가 등 뒤로 멀어진다." },
 };
 
 export const QUIET_KITCHEN_STAGE: CampaignStageDefinition = {
   id: 3,
   title: "태엽 부엌",
-  contentRevision: "quiet-v1",
-  segments: [kitchen1, kitchen2, kitchen3, kitchen4, kitchen5, kitchen6],
-  practice: practiceFrom(kitchen1, "03-v2-practice"),
+  contentRevision: "shared-v1",
+  segments: [kitchen1, kitchen2, kitchen3, kitchen4, kitchen5, kitchen6].map(withSharedDefaults),
+  practice: practiceFrom(withSharedDefaults(kitchen1), "03-v2-practice"),
   story: { afterSegment: "03-v2-6", object: "03-v2-6-exit", text: "주방의 박자가 문 너머로 잦아든다." },
 };
 
 export const QUIET_FORGE_STAGE: CampaignStageDefinition = {
   id: 4,
   title: "바람 대장간",
-  contentRevision: "quiet-v1",
-  segments: [forge1, forge2, forge3, forge4, forge5, forge6],
-  practice: practiceFrom(forge1, "04-v2-practice"),
+  contentRevision: "shared-v1",
+  segments: [forge1, forge2, forge3, forge4, forge5, forge6].map(withSharedDefaults),
+  practice: practiceFrom(withSharedDefaults(forge1), "04-v2-practice"),
   story: { afterSegment: "04-v2-6", object: "04-v2-6-exit", text: "이어진 바람이 위층까지 따라온다." },
 };
 

@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { stageDynamics } from "../src/campaign/level";
-import { writeProgram } from "../src/campaign/notebook";
-import { advanceStage, createStageRun, departStage, rewindStage, type StageRun } from "../src/campaign/run";
+import { acknowledgePresentation, advanceStage, createStageRun, departStage, writeStageProgram, type StageRun } from "../src/campaign/run";
 import { parseStageRun } from "../src/campaign/run-validation";
-import { WARDEN_STAGE } from "../src/campaign/stages/warden";
+import { WARDEN_STAGE } from "./fixtures/campaign-worlds/warden";
 import { deepSeekPublicWorld } from "../server/campaign-deepseek";
 import type { PhysicalAction, Predicate, ProgramNode, Scalar, WorldState } from "../src/campaign/types";
 
@@ -17,10 +16,10 @@ const wait = (entity: string, property: string, value: Scalar): ProgramNode => (
 const turnTo = (route: string): ProgramNode => ({ kind: "until", body: action("turn", "10-2-vane"), condition: condition("10-2-vane", "route", route) });
 function play(index: number, body: ProgramNode, initial?: WorldState, restore = false): StageRun {
   let run = createStageRun(`warden-${index}`, initial ?? stage.segments[index].enter(null));
-  run.notebook = writeProgram(run.notebook, { version: 2, id: `plan-${index}`, text: "공개된 관계를 따라 실제로 조작한다.", model: "fixture", scope: { stageId: 10, region: run.world.actors.hero.location.region }, guard: false, body });
+  run = writeStageProgram(run, { version: 2, id: `plan-${index}`, text: "공개된 관계를 따라 실제로 조작한다.", model: "fixture", scope: { stageId: 10, region: run.world.actors.hero.location.region }, guard: false, body });
   run = departStage(run);
   for (let i = 0; i < 300 && (run.phase === "running" || run.phase === "waiting"); i++) {
-    run = advanceStage(run, dynamics);
+    run = advanceStage(acknowledgePresentation(run), dynamics);
     if (restore) { const saved = parseStageRun(JSON.parse(JSON.stringify(run))); expect(saved, `invalid save at ${run.world.segmentId}: ${run.statusReason}`).not.toBeNull(); run = saved!; }
   }
   expect(run.clearedSegments, `${stage.segments[index].id}: ${run.phase} ${run.statusReason}`).toContain(stage.segments[index].id);
@@ -70,40 +69,12 @@ it.each([
   [5, "hero crosses first", finalA()], [5, "keeper crosses first", finalB],
 ] as const)("core %i completes %s through the real scheduler", (index, _label, plan) => { play(index, plan, undefined, true); });
 
-it("integrates all six beats, both checkpoint transitions, persistent inventory and observed references", () => {
-  let run = createStageRun("whole-warden", stage.segments[0].enter(null));
-  const plans = [gestureB, pinB, garden(true), toolB, sightA, finalA(true)];
-  for (const [index, body] of plans.entries()) {
-    run.notebook = writeProgram(run.notebook, { version: 2, id: `whole-${index}`, text: `봉인 ${index}의 공개된 장치를 조작한다.`, model: "fixture", scope: { stageId: 10, region: run.world.actors.hero.location.region }, guard: false, body });
-    run = departStage(run);
-    for (let tick = 0; tick < 300 && (run.phase === "running" || run.phase === "waiting"); tick++) {
-      run = advanceStage(run, dynamics);
-      const saved = parseStageRun(JSON.parse(JSON.stringify(run)));
-      expect(saved, `invalid integrated save ${index}: ${run.statusReason}`).not.toBeNull();
-      run = saved!;
-    }
-    expect(run.clearedSegments, `integrated ${index}: ${run.statusReason}`).toContain(stage.segments[index].id);
-    if (index === 1) expect([run.seal, run.checkpoint.segmentId]).toEqual([1, "10-3"]);
-    if (index === 3) expect([run.seal, run.checkpoint.segmentId]).toEqual([2, "10-5"]);
-    if (index === 4) {
-      const rewound = rewindStage(run);
-      expect(rewound.world.segmentId).toBe("10-5");
-      expect(rewound.world.facts.every((fact) => fact.attempt < rewound.world.attempt)).toBe(true);
-      expect(rewound.world.entities["10-2-pin"].properties.latchedOut).toBe(true);
-      expect(rewound.world.entities["10-4-front-door"].properties.locked).toBe(true);
-    }
-  }
-  expect(run.phase).toBe("cleared");
-  expect(run.clearedSegments).toHaveLength(6);
-  expect(run.notebook.bells).toBe(0);
-  expect(run.notebook.visitedBookmarks).toHaveLength(6);
-});
 
 it("defaults to an already opened safe approach without choosing or actuating a seal solution", () => {
   const run = play(1, seq(turnTo("pressure"), wait("10-2-pin", "removed", true), turnTo("vent")));
   expect(run.events.some((event) => event.instructionId === null && event.target === "10-2-balcony" && event.actor === "hero")).toBe(true);
   expect(run.notebook.instructions).toHaveLength(1);
-  expect(run.notebook.bells).toBe(0);
+  expect(run.notebook.deaths).toBe(0);
   const last = departStage(createStageRun("no-auto-role", stage.segments[5].enter(null)));
   const paused = advanceStage(last, dynamics);
   expect(paused.phase).toBe("blocked");
@@ -216,7 +187,7 @@ describe("warden physical boundaries", () => {
     expect(segment.execute!(state, action("place", "10-6-wedge", { actor: "keeper", destination: "10-6-right-socket" })).outcome).toBe("clarification");
   });
 
-  it("moving a holder releases support before crossing and rewind retains previous seals", () => {
+  it("moving a holder releases support before crossing", () => {
     const segment = stage.segments[5]; let state = segment.enter(null);
     state = segment.execute!(state, action("hold", "10-5-left-handle", { actor: "keeper" })).world;
     state = segment.execute!(state, action("hold", "10-5-right-handle")).world;
@@ -224,12 +195,5 @@ describe("warden physical boundaries", () => {
     expect(state.actors.hero.holding).toBeNull();
     expect(state.entities["10-6-work-door"].properties.open).toBe(false);
     expect(segment.execute!(state, action("move", "10-6-lock-plate")).outcome).toBe("failure");
-    const afterSealOne = play(1, pinA);
-    expect(afterSealOne.seal).toBe(1);
-    expect(afterSealOne.checkpoint.segmentId).toBe("10-3");
-    const retry = rewindStage(afterSealOne);
-    expect(retry.world.segmentId).toBe("10-3");
-    expect(retry.seal).toBe(1);
-    expect(retry.world.entities["10-2-pin"].properties.latchedOut).toBe(true);
   });
 });

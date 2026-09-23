@@ -1,8 +1,19 @@
 import type { SceneComposition } from "../campaign/level";
 import type { Actor, Entity, EntityId, Verb, WorldState } from "../campaign/types";
-import { idleHeroFrame } from "./animation";
+import type { StagePresentation } from "../campaign/run";
+import {
+  campaignActorVerb,
+  campaignHeroFrame,
+  idleHeroFrame,
+} from "./animation";
 import { PALETTE as C } from "./palette";
-import { drawDungeonBackdrop, drawDungeonFloor, drawDungeonMasonry, drawHero } from "./scene";
+import {
+  drawBlockedMotif,
+  drawDungeonBackdrop,
+  drawDungeonFloor,
+  drawDungeonMasonry,
+  drawHero,
+} from "./scene";
 
 export const CAMPAIGN_VIEW_WIDTH = 960;
 export const CAMPAIGN_VIEW_HEIGHT = 500;
@@ -49,6 +60,8 @@ export interface CampaignSceneOptions {
   previousWorld?: WorldState;
   transitionProgress?: number;
   actorVerbs?: Partial<Record<Actor["id"], Verb>>;
+  presentation?: StagePresentation | null;
+  playbackProgress?: number;
   labelScale?: number;
 }
 
@@ -1310,15 +1323,6 @@ function drawEntityShape(
   ctx.strokeStyle = entity.movable ? C.mint : "rgba(240,237,220,.48)";
   ctx.lineWidth = entity.movable ? 3 : 2;
 
-  if (selected) {
-    ctx.save();
-    ctx.strokeStyle = "rgba(128,215,182,.78)";
-    ctx.lineWidth = 3;
-    ctx.setLineDash([5, 6]);
-    ctx.beginPath(); ctx.ellipse(0, -38, 48, 58, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.restore();
-  }
-
   if (kind === "winch" || kind === "pulley") {
     ctx.lineWidth = 4; ctx.strokeRect(-31, -70, 62, 65);
     ctx.beginPath(); ctx.arc(0, -43, 23, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
@@ -1798,42 +1802,76 @@ export function renderCampaignScene(
   ctx: CanvasRenderingContext2D,
   options: CampaignSceneOptions,
 ): CampaignEntityLayout[] {
-  const { world, time, reducedMotion, selectedEntityId, actorVerbs = {} } = options;
+  const {
+    time,
+    reducedMotion,
+    selectedEntityId,
+    actorVerbs = {},
+    presentation = null,
+  } = options;
+  const world = presentation?.after ?? options.world;
   const labelScale = Math.max(1, Math.min(2.3, options.labelScale ?? 1));
   const geometry = createSceneGeometry(world, options.scene);
-  const progress = reducedMotion ? 1 : Math.max(0, Math.min(1, options.transitionProgress ?? 1));
-  const eased = progress * progress * (3 - 2 * progress);
-  const previous = options.previousWorld?.segmentId === world.segmentId && options.previousWorld.attempt === world.attempt
-    ? options.previousWorld : world;
+  const presentationProgress = Math.max(
+    0,
+    Math.min(1, options.playbackProgress ?? options.transitionProgress ?? 1),
+  );
+  const worldProgress = presentation
+    ? presentation.outcome === "revive"
+      ? 1
+      : Math.max(0, Math.min(1, (presentationProgress - 0.18) / 0.58))
+    : reducedMotion
+      ? 1
+      : presentationProgress;
+  const eased = worldProgress * worldProgress * (3 - 2 * worldProgress);
+  const previous = presentation?.before ??
+    (options.previousWorld?.segmentId === world.segmentId && options.previousWorld.attempt === world.attempt
+      ? options.previousWorld
+      : world);
+  const stateWorld = presentation && presentationProgress < 0.53
+    ? presentation.before
+    : world;
   const oldActors = layoutCampaignActors(previous, options.scene);
   const finalActors = layoutCampaignActors(world, options.scene);
   const actors = finalActors.map((actor) => {
     const old = oldActors.find((item) => item.id === actor.id) ?? actor;
     const moved = Math.hypot(actor.x - old.x, actor.y - old.y) > 1;
-    const jump = actorVerbs[actor.id] === "jump" && moved ? Math.sin(progress * Math.PI) * 72 : 0;
     return {
       ...actor,
-      x: old.x + (actor.x - old.x) * eased + Math.sin(actor.rotation) * jump,
-      y: old.y + (actor.y - old.y) * eased - Math.cos(actor.rotation) * jump,
+      old,
+      x: old.x + (actor.x - old.x) * eased,
+      y: old.y + (actor.y - old.y) * eased,
       moved,
       facing: (actor.x < old.x ? -1 : 1) as 1 | -1,
     };
   });
   const oldLayouts = layoutCampaignEntities(previous, options.scene, labelScale);
   const layouts = layoutCampaignEntities(world, options.scene, labelScale).map((layout) => {
-    let dx = 0; let dy = 0;
-    if (layout.relation === "carried" && layout.actorId) {
+    let finalX = layout.x;
+    let finalY = layout.y;
+    if (layout.relation !== "world" && layout.actorId) {
       const actor = actors.find((item) => item.id === layout.actorId);
       const final = finalActors.find((item) => item.id === layout.actorId);
-      if (actor && final) { dx = actor.x - final.x; dy = actor.y - final.y; }
-    } else if (layout.entity.movable && progress < 1) {
-      const old = oldLayouts.find((item) => item.id === layout.id);
-      if (old) { dx = (old.x - layout.x) * (1 - eased); dy = (old.y - layout.y) * (1 - eased); }
+      if (actor && final) {
+        finalX += actor.x - final.x;
+        finalY += actor.y - final.y;
+      }
     }
-    return { ...layout, x: layout.x + dx, y: layout.y + dy,
+    const old = oldLayouts.find((item) => item.id === layout.id);
+    const interpolate = worldProgress < 1 && old &&
+      (layout.entity.movable || layout.relation !== "world" || old.relation !== "world");
+    const x = interpolate ? old.x + (finalX - old.x) * eased : finalX;
+    const y = interpolate ? old.y + (finalY - old.y) * eased : finalY;
+    const dx = x - layout.x;
+    const dy = y - layout.y;
+    return {
+      ...layout,
+      entity: stateWorld.entities[layout.id] ?? layout.entity,
+      x,
+      y,
       labelBounds: { ...layout.labelBounds, x: layout.labelBounds.x + dx, y: layout.labelBounds.y + dy } };
   });
-  drawBackdrop(ctx, world, time, reducedMotion, geometry, options.scene);
+  drawBackdrop(ctx, stateWorld, time, reducedMotion, geometry, options.scene);
   const byId = new Map(layouts.map((layout) => [layout.id, layout]));
   const drawnConnections = new Set<string>();
   const connect = (from: CampaignEntityLayout, to: CampaignEntityLayout) => {
@@ -1855,40 +1893,110 @@ export function renderCampaignScene(
   for (const layout of layouts.filter((item) => item.relation !== "carried")) {
     drawEntityShape(ctx, layout, layout.id === selectedEntityId);
   }
+  const carriedMotion = new Map<string, { x: number; y: number; opacity: number }>();
   for (const actor of actors) {
-    const source = world.actors[actor.id];
-    const moving = actor.moved && progress < 1 && !source.riding;
-    const verb = actorVerbs[actor.id];
-    if (!source.riding && !(moving && verb === "jump")) {
+    let actorOpacity = 1;
+    const source = stateWorld.actors[actor.id] ?? world.actors[actor.id];
+    const moving = actor.moved && worldProgress < 1 && !source.riding;
+    const verb = presentation
+      ? campaignActorVerb(presentation, actor.id)
+      : actorVerbs[actor.id];
+    if (actor.id !== "hero" && !source.riding && !(moving && verb === "jump")) {
       ctx.save(); ctx.translate(actor.x, actor.y); ctx.rotate(actor.rotation);
       ctx.fillStyle = "rgba(5,8,20,.25)"; ctx.beginPath(); ctx.ellipse(0, 2, 29, 5, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     }
     if (actor.id === "hero") {
-      drawHero(ctx, {
-        ...idleHeroFrame(reducedMotion ? 0 : time),
-        x: actor.x, y: actor.y, rotation: actor.rotation,
-        pose: moving ? verb === "jump" ? "jump" : verb === "duck" ? "duck" : "walk" : "idle",
-        phase: progress * 3, facing: actor.facing, dust: 0, shadow: 0,
-      }, reducedMotion ? 0 : time);
+      const targetId = presentation?.events.find(
+        (event) => event.actor === "hero" && event.target,
+      )?.target;
+      const target = targetId ? byId.get(targetId) : undefined;
+      const hero = presentation
+        ? campaignHeroFrame({
+            presentation,
+            progress: presentationProgress,
+            from: actor.old,
+            to: finalActors.find((item) => item.id === "hero") ?? actor,
+            verb,
+            ...(target
+              ? { contact: { x: target.x, y: target.y - 34 } }
+              : {}),
+          })
+        : {
+            ...idleHeroFrame(reducedMotion ? 0 : time),
+            x: actor.x,
+            y: actor.y,
+            rotation: actor.rotation,
+            pose: moving
+              ? verb === "jump"
+                ? "jump" as const
+                : verb === "duck"
+                  ? "duck" as const
+                  : "walk" as const
+              : "idle" as const,
+            phase: worldProgress * 3,
+            facing: actor.facing,
+            dust: 0,
+            shadow: 0,
+          };
+      carriedMotion.set(actor.id, { x: hero.x - actor.x, y: hero.y - actor.y, opacity: hero.opacity });
+      actor.x = hero.x; actor.y = hero.y; actor.rotation = hero.rotation;
+      actorOpacity = hero.opacity;
+      drawHero(ctx, hero, reducedMotion ? 0 : time);
+      if (
+        presentation?.outcome === "blocked" &&
+        presentationProgress > 0.76
+      ) {
+        drawBlockedMotif(ctx, hero, reducedMotion ? 0 : time);
+      }
       if (world.visible.some((id) => world.entities[id]?.properties.equipment === true && world.entities[id]?.parent === "hero")) {
-        ctx.save(); ctx.translate(actor.x, actor.y); ctx.rotate(actor.rotation);
+        ctx.save(); ctx.globalAlpha = hero.opacity; ctx.translate(hero.x, hero.y); ctx.rotate(hero.rotation);
         drawWornLetter(ctx, 0, 0); ctx.restore();
       }
     } else {
-      ctx.save(); ctx.translate(actor.x, actor.y); ctx.rotate(actor.rotation);
+      const interaction = !!verb && !["move", "jump", "duck", "climb", "board", "dismount", "observe", "remember"].includes(verb);
+      const contactAmount = presentation && interaction
+        ? Math.sin(Math.max(0, Math.min(1, (presentationProgress - 0.2) / 0.72)) * Math.PI)
+        : 0;
+      ctx.save();
+      ctx.translate(actor.x, actor.y);
+      ctx.rotate(actor.rotation + contactAmount * 0.045);
+      ctx.scale(1 - contactAmount * 0.025, 1 + contactAmount * 0.025);
       drawKeeper(ctx, 0, 0); ctx.restore();
-    }
-    if (source.holding) {
-      const target = byId.get(source.holding);
-      if (target) {
-        ctx.save(); ctx.strokeStyle = C.gold; ctx.lineWidth = 3;
-        const cosine = Math.cos(actor.rotation); const sine = Math.sin(actor.rotation);
-        const contactX = target.x + sine * 25; const contactY = target.y - cosine * 25;
-        ctx.beginPath(); ctx.moveTo(actor.x + cosine * 23 + sine * 35, actor.y + sine * 23 - cosine * 35); ctx.lineTo(contactX, contactY); ctx.stroke();
-        ctx.fillStyle = C.gold; ctx.beginPath(); ctx.arc(contactX, contactY, 4, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      const targetId = presentation?.events.find(
+        (event) => event.actor === actor.id && event.target,
+      )?.target;
+      const target = targetId ? byId.get(targetId) : undefined;
+      if (target && contactAmount > 0.01 && Math.hypot(target.x - actor.x, target.y - actor.y) < 95) {
+        ctx.save();
+        ctx.globalAlpha = Math.min(0.85, contactAmount);
+        ctx.strokeStyle = C.mintDark;
+        ctx.lineWidth = 9;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        ctx.moveTo(actor.x - 18, actor.y - 35);
+        ctx.quadraticCurveTo((actor.x + target.x) / 2, actor.y - 26, target.x, target.y - 34);
+        ctx.stroke();
+        ctx.fillStyle = C.peachLight;
+        ctx.beginPath(); ctx.arc(target.x, target.y - 34, 4, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
       }
     }
-    ctx.save(); ctx.fillStyle = actor.id === "hero" ? "#dcebc9" : C.gold;
+    if (source.holding && (!presentation || presentationProgress >= 1)) {
+      const target = byId.get(source.holding);
+      if (target) {
+        ctx.save(); ctx.lineCap = "round";
+        const cosine = Math.cos(actor.rotation); const sine = Math.sin(actor.rotation);
+        const contactX = target.x + sine * 25; const contactY = target.y - cosine * 25;
+        const handX = actor.x + cosine * 23 + sine * 35;
+        const handY = actor.y + sine * 23 - cosine * 35;
+        ctx.strokeStyle = C.mintDark; ctx.lineWidth = 9;
+        ctx.beginPath(); ctx.moveTo(handX, handY); ctx.lineTo(contactX, contactY); ctx.stroke();
+        ctx.strokeStyle = "#dcebc9"; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(handX, handY); ctx.lineTo(contactX, contactY); ctx.stroke();
+        ctx.fillStyle = C.peachLight; ctx.beginPath(); ctx.arc(contactX, contactY, 4, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+      }
+    }
+    ctx.save(); ctx.globalAlpha = actorOpacity; ctx.fillStyle = actor.id === "hero" ? "#dcebc9" : C.gold;
     ctx.font = '600 13px "Noto Sans KR", sans-serif'; ctx.textAlign = "center";
     const sideways = Math.abs(actor.rotation) === Math.PI / 2;
     const labelY = actor.rotation === Math.PI ? actor.y + 124 : sideways ? actor.y - 57 : actor.y - 116;
@@ -1897,7 +2005,13 @@ export function renderCampaignScene(
     ctx.restore();
   }
   for (const layout of layouts.filter((item) => item.relation === "carried")) {
-    drawEntityShape(ctx, layout, layout.id === selectedEntityId);
+    const motion = layout.actorId ? carriedMotion.get(layout.actorId) : undefined;
+    ctx.save();
+    ctx.globalAlpha = motion?.opacity ?? 1;
+    const presented = motion ? { ...layout, x: layout.x + motion.x, y: layout.y + motion.y,
+      labelBounds: { ...layout.labelBounds, x: layout.labelBounds.x + motion.x, y: layout.labelBounds.y + motion.y } } : layout;
+    drawEntityShape(ctx, presented, layout.id === selectedEntityId);
+    ctx.restore();
   }
   return layouts;
 }

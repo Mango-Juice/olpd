@@ -6,6 +6,14 @@ import {
   TUTORIAL_ROOM,
 } from "./content";
 import { copyInstruction, getRunHistory } from "./history";
+import {
+  appendMemory,
+  consumeMemoryWrite,
+  deleteMemory,
+  grantMemoryWrite,
+  moveMemory,
+  placeMemory,
+} from "./memory";
 import type {
   Action,
   ExecutionEvent,
@@ -266,11 +274,12 @@ export function addInstruction(
         ? 3
         : state.tutorialStep
     : state.tutorialStep;
+  const memory = appendMemory(state, instruction);
   return recordTransition(
     state,
     {
-      instructions: [...state.instructions, instruction],
-      canWrite: false,
+      instructions: memory.instructions,
+      canWrite: memory.canWrite,
       tutorialStep,
     },
     (revision) => ({
@@ -290,20 +299,12 @@ export function moveInstruction(
 ): RunState {
   if (state.phase !== "ready" && state.phase !== "dead") return state;
 
-  const index = state.instructions.findIndex(
-    (instruction) => instruction.id === instructionId,
-  );
+  const index = state.instructions.findIndex((instruction) => instruction.id === instructionId);
   if (index < 0) return state;
-
-  const targetIndex = direction === "up" ? index + 1 : index - 1;
-  if (targetIndex < 0 || targetIndex >= state.instructions.length) return state;
-
-  const instructions = [...state.instructions];
-  [instructions[index], instructions[targetIndex]] = [
-    instructions[targetIndex],
-    instructions[index],
-  ];
-  return recordTransition(state, { instructions }, (revision) => ({
+  const moved = moveMemory<Instruction, RunState>(state, instructionId, direction, (instruction) => instruction.id);
+  if (moved === state) return state;
+  const targetIndex = moved.instructions.findIndex((instruction) => instruction.id === instructionId);
+  return recordTransition(state, { instructions: moved.instructions }, (revision) => ({
     kind: "reorder",
     revision,
     life: state.deaths + 1,
@@ -324,26 +325,11 @@ export function placeInstruction(
   if (state.phase !== "ready" && state.phase !== "dead") return state;
   if (instructionId === targetId) return state;
 
-  const instruction = state.instructions.find(
-    (item) => item.id === instructionId,
-  );
+  const instruction = state.instructions.find((item) => item.id === instructionId);
   if (!instruction) return state;
-
-  const instructions = state.instructions.filter(
-    (item) => item.id !== instructionId,
-  );
-  const targetIndex = instructions.findIndex((item) => item.id === targetId);
-  if (targetIndex < 0) return state;
-
-  const insertionIndex = position === "before" ? targetIndex + 1 : targetIndex;
-  instructions.splice(insertionIndex, 0, instruction);
-  if (
-    instructions.every(
-      (item, index) => item.id === state.instructions[index]?.id,
-    )
-  ) {
-    return state;
-  }
+  const placed = placeMemory<Instruction, RunState>(state, instructionId, targetId, position, (item) => item.id);
+  if (placed === state) return state;
+  const instructions = placed.instructions;
   const sourceIndex = state.instructions.findIndex(
     (item) => item.id === instructionId,
   );
@@ -363,7 +349,8 @@ export function placeInstruction(
 
 export function startRun(state: RunState): RunState {
   if (state.phase !== "ready") return state;
-  return bump(state, { phase: "running", canWrite: false, lastEvent: null });
+  const memory = consumeMemoryWrite(state);
+  return bump(state, { phase: "running", canWrite: memory.canWrite, lastEvent: null });
 }
 
 /** Commits exactly one judgment. Animation code may present lastEvent after this transition. */
@@ -408,7 +395,7 @@ export function step(state: RunState): RunState {
         ...eventPatch,
         phase: "dead",
         deaths: state.deaths + 1,
-        canWrite: true,
+        canWrite: grantMemoryWrite(state).canWrite,
         tutorialStep: state.tutorial
           ? Math.max(state.tutorialStep, 2)
           : state.tutorialStep,
@@ -453,6 +440,7 @@ export function step(state: RunState): RunState {
       point = 0;
     }
   }
+  const memory = consumeMemoryWrite(state);
   return recordTransition(
     state,
     {
@@ -461,7 +449,7 @@ export function step(state: RunState): RunState {
       point,
       phase,
       tutorialStep,
-      canWrite: false,
+      canWrite: memory.canWrite,
     },
     (revision) => ({
       kind: "action",
@@ -475,13 +463,14 @@ export function step(state: RunState): RunState {
 /** Returns to the dungeon entrance. The unused writing chance expires here. */
 export function retry(state: RunState): RunState {
   if (state.phase !== "dead") return state;
+  const memory = consumeMemoryWrite(state);
   return recordTransition(
     state,
     {
       phase: "ready",
       room: 0,
       point: 0,
-      canWrite: false,
+      canWrite: memory.canWrite,
       tutorialStep:
         state.tutorial && state.tutorialStep === 3 ? 4 : state.tutorialStep,
     },
@@ -504,29 +493,13 @@ export function deleteInstruction(
   );
   if (index < 0) return state;
 
-  const instructions = state.instructions.filter(
-    (_, instructionIndex) => instructionIndex !== index,
-  );
-  if (state.erasers > 0) {
-    return recordTransition(
-      state,
-      { instructions, erasers: state.erasers - 1 },
-      (revision) => ({
-        kind: "delete",
-        revision,
-        life: state.deaths + 1,
-        instructionId,
-        instructionText: state.instructions[index].text,
-        eraserCost: 1,
-        deathCost: 0,
-      }),
-    );
-  }
+  const deleted = deleteMemory<Instruction, RunState>(state, instructionId, (instruction) => instruction.id);
   return recordTransition(
     state,
     {
-      instructions,
-      penaltyDeaths: state.penaltyDeaths + CONFIG.deletionPenalty,
+      instructions: deleted.state.instructions,
+      erasers: deleted.state.erasers,
+      penaltyDeaths: deleted.state.penaltyDeaths,
     },
     (revision) => ({
       kind: "delete",
@@ -534,8 +507,8 @@ export function deleteInstruction(
       life: state.deaths + 1,
       instructionId,
       instructionText: state.instructions[index].text,
-      eraserCost: 0,
-      deathCost: CONFIG.deletionPenalty,
+      eraserCost: deleted.eraserCost,
+      deathCost: deleted.deathCost,
     }),
   );
 }
@@ -548,7 +521,7 @@ export function abandon(state: RunState): RunState {
     {
       phase: "dead",
       deaths: state.deaths + 1,
-      canWrite: true,
+      canWrite: grantMemoryWrite(state).canWrite,
     },
     (revision) => ({
       kind: "abandon",

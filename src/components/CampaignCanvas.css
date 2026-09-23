@@ -3,22 +3,7 @@
   min-width: 0;
 }
 
-.campaign-map-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 18px;
-  background: #101322;
-  color: #f0eddc;
-}
-
-.campaign-map-heading strong { font-size: 15px; }
-.campaign-map-heading span {
-  color: #b8c1cc;
-  font-size: 11px;
-  white-space: nowrap;
-}
+.campaign-canvas { position: relative; }
 
 .campaign-map-viewport {
   width: 100%;
@@ -41,9 +26,4 @@
 .campaign-scene-canvas.is-interactive:focus-visible {
   outline: 2px solid #b5c99d;
   outline-offset: -3px;
-}
-
-@media (max-width: 520px) {
-  .campaign-map-heading { padding: 11px 12px; }
-  .campaign-map-heading strong { font-size: 14px; }
 }

@@ -1,8 +1,8 @@
 import { createCursor, stepProgram, type ProgramCursor } from "../src/campaign/program";
-import { KITCHEN_STAGE } from "../src/campaign/stages/kitchen";
-import { RAIN_INTRO } from "../src/campaign/stages/rain";
-import { RAIN_REACH } from "../src/campaign/stages/rain-late";
-import { THEATRE_STAGE } from "../src/campaign/stages/theatre";
+import { KITCHEN_STAGE } from "../tests/fixtures/campaign-worlds/kitchen";
+import { RAIN_INTRO } from "../tests/fixtures/campaign-worlds/rain";
+import { RAIN_REACH } from "../tests/fixtures/campaign-worlds/rain-late";
+import { THEATRE_STAGE } from "../tests/fixtures/campaign-worlds/theatre";
 import type { SegmentDefinition } from "../src/campaign/level";
 import type {
   InstructionProgram,

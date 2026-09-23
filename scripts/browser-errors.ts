@@ -1,5 +1,7 @@
 import { chromium, expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
+import { createFirstForkDeathSave } from "./browser-fixtures";
+import { installLegacyBrowserHarness } from "./legacy-browser-harness";
 const base = process.env.APP_URL ?? "http://localhost:5173";
 const label = process.env.CHECK_LABEL ?? "local";
 await mkdir("artifacts", { recursive: true });
@@ -8,24 +10,31 @@ const context = await browser.newContext({
   viewport: { width: 390, height: 844 },
 });
 const page = await context.newPage();
+await installLegacyBrowserHarness(page);
+const fixtureSave = createFirstForkDeathSave("browser-errors-fixture");
+fixtureSave.settings.muted = false;
+const fixture = JSON.stringify(fixtureSave);
 const report: string[] = [];
 try {
   await page.goto(base);
-  await page.getByRole("button", { name: "첫 번째 한 줄 남기기" }).click();
+  await page.evaluate(
+    (raw) => localStorage.setItem("one-line-per-death:save", raw),
+    fixture,
+  );
+  await page.reload();
+  await page.getByRole("button", { name: "모험 이어하기" }).click();
   const before = await page.evaluate(() =>
     localStorage.getItem("one-line-per-death:save"),
   );
   await page.route("**/api/interpret", (route) => route.abort("failed"));
   await page.locator("#instruction").fill("앞으로 전진해");
-  await page
-    .locator("#instruction")
-    .dispatchEvent("keydown", {
-      key: "Enter",
-      code: "Enter",
-      keyCode: 229,
-      isComposing: false,
-      bubbles: true,
-    });
+  await page.locator("#instruction").dispatchEvent("keydown", {
+    key: "Enter",
+    code: "Enter",
+    keyCode: 229,
+    isComposing: false,
+    bubbles: true,
+  });
   await expect(page.locator(".error")).not.toBeVisible();
   await expect(
     page.getByRole("button", { name: "읽고 있어요" }),
@@ -49,10 +58,24 @@ try {
   const received = new Promise<void>((r) => (caught = r));
   await page.route("**/api/interpret", async (route) => {
     caught();
-    const response = await route.fetch();
     await barrier;
-    await route.fulfill({ response }).catch(() => {});
+    await route
+      .fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          action: "advance",
+          appliesTo: ["clear"],
+          uncertainty: 0,
+          model: "browser-late-response-fixture",
+          rulesVersion: "1",
+        }),
+      })
+      .catch(() => {});
   });
+  const beforeLateResponse = await page.evaluate(() =>
+    localStorage.getItem("one-line-per-death:save"),
+  );
   await page
     .getByRole("button", { name: /뜻을 확인해 볼까|기억하고 출발/ })
     .click();
@@ -60,11 +83,14 @@ try {
   await page.locator("#instruction").fill("계속 앞으로 걸어");
   resolve();
   await page.waitForTimeout(1000);
-  await expect(
-    page.getByRole("button", { name: "기억하고 출발" }),
-  ).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "기억하고 출발" })).toBeEnabled();
   await expect(page.locator("#instruction")).toHaveValue("계속 앞으로 걸어");
-  report.push("Late actual Jev response ignored after draft changes");
+  expect(
+    await page.evaluate(() =>
+      localStorage.getItem("one-line-per-death:save"),
+    ),
+  ).toBe(beforeLateResponse);
+  report.push("Late deterministic response ignored after draft changes");
   await page.unroute("**/api/interpret");
   await page.locator("#instruction").focus();
   await page.setViewportSize({ width: 390, height: 430 });
@@ -107,12 +133,12 @@ try {
   report.push("Quota failure retains original saved data");
   const broken = await browser.newContext();
   const bp = await broken.newPage();
+  await installLegacyBrowserHarness(bp);
+  await bp.addInitScript(() => {
+    localStorage.setItem("one-line-per-death:save", "{broken");
+  });
   await bp.goto(base);
-  await bp.evaluate(() =>
-    localStorage.setItem("one-line-per-death:save", "{broken"),
-  );
-  await bp.reload();
-  await expect(bp.getByRole("alert")).toContainText("원본은 그대로");
+  await expect(bp.getByRole("alert")).toContainText("자동 저장을 완료하지 못했어요");
   expect(
     await bp.evaluate(() => localStorage.getItem("one-line-per-death:save")),
   ).toBe("{broken");
@@ -125,6 +151,7 @@ try {
         base,
         checkedAt: new Date().toISOString(),
         passed: true,
+        interpretationMode: "deterministic fixture; no provider calls",
         report,
         bounds,
       },

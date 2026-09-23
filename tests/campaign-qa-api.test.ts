@@ -6,7 +6,7 @@ import { handleCampaignInterpret, isLoopbackAddress } from "../server/campaign-h
 import { campaignContext } from "../server/campaign-service.ts";
 import { resetRateLimitsForTests } from "../server/rate-limit.ts";
 import { resolveStage } from "../src/campaign/registry.ts";
-import { THEATRE_STAGE } from "../src/campaign/stages/theatre.ts";
+import { THEATRE_STAGE } from "./fixtures/campaign-worlds/theatre.ts";
 import type { WorldState } from "../src/campaign/types.ts";
 
 const resolveQaStage: typeof resolveStage = (id) => id === THEATRE_STAGE.id ? THEATRE_STAGE : resolveStage(id);

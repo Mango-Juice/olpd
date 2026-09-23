@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { stageDynamics, type SegmentDefinition } from "../src/campaign/level";
-import { writeProgram } from "../src/campaign/notebook";
-import { advanceStage, createStageRun, departStage, type StageRun } from "../src/campaign/run";
+import { acknowledgePresentation, advanceStage, createStageRun, departStage, writeStageProgram, type StageRun } from "../src/campaign/run";
 import { parseStageRun } from "../src/campaign/run-validation";
-import { THEATRE_PUBLIC_CATALOG, THEATRE_STAGE } from "../src/campaign/stages/theatre";
+import { THEATRE_PUBLIC_CATALOG, THEATRE_STAGE } from "./fixtures/campaign-worlds/theatre";
 import type { InstructionProgram, PhysicalAction, Predicate, ProgramNode, WorldState } from "../src/campaign/types";
 
 const action = (
@@ -48,7 +47,7 @@ interface Played { run: StageRun; completed: WorldState | null; boundaries: Worl
 function playLiteral(region: string, body: ProgramNode, limit = 240): Played {
   const definition = segment(region);
   let run = createStageRun(`theatre-${region}-${Math.random()}`, definition.enter(null));
-  run = { ...run, notebook: writeProgram(run.notebook, literal(`line-${region}`, region, body)) };
+  run = writeStageProgram(run, literal(`line-${region}`, region, body));
   run = restored(departStage(run));
   const dynamics = stageDynamics(THEATRE_STAGE);
   const nextSegment = dynamics.nextSegment;
@@ -59,7 +58,7 @@ function playLiteral(region: string, body: ProgramNode, limit = 240): Played {
   };
   const boundaries: WorldState[] = [structuredClone(run.world)];
   for (let step = 0; step < limit && !completed && (run.phase === "running" || run.phase === "waiting"); step += 1) {
-    run = restored(advanceStage(run, dynamics));
+    run = restored(advanceStage(acknowledgePresentation(run), dynamics));
     boundaries.push(structuredClone(run.world));
     expect(run.phase, run.statusReason ?? "theatre run stopped").not.toBe("blocked");
   }
@@ -326,45 +325,15 @@ describe("theatre failure, clarification, and safe incomplete states", () => {
     expect(entered.visible).toEqual(expect.arrayContaining(["07-2-weight", "07-2-weight-mark"]));
   });
 
-  it("rewinds a real same-body hold-and-leave failure with both actors restored", () => {
-    const definition = segment("07-3");
-    let run = createStageRun("theatre-role-failure", definition.enter(null));
-    run = { ...run, notebook: writeProgram(run.notebook, literal("bad-role", "07-3", sequence(
-      action("hero", "hold", "07-3-pressure"), action("hero", "move", "07-3-hero-exit"),
-    ))) };
-    run = departStage(run);
-    for (let step = 0; step < 20 && run.world.attempt === 1; step += 1) run = restored(advanceStage(run, stageDynamics(THEATRE_STAGE)));
-    expect(run.world.attempt).toBe(2);
-    expect(run.phase).toBe("bookmark");
-    expect(run.notebook.bells).toBe(1);
-    expect(run.world.actors.hero.location.x).toBe(0);
-    expect(run.world.actors.keeper.location.x).toBe(0);
-    expect(run.world.entities["07-3-bridge"].properties.extended).toBe(false);
-  });
-
-  it("returns a same-actor parallel role conflict for free repair rather than inventing a companion action", () => {
-    const definition = segment("07-3");
-    let run = createStageRun("theatre-role-clarification", definition.enter(null));
-    run = { ...run, notebook: writeProgram(run.notebook, literal("same-body", "07-3", parallel(
-      action("hero", "hold", "07-3-pressure"), action("hero", "move", "07-3-far-rail"),
-    ))) };
-    run = departStage(run);
-    run = restored(advanceStage(run, stageDynamics(THEATRE_STAGE)));
-    expect(run.phase).toBe("bookmark");
-    expect(run.notebook.bells).toBe(0);
-    expect(run.notebook.clarificationId).toBe("same-body");
-    expect(run.world.attempt).toBe(2);
-  });
-
   it("stops an unbounded moon-light hold as a safe incomplete deadlock without a bell", () => {
     const definition = segment("07-5");
     let run = createStageRun("theatre-infinite-hold", definition.enter(null));
-    run = { ...run, notebook: writeProgram(run.notebook, literal("hold-forever", "07-5", action("keeper", "hold", "07-5-moon-handle"))) };
+    run = writeStageProgram(run, literal("hold-forever", "07-5", action("keeper", "hold", "07-5-moon-handle")));
     run = departStage(run);
-    run = restored(advanceStage(run, stageDynamics(THEATRE_STAGE)));
-    run = restored(advanceStage(run, stageDynamics(THEATRE_STAGE)));
+    run = restored(advanceStage(acknowledgePresentation(run), stageDynamics(THEATRE_STAGE)));
+    run = restored(advanceStage(acknowledgePresentation(run), stageDynamics(THEATRE_STAGE)));
     expect(run.phase).toBe("blocked");
-    expect(run.notebook.bells).toBe(0);
+    expect(run.notebook.deaths).toBe(0);
     expect(run.world.actors.keeper.holding).toBe("07-5-moon-handle");
     expect(run.world.entities["07-5-latch"].properties.locked).toBe(false);
     expect(run.world.entities["07-5-curtain"].properties.open).toBe(false);

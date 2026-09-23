@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { FORGE_PUBLIC_CATALOG, FORGE_STAGE } from "../src/campaign/stages/forge";
-import { stageDynamics, type SegmentDefinition } from "../src/campaign/level";
-import { writeProgram } from "../src/campaign/notebook";
-import { advanceStage, createStageRun, departStage, type StageRun } from "../src/campaign/run";
-import { parseStageRun } from "../src/campaign/run-validation";
-import type { InstructionProgram, PhysicalAction, ProgramNode, WorldState } from "../src/campaign/types";
+import { FORGE_PUBLIC_CATALOG, FORGE_STAGE } from "./fixtures/campaign-worlds/forge";
+import type { SegmentDefinition } from "../src/campaign/level";
+import type { PhysicalAction, WorldState } from "../src/campaign/types";
 
 const action = (
   verb: PhysicalAction["verb"],
@@ -50,49 +47,6 @@ function run(definition: SegmentDefinition, state: WorldState, actions: readonly
   return actions.reduce((current, physicalAction) => act(definition, current, physicalAction), state);
 }
 
-function saved(runState: StageRun): StageRun {
-  const parsed = parseStageRun(JSON.parse(JSON.stringify(runState)));
-  expect(parsed).not.toBeNull();
-  return parsed!;
-}
-
-function instruction(id: string, region: string, children: ProgramNode[]): InstructionProgram {
-  return {
-    version: 2,
-    id,
-    text: `${region} 물리 절차`,
-    model: "typed-regression",
-    scope: { stageId: 4, region },
-    guard: false,
-    body: { kind: "sequence", children },
-  };
-}
-
-function carryIsConserved(state: WorldState): void {
-  const hero = state.actors.hero;
-  const parented = Object.values(state.entities).filter((item) => item.parent === "hero").map((item) => item.id).sort();
-  expect([...hero.carrying].sort()).toEqual(parented);
-  for (const id of hero.carrying) expect(state.entities[id].location).toEqual(hero.location);
-}
-
-function playBookmark(runState: StageRun, program: InstructionProgram, expectedNext: string | "cleared"): StageRun {
-  let next: StageRun = {
-    ...runState,
-    notebook: writeProgram(runState.notebook, program),
-  };
-  next = departStage(next);
-  for (let step = 0; step < 100 && next.world.segmentId === program.scope.region && next.phase !== "cleared"; step += 1) {
-    next = advanceStage(next, stageDynamics(FORGE_STAGE));
-    expect(next.phase, next.statusReason ?? "stage run stopped").not.toBe("blocked");
-  }
-  if (expectedNext === "cleared") expect(next.phase).toBe("cleared");
-  else {
-    expect(next.world.segmentId).toBe(expectedNext);
-    expect(next.phase).toBe("bookmark");
-  }
-  carryIsConserved(next.world);
-  return saved(next);
-}
 
 describe("wind forge public contract", () => {
   it("exports all five encounters, isolated practice, one optional story, and observable finite state", () => {
@@ -134,75 +88,6 @@ describe("wind forge public contract", () => {
 });
 
 describe("continuous wind-forge StageRun", () => {
-  it("runs 04-1 through 04-5 through the scheduler and round-trips every room boundary", () => {
-    let stageRun = createStageRun("forge-continuous", segment("04-1").enter(null));
-
-    stageRun = playBookmark(stageRun, instruction("forge-04-1", "04-1", [
-      action("pull", "04-1-lever", { destination: "04-1-latch", amount: 1 }),
-      action("move", "04-1-exit"),
-    ]), "04-2");
-    expect(stageRun.world.entities["forge-furnace"].properties.latched).toBe(true);
-
-    stageRun = playBookmark(stageRun, instruction("forge-04-2", "04-2", [
-      action("take", "04-2-tongs"),
-      action("turn", "04-2-splitter"),
-      { kind: "wait", until: { kind: "property", entity: "04-2-plate", property: "stampHits", comparison: "gte", value: 3, source: "visible" } },
-      action("turn", "04-2-splitter"),
-      action("move", "04-2-anvil"),
-      action("take", "04-2-plate"),
-      action("move", "04-2-pedestal"),
-      action("place", "04-2-plate", { destination: "04-2-pedestal" }),
-      action("move", "04-2-exit"),
-    ]), "04-3");
-    expect(stageRun.world.actors.hero.carrying).toContain("04-2-tongs");
-    expect(stageRun.world.entities["04-2-tongs"].parent).toBe("hero");
-    expect(stageRun.world.entities["04-2-splitter"].properties.route).toBe("bypass");
-    expect(stageRun.world.entities["04-2-plate"].parent).toBe("04-2-pedestal");
-    expect(stageRun.world.visible).not.toContain("04-2-plate");
-
-    stageRun = playBookmark(stageRun, instruction("forge-04-3", "04-3", [
-      action("turn", "04-3-cooling-valve"),
-      { kind: "wait", until: { kind: "property", entity: "04-3-key", property: "temperature", comparison: "eq", value: 0, source: "visible" } },
-      action("take", "04-3-key"),
-      action("move", "04-3-lock"),
-      action("place", "04-3-key", { destination: "04-3-lock" }),
-      action("move", "04-3-exit"),
-    ]), "04-4");
-    expect(stageRun.world.entities["04-3-key"].parent).toBe("04-3-lock");
-    expect(stageRun.world.entities["04-2-splitter"].properties.route).toBe("bypass");
-    expect(stageRun.world.visible).not.toContain("04-3-key");
-
-    stageRun = playBookmark(stageRun, instruction("forge-04-4", "04-4", [
-      action("turn", "04-4-pressure", { amount: 1 }),
-      action("move", "04-4-approach"),
-      action("open", "04-4-vent"),
-      action("move", "04-4-exit"),
-    ]), "04-5");
-    expect(stageRun.world.entities["04-4-pressure"].properties.pressure).toBe(1);
-    expect(stageRun.world.entities["04-4-pin"].properties.released).toBe(true);
-    expect(stageRun.world.visible).not.toContain("04-4-pin");
-
-    stageRun = playBookmark(stageRun, instruction("forge-04-5", "04-5", [
-      action("move", "04-5-selector"),
-      action("turn", "04-5-selector"),
-      { kind: "wait", until: { kind: "property", entity: "04-5-strip", property: "stampHits", comparison: "gte", value: 3, source: "visible" } },
-      action("turn", "04-5-selector"),
-      { kind: "wait", until: { kind: "property", entity: "04-5-strip", property: "temperature", comparison: "eq", value: 0, source: "visible" } },
-      action("take", "04-5-strip"),
-      action("move", "04-5-carrier"),
-      action("place", "04-5-strip", { destination: "04-5-carrier" }),
-      action("board", "04-5-carrier"),
-      action("turn", "04-5-selector"),
-      action("tie", "04-5-carrier-end", { destination: "04-5-exit-anchor", instrument: "04-5-hook-chain" }),
-      action("dismount", "04-5-carrier", { destination: "04-5-exit" }),
-      action("take", "04-5-strip"),
-      action("place", "04-5-strip", { destination: "04-5-arch" }),
-    ]), "cleared");
-
-    expect(stageRun.clearedSegments).toEqual(["04-1", "04-2", "04-3", "04-4", "04-5"]);
-    expect(stageRun.world.entities["04-2-tongs"].location).toEqual(stageRun.world.actors.hero.location);
-    expect(stageRun.world.tick).toBeGreaterThan(stageRun.world.segmentStartedAt ?? 0);
-  });
 
   it("cannot bypass gates or hazards by targeting another entity at or beyond the same coordinate", () => {
     const first = segment("04-1");

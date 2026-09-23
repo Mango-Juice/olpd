@@ -1,15 +1,33 @@
 import { chromium, expect } from "@playwright/test";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import { addInstruction } from "../src/game/core";
+import { makeSave } from "../src/game/storage";
+import {
+  createFirstForkDeathSave,
+  FIXTURE_INSTRUCTIONS,
+  runUntilTerminal,
+} from "./browser-fixtures";
+import { installLegacyBrowserHarness } from "./legacy-browser-harness";
 const base = process.env.APP_URL ?? "http://localhost:5173";
 const label = process.env.CHECK_LABEL ?? "local";
 await mkdir("artifacts", { recursive: true });
-const deadSave = await readFile(
-  `artifacts/${label}-real-death-save.json`,
-  "utf8",
+const deadFixture = createFirstForkDeathSave("browser-notebook-dead-fixture");
+const deadSave = JSON.stringify(deadFixture);
+const clearState = runUntilTerminal(
+  addInstruction(
+    deadFixture.state,
+    FIXTURE_INSTRUCTIONS[4].text,
+    FIXTURE_INSTRUCTIONS[4].interpretation,
+  ),
 );
-const clearSave = await readFile(
-  `artifacts/${label}-real-clear-save.json`,
-  "utf8",
+expect(clearState.phase).toBe("cleared");
+const clearSave = JSON.stringify(
+  makeSave(clearState, {
+    writer: "browser-notebook-clear-fixture",
+    tutorialCompleted: true,
+    settings: { muted: true, reducedMotion: true },
+    savedAt: 2,
+  }),
 );
 const browser = await chromium.launch();
 const context = await browser.newContext({
@@ -17,6 +35,7 @@ const context = await browser.newContext({
   permissions: ["clipboard-read", "clipboard-write"],
 });
 const page = await context.newPage();
+await installLegacyBrowserHarness(page);
 const state = () =>
   page.evaluate(
     () => JSON.parse(localStorage.getItem("one-line-per-death:save")!).state,
@@ -29,7 +48,7 @@ try {
   );
   await page.reload();
   await page.getByRole("button", { name: "모험 이어하기" }).click();
-  await page.locator("summary").click();
+  await page.locator(".notebook-summary").click();
   const initial = await state();
   await page.locator(".erase-button").last().click();
   await expect(page.getByRole("dialog")).toContainText("지우개 1개");
@@ -112,10 +131,20 @@ try {
     "mute/reduced-motion persistence",
     "mobile clear restore and actual clipboard share",
   ];
-  console.log(JSON.stringify({ passed: true, checks }, null, 2));
+  console.log(
+    JSON.stringify(
+      { passed: true, fixtureMode: "deterministic-core", checks },
+      null,
+      2,
+    ),
+  );
   await writeFile(
     `artifacts/${label}-notebook-report.json`,
-    JSON.stringify({ passed: true, checks }, null, 2),
+    JSON.stringify(
+      { passed: true, fixtureMode: "deterministic-core", checks },
+      null,
+      2,
+    ),
   );
 } catch (e) {
   await page.screenshot({

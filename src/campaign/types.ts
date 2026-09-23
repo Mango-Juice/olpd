@@ -17,6 +17,8 @@ export interface Entity {
   /** A carried/loaded object has exactly one parent; never duplicated in inventory. */
   parent: EntityId | null;
   properties: Record<string, Scalar>;
+  /** Stable, authored public noun category used only by portable notebook rules. */
+  publicKind?: string;
   /** Public device vocabulary, never hidden connection answers or future state. */
   propertyOptions?: Record<string, readonly Scalar[]>;
 }
@@ -59,6 +61,10 @@ export interface EntityReference {
   source: "visible" | "remembered";
 }
 export type ActionReferenceRole = "target" | "destination" | "instrument";
+export interface EntityBinding {
+  kind: "public-kind";
+  value: string;
+}
 export interface PhysicalAction {
   kind: "action";
   actor: "hero" | "keeper";
@@ -83,6 +89,8 @@ export interface InstructionProgram {
   text: string;
   model: string;
   scope: { stageId?: StageId; region?: string };
+  /** Literal IDs from the interpretation scene that may rebind by public meaning. */
+  bindings?: Record<EntityId, EntityBinding>;
   condition?: Predicate;
   /** Explicit guard rules may interrupt lower priority programs at atomic boundaries. */
   guard: boolean;

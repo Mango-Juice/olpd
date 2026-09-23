@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { KITCHEN_PUBLIC_CATALOG, KITCHEN_STAGE } from "../src/campaign/stages/kitchen";
+import { KITCHEN_PUBLIC_CATALOG, KITCHEN_STAGE } from "./fixtures/campaign-worlds/kitchen";
 import { stageDynamics } from "../src/campaign/level";
 import type { EnvironmentStep } from "../src/campaign/run";
-import { advanceStage, createStageRun, departStage } from "../src/campaign/run";
+import { acknowledgePresentation, advanceStage, createStageRun, departStage } from "../src/campaign/run";
 import type { SegmentDefinition } from "../src/campaign/level";
 import { writeProgram } from "../src/campaign/notebook";
 import type { InstructionProgram, PhysicalAction, WorldState } from "../src/campaign/types";
@@ -112,7 +112,7 @@ describe("clockwork kitchen stage definition", () => {
     let run = createStageRun("kitchen-runtime", definition.enter(null));
     run.notebook = writeProgram(run.notebook, program);
     run = departStage(run);
-    for (let step = 0; step < 8 && !run.clearedSegments.includes("03-1"); step += 1) run = advanceStage(run, stageDynamics(KITCHEN_STAGE));
+    for (let step = 0; step < 8 && !run.clearedSegments.includes("03-1"); step += 1) run = advanceStage(acknowledgePresentation(run), stageDynamics(KITCHEN_STAGE));
     expect(run.clearedSegments).toContain("03-1");
     expect(run.world.segmentId).toBe("03-2");
     expect(run.events.some((item) => item.target === "03-1-steam-pipe" && item.outcome === "observed")).toBe(true);

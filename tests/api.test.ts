@@ -9,6 +9,7 @@ import { interpret, validateRequest } from "../server/service.ts";
 import { clientIp } from "../server/http.ts";
 import type { IncomingMessage } from "node:http";
 import { JEV_MODEL } from "../server/contracts.ts";
+import { PROVIDER_RESPONSE_LIMIT_BYTES } from "../server/provider-http.ts";
 
 process.env.AI_STRUCTURED_LOGS = "false";
 
@@ -162,6 +163,21 @@ describe("Jev response boundary", () => {
     await expect(
       interpretWithJev("뛰어", "1", { apiKey: "test", fetchImpl }),
     ).rejects.toMatchObject({ code: "rate_limited", status: 429 });
+  });
+  it("bounds Jev response bytes, forwards cancellation, and never retries", async () => {
+    const oversized = vi.fn<typeof fetch>(async () => new Response("x".repeat(PROVIDER_RESPONSE_LIMIT_BYTES + 1)));
+    await expect(interpretWithJev("뛰어", "1", { apiKey: "test", fetchImpl: oversized })).rejects.toMatchObject({ code: "provider" });
+    expect(oversized).toHaveBeenCalledTimes(1);
+
+    const controller = new AbortController();
+    const pending = vi.fn<typeof fetch>((_url, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new Error("cancelled")), { once: true });
+    }));
+    const call = interpretWithJev("뛰어", "1", { apiKey: "test", fetchImpl: pending, signal: controller.signal });
+    const rejected = expect(call).rejects.toMatchObject({ code: "unavailable", retryable: true });
+    controller.abort();
+    await rejected;
+    expect(pending).toHaveBeenCalledTimes(1);
   });
 
   it("rejects malformed probability distributions and an unexpected model", async () => {

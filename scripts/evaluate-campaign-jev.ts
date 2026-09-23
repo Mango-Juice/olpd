@@ -2,8 +2,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 
 import { interpretCampaignWithJev } from "../server/campaign-jev";
 import type { CampaignJevTraceEvent } from "../server/campaign-contracts";
-import { RAIN_INTRO } from "../src/campaign/stages/rain";
-import { RAIN_REACH } from "../src/campaign/stages/rain-late";
+import { RAIN_INTRO } from "../tests/fixtures/campaign-worlds/rain";
+import { RAIN_REACH } from "../tests/fixtures/campaign-worlds/rain-late";
 import type { InstructionProgram, PhysicalAction, ProgramNode, Verb, WorldState } from "../src/campaign/types";
 
 type ExpectedAction = Omit<Pick<PhysicalAction, "actor" | "verb" | "target">, "verb"> & {

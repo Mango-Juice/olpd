@@ -204,7 +204,7 @@ describe("quiet middle authored scene state", () => {
 
   it("has six revisioned segments, no onboarding, and reuses the first segment as practice", () => {
     for (const stage of stages) {
-      expect(stage.contentRevision).toBe("quiet-v1");
+      expect(stage.contentRevision).toBe("shared-v1");
       expect(stage.segments).toHaveLength(6);
       expect(stage.onboarding).toBeUndefined();
       expect(stage.practice).toBe(stage.segments[0]);

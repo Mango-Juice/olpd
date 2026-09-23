@@ -11,6 +11,10 @@ import {
   type SoundCue,
 } from "../render/animation";
 import { renderScene, VIEW_HEIGHT, VIEW_WIDTH } from "../render/scene";
+import {
+  advancePlaybackTimeline,
+  useCanvasPlayback,
+} from "../hooks/useCanvasPlayback";
 
 interface DungeonCanvasProps {
   observation: Observation;
@@ -66,10 +70,6 @@ export function DungeonCanvas(props: DungeonCanvasProps) {
   const lastPresentedEventRef = useRef<ExecutionEvent | null>(null);
   const revivedEventIdRef = useRef<string | null>(null);
   const previousPhaseRef = useRef<Phase>(props.phase);
-  const hiddenRef = useRef(
-    typeof document !== "undefined" ? document.hidden : false,
-  );
-
   liveRef.current = props;
 
   useEffect(() => {
@@ -155,69 +155,31 @@ export function DungeonCanvas(props: DungeonCanvasProps) {
     previousPhaseRef.current = props.phase;
   }, [props.event, props.phase, props.reducedMotion]);
 
-  useEffect(() => {
-    const onVisibility = () => {
-      hiddenRef.current = document.hidden;
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, []);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const context = canvas.getContext("2d");
-    if (!context) return;
-
-    let raf = 0;
-    let previousTime = performance.now();
-    let fpsStarted = previousTime;
-    let fpsFrames = 0;
-    let sceneElapsed = 0;
-    let lowFpsDuration = 0;
-    let reducedDecoration = false;
-
-    const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const width = Math.max(1, Math.round(canvas.clientWidth * dpr));
-      const height = Math.max(1, Math.round(canvas.clientHeight * dpr));
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-      }
-    };
-    const observer = new ResizeObserver(resize);
-    observer.observe(canvas);
-    resize();
-
-    const draw = (now: number) => {
+  useCanvasPlayback({
+    canvasRef,
+    paused: props.paused,
+    reducedMotion: props.reducedMotion,
+    onFrameStats: props.onFrameStats,
+    draw: ({ canvas, context, deltaMs, sceneTime, paused, reducedMotion }) => {
       const current = liveRef.current;
-      const delta = Math.min(50, Math.max(0, now - previousTime));
-      previousTime = now;
-      const paused = current.paused || hiddenRef.current;
       const playback = playbackRef.current;
-      if (!paused) {
-        playback.elapsed += delta;
-        sceneElapsed += delta;
-      }
-      const sceneTime = sceneElapsed / 1000;
 
       let hero: HeroFrame;
       let sceneObservation = current.observation;
       let transitionShade = 0;
       if (playback.kind === "event" && current.event?.id === playback.id) {
-        const progress = Math.min(1, playback.elapsed / playback.duration);
-        if (!paused && progress > playback.cueProgress) {
-          for (const cue of soundCuesBetween(
-            current.event,
-            playback.cueProgress,
-            progress,
-            current.phase === "cleared",
-          )) {
-            current.onSound?.(cue);
-          }
-          playback.cueProgress = progress;
-        }
+        const progress = advancePlaybackTimeline(playback, {
+          deltaMs,
+          cuesBetween: (from, to) =>
+            soundCuesBetween(
+              current.event!,
+              from,
+              to,
+              current.phase === "cleared",
+            ),
+          onCue: current.onSound,
+          onEnd: current.onPlaybackEnd,
+        });
         hero = eventHeroFrame(
           current.event,
           progress,
@@ -225,12 +187,8 @@ export function DungeonCanvas(props: DungeonCanvasProps) {
         );
         sceneObservation = OBSERVATIONS[current.event.observation];
         playback.hero = hero;
-        if (progress >= 1 && !playback.ended) {
-          playback.ended = true;
-          // Core state is already committed; this only reports presentation completion.
-          queueMicrotask(() => liveRef.current.onPlaybackEnd());
-        }
       } else if (playback.kind === "transition") {
+        if (!paused) playback.elapsed += deltaMs;
         const progress = Math.min(1, playback.elapsed / playback.duration);
         if (progress < 0.5) {
           const part = progress * 2;
@@ -267,6 +225,7 @@ export function DungeonCanvas(props: DungeonCanvasProps) {
           };
         }
       } else if (playback.kind === "revive") {
+        if (!paused) playback.elapsed += deltaMs;
         const progress = Math.min(1, playback.elapsed / playback.duration);
         if (!paused && progress > 0 && !playback.cuePlayed) {
           playback.cuePlayed = true;
@@ -324,40 +283,15 @@ export function DungeonCanvas(props: DungeonCanvasProps) {
         hero,
         observation: sceneObservation,
         phase: current.phase,
-        reducedMotion: current.reducedMotion || reducedDecoration,
+        reducedMotion,
       });
       if (transitionShade > 0) {
         context.fillStyle = `rgba(7, 8, 24, ${transitionShade * 0.72})`;
         context.fillRect(0, 0, VIEW_WIDTH, VIEW_HEIGHT);
       }
 
-      if (!paused) {
-        fpsFrames += 1;
-        if (now - fpsStarted >= 1000) {
-          const sampleDuration = now - fpsStarted;
-          const fps = Math.round((fpsFrames * 1000) / sampleDuration);
-          current.onFrameStats?.(fps);
-          if (fps < 45) {
-            lowFpsDuration += sampleDuration;
-            if (lowFpsDuration >= 2000) reducedDecoration = true;
-          } else {
-            lowFpsDuration = 0;
-          }
-          fpsStarted = now;
-          fpsFrames = 0;
-        }
-      } else {
-        fpsStarted = now;
-        fpsFrames = 0;
-      }
-      raf = requestAnimationFrame(draw);
-    };
-    raf = requestAnimationFrame(draw);
-    return () => {
-      cancelAnimationFrame(raf);
-      observer.disconnect();
-    };
-  }, []);
+    },
+  });
 
   const activeObservation = props.event
     ? OBSERVATIONS[props.event.observation]

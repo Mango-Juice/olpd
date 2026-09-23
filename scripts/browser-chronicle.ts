@@ -9,9 +9,11 @@ import {
 import { makeSave } from "../src/game/storage";
 import {
   createCompletedTutorial,
+  createFirstForkDeathSave,
   FIXTURE_INSTRUCTIONS,
   runUntilTerminal,
 } from "./browser-fixtures";
+import { installLegacyBrowserHarness } from "./legacy-browser-harness";
 const base = process.env.APP_URL ?? "http://localhost:5173";
 await mkdir("artifacts", { recursive: true });
 const notes = FIXTURE_INSTRUCTIONS;
@@ -35,6 +37,7 @@ const save = makeSave(state, {
 });
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+await installLegacyBrowserHarness(page);
 const errors: string[] = [];
 page.on("pageerror", (error) => errors.push(error.message));
 try {
@@ -72,8 +75,13 @@ try {
   ).toBe(before);
   await page.screenshot({ path: "artifacts/chronicle-desktop.png" });
   await page.getByRole("button", { name: "닫기", exact: true }).click();
-  await page.getByRole("button", { name: "새로운 도전", exact: true }).click();
+  await page.getByRole("button", { name: "설정", exact: true }).click();
   await page.getByRole("button", { name: "새 도전 시작", exact: true }).click();
+  await page.getByRole("button", { name: "새 도전 시작", exact: true }).click();
+  const followup = createFirstForkDeathSave("chronicle-followup-fixture");
+  await page.addInitScript((raw) => {
+    localStorage.setItem("one-line-per-death:save", raw);
+  }, JSON.stringify(followup));
   await page.reload();
   await page.setViewportSize({ width: 390, height: 844 });
   await page

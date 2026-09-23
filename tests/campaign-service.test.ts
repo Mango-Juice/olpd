@@ -10,7 +10,7 @@ import {
 } from "../server/campaign-service.ts";
 import { resetRateLimitsForTests } from "../server/rate-limit.ts";
 import { QUIET_RAIN_STAGE as RAIN_STAGE } from "../src/campaign/quiet/early.ts";
-import { GARDEN_STAGE } from "../src/campaign/stages/garden.ts";
+import { GARDEN_STAGE } from "./fixtures/campaign-worlds/garden.ts";
 import type { WorldState } from "../src/campaign/types.ts";
 
 process.env.AI_STRUCTURED_LOGS = "false";

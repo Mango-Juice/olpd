@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { stageDynamics, type SegmentDefinition } from "../src/campaign/level";
 import { writeProgram } from "../src/campaign/notebook";
 import { propertyVisibility } from "../src/campaign/presentation";
-import { advanceStage, createStageRun, departStage, type StageRun } from "../src/campaign/run";
+import { acknowledgePresentation, advanceStage, createStageRun, departStage, type StageRun } from "../src/campaign/run";
 import {
   QUIET_FOG_STAGE,
   QUIET_LATE_REPRESENTATIVE_COMMANDS,
@@ -38,7 +38,10 @@ function playBody(id: string, text: string, body: ProgramNode): StageRun {
   });
   run = departStage(run);
   const dynamics = stageDynamics(stage);
-  for (let step = 0; step < 100 && (run.phase === "running" || run.phase === "waiting"); step++) run = advanceStage(run, dynamics);
+  for (let step = 0; step < 100 && (run.phase === "running" || run.phase === "waiting"); step++) {
+    run = advanceStage(run, dynamics);
+    if (run.presentation) run = acknowledgePresentation(run);
+  }
   expect(run.clearedSegments, `${id}: ${run.phase} ${run.statusReason}`).toContain(id);
   return run;
 }
@@ -52,7 +55,7 @@ describe("quiet late-stage content contract", () => {
   it("publishes six v2 encounters per chapter without onboarding", () => {
     for (const [index, stage] of stages.entries()) {
       const chapter = index + 8;
-      expect(stage.contentRevision).toBe("quiet-v1");
+      expect(stage.contentRevision).toBe("shared-v1");
       expect(stage.onboarding).toBeUndefined();
       expect(stage.segments.map((item) => item.id)).toEqual(Array.from({ length: 6 }, (_, item) => `${String(chapter).padStart(2, "0")}-v2-${item + 1}`));
       expect(stage.practice).toBe(stage.segments[0]);
@@ -103,11 +106,11 @@ describe("quiet late-stage content contract", () => {
     }
   });
 
-  it("marks the three visible Warden transformations as seals", () => {
+  it("keeps visible Warden transformations out of the life retry checkpoint", () => {
     const dynamics = stageDynamics(QUIET_WARDEN_STAGE);
-    expect(dynamics.sealAfter("10-v2-2")).toBe(1);
-    expect(dynamics.sealAfter("10-v2-4")).toBe(2);
-    expect(dynamics.sealAfter("10-v2-5")).toBe(3);
+    expect(dynamics.sealAfter("10-v2-2")).toBeNull();
+    expect(dynamics.sealAfter("10-v2-4")).toBeNull();
+    expect(dynamics.sealAfter("10-v2-5")).toBeNull();
   });
 });
 

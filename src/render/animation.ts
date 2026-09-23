@@ -1,8 +1,33 @@
 import type { Action, ExecutionEvent } from "../game/types";
+import type { StagePresentation } from "../campaign/run";
+import type { Verb } from "../campaign/types";
 
 export type HeroPose =
-  "idle" | "walk" | "jump" | "duck" | "detour" | "death" | "revive" | "joy";
-export type SoundCue = "step" | "jump" | "land" | "revive" | "death" | "win";
+  | "idle"
+  | "walk"
+  | "jump"
+  | "duck"
+  | "detour"
+  | "push"
+  | "pull"
+  | "take"
+  | "place"
+  | "turn"
+  | "hold"
+  | "pour"
+  | "climb"
+  | "interact"
+  | "death"
+  | "revive"
+  | "joy";
+export type SoundCue =
+  | "step"
+  | "jump"
+  | "land"
+  | "safe"
+  | "revive"
+  | "death"
+  | "win";
 
 export interface HeroFrame {
   x: number;
@@ -16,6 +41,8 @@ export interface HeroFrame {
   dust: number;
   shadow: number;
   fatalKind?: "fall" | "spikes" | "bonk";
+  /** Screen-space contact used by campaign interaction tracks. */
+  contact?: { x: number; y: number; amount: number };
 }
 
 export const FLOOR_Y = 402;
@@ -25,6 +52,14 @@ export const EXIT_X = 836;
 
 export const eventDuration = (event: ExecutionEvent) =>
   event.repeated ? 1400 : 4200;
+
+export const campaignPresentationDuration = (
+  presentation: StagePresentation,
+  reducedMotion = false,
+) => {
+  if (presentation.outcome === "revive") return reducedMotion ? 1050 : 1650;
+  return presentation.repeated ? 1400 : 4200;
+};
 
 const crossed = (from: number, to: number, threshold: number) =>
   from < threshold && to >= threshold;
@@ -59,6 +94,66 @@ export function soundCuesBetween(
     crossed(fromProgress, toProgress, 1)
   )
     cues.push("win");
+  return cues;
+}
+
+const campaignEvent = (presentation: StagePresentation) =>
+  presentation.events.find((event) => event.actor === "hero" && event.verb) ??
+  presentation.events.find((event) => event.verb);
+
+export function campaignActorVerb(
+  presentation: StagePresentation,
+  actorId: string,
+): Verb | null {
+  return presentation.events.find(
+    (event) => event.actor === actorId && event.verb,
+  )?.verb ?? null;
+}
+
+export function campaignPresentationVerb(
+  presentation: StagePresentation,
+): Verb | null {
+  return campaignEvent(presentation)?.verb ?? null;
+}
+
+/** Audio markers for later chapters use the same presentation clock as Chapter 1. */
+export function campaignSoundCuesBetween(
+  presentation: StagePresentation,
+  fromProgress: number,
+  toProgress: number,
+): SoundCue[] {
+  const cues: SoundCue[] = [];
+  if (presentation.outcome === "revive") {
+    if (crossed(fromProgress, toProgress, 0.02)) cues.push("revive");
+    return cues;
+  }
+  const verb = campaignPresentationVerb(presentation);
+  const steps = presentation.repeated ? [0.17] : [0.09, 0.21];
+  if (verb === "move" || verb === "jump" || verb === "duck" || verb === "climb") {
+    for (const threshold of steps) {
+      if (crossed(fromProgress, toProgress, threshold)) cues.push("step");
+    }
+  }
+  if (verb === "jump") {
+    if (crossed(fromProgress, toProgress, 0.36)) cues.push("jump");
+    if (presentation.outcome !== "death" && crossed(fromProgress, toProgress, 0.7)) {
+      cues.push("land");
+    }
+  } else if (
+    verb &&
+    verb !== "move" &&
+    verb !== "duck" &&
+    verb !== "climb" &&
+    crossed(fromProgress, toProgress, 0.55)
+  ) {
+    cues.push("safe");
+  }
+  if (presentation.outcome === "death" && crossed(fromProgress, toProgress, 0.7)) {
+    cues.push("death");
+  }
+  if (presentation.outcome === "cleared" && crossed(fromProgress, toProgress, 0.96)) {
+    cues.push("win");
+  }
   return cues;
 }
 
@@ -366,5 +461,157 @@ export function reviveHeroFrame(progress: number): HeroFrame {
     rotation: 0,
     dust: 0,
     shadow: summon,
+  };
+}
+
+export interface CampaignHeroMotion {
+  presentation: StagePresentation;
+  progress: number;
+  from: { x: number; y: number; rotation: number };
+  to: { x: number; y: number; rotation: number };
+  contact?: { x: number; y: number };
+  verb?: Verb | null;
+}
+
+const campaignPose = (verb: Verb | null, moving: boolean): HeroPose => {
+  if (verb === "jump") return "jump";
+  if (verb === "duck") return "duck";
+  if (verb === "climb") return "climb";
+  if (verb === "push") return "push";
+  if (verb === "pull") return "pull";
+  if (verb === "take" || verb === "release") return "take";
+  if (verb === "place") return "place";
+  if (verb === "turn" || verb === "open" || verb === "close") return "turn";
+  if (verb === "hold") return "hold";
+  if (verb === "pour") return "pour";
+  if (moving || verb === "move" || verb === "board" || verb === "dismount") {
+    return "walk";
+  }
+  if (verb && verb !== "observe" && verb !== "remember") return "interact";
+  return "idle";
+};
+
+const directMovementVerb = (verb: Verb | null) =>
+  verb === "move" ||
+  verb === "jump" ||
+  verb === "duck" ||
+  verb === "climb" ||
+  verb === "board" ||
+  verb === "dismount";
+
+/**
+ * Maps a deterministic campaign boundary onto the same hero pose lifecycle as
+ * Chapter 1. Physics remains in `StageRun`; this function is presentation only.
+ */
+export function campaignHeroFrame(motion: CampaignHeroMotion): HeroFrame {
+  const p = clamp(motion.progress);
+  const { presentation, from, to } = motion;
+  if (presentation.outcome === "revive") {
+    const frame = reviveHeroFrame(p);
+    return {
+      ...frame,
+      x: to.x,
+      y: to.y - Math.sin(smooth(clamp(p / 0.7)) * Math.PI) * 12,
+      rotation: to.rotation,
+    };
+  }
+
+  const verb = motion.verb === undefined
+    ? campaignPresentationVerb(presentation)
+    : motion.verb;
+  const interaction = !!verb && !directMovementVerb(verb) && verb !== "observe" && verb !== "remember";
+  const actionProgress = smooth(
+    clamp((p - (interaction ? 0.08 : 0.18)) / (interaction ? 0.3 : 0.58)),
+  );
+  const moved = Math.hypot(to.x - from.x, to.y - from.y) > 1;
+  const contactFacing: 1 | -1 = motion.contact
+    ? motion.contact.x < from.x
+      ? -1
+      : 1
+    : to.x < from.x
+      ? -1
+      : 1;
+  const contactX = interaction && motion.contact
+    ? motion.contact.x - contactFacing * 58
+    : to.x;
+  let x = mix(from.x, contactX, actionProgress);
+  let y = mix(from.y, to.y, actionProgress);
+  const rotation = mix(from.rotation, to.rotation, actionProgress);
+  const facing = contactFacing;
+  if (verb === "jump" && moved) y -= Math.sin(actionProgress * Math.PI) * 72;
+
+  if (presentation.outcome === "death" && p >= 0.7) {
+    const fatal = smooth((p - 0.7) / 0.3);
+    return {
+      x: mix(x, x - facing * 22, fatal),
+      y: y + fatal * 8,
+      pose: "death",
+      phase: fatal,
+      facing,
+      opacity: 1 - fatal,
+      scale: mix(1.04, 0.62, fatal),
+      rotation,
+      dust: 0,
+      shadow: 1 - fatal,
+      fatalKind: verb === "jump" ? "fall" : "bonk",
+    };
+  }
+
+  if (presentation.outcome === "cleared" && p >= 0.86) {
+    return {
+      x: to.x,
+      y: to.y,
+      pose: "joy",
+      phase: (p - 0.86) / 0.14,
+      facing,
+      opacity: 1,
+      scale: 1,
+      rotation: to.rotation,
+      dust: 0.2,
+      shadow: 1,
+    };
+  }
+
+  const blockedReturn = presentation.outcome === "blocked" && p > 0.76;
+  if (blockedReturn) {
+    const back = smooth((p - 0.76) / 0.24);
+    x = mix(contactX, contactX - facing * 18, back);
+  } else if (interaction && presentation.outcome !== "death" && p > 0.84) {
+    x = mix(contactX, to.x, smooth((p - 0.84) / 0.16));
+  }
+  const pose = blockedReturn && p > 0.9
+    ? "idle"
+    : interaction && p < 0.28
+      ? moved
+        ? "walk"
+        : "idle"
+      : interaction && verb !== "hold" && p > 0.84 && presentation.outcome !== "death"
+        ? "idle"
+        : campaignPose(verb, moved);
+  const contactAmount = motion.contact
+    ? verb === "hold"
+      ? smooth(clamp((p - 0.34) / 0.2))
+      : Math.sin(clamp((p - 0.34) / 0.52) * Math.PI)
+    : 0;
+  return {
+    x,
+    y,
+    pose,
+    phase: actionProgress * (pose === "walk" || pose === "climb" ? 6 : 1),
+    facing,
+    opacity: 1,
+    scale: pose === "push" || pose === "pull" ? 1 - contactAmount * 0.035 : 1,
+    rotation:
+      rotation +
+      (pose === "push" ? facing * 0.055 * contactAmount : 0) -
+      (pose === "pull" ? facing * 0.045 * contactAmount : 0) +
+      (interaction && pose !== "push" && pose !== "pull"
+        ? facing * 0.025 * contactAmount
+        : 0),
+    dust: moved ? 0.42 : 0,
+    shadow: 1,
+    ...(motion.contact && contactAmount > 0.01
+      ? { contact: { ...motion.contact, amount: contactAmount } }
+      : {}),
   };
 }

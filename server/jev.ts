@@ -13,6 +13,7 @@ import {
 } from "./contracts.js";
 import { ApiError } from "./errors.js";
 import { logAiCall, recordCall } from "./metrics.js";
+import { postProviderJson } from "./provider-http.js";
 
 const ACTIONS = [
   "advance",
@@ -443,7 +444,7 @@ function parseResponse(
 export async function interpretWithJev(
   text: string,
   rulesVersion = SUPPORTED_RULES_VERSION,
-  options: { apiKey?: string; fetchImpl?: typeof fetch } = {},
+  options: { apiKey?: string; fetchImpl?: typeof fetch; signal?: AbortSignal } = {},
 ): Promise<JevResult> {
   const apiKey = options.apiKey ?? process.env.TYPESAFE_API_KEY;
   if (!apiKey)
@@ -453,56 +454,26 @@ export async function interpretWithJev(
       "AI 해석 서비스가 설정되지 않았습니다.",
     );
   const fetchImpl = options.fetchImpl ?? fetch;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const started = performance.now();
   let callRecorded = false;
   let inputTokens = 0;
   let outputTokens = 0;
   let callError: string | null = null;
   try {
-    const response = await fetchImpl("https://api.typesafe.ai/v1/systemone", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
+    const response = await postProviderJson({
+      url: "https://api.typesafe.ai/v1/systemone", apiKey, fetchImpl,
+      signal: options.signal, timeoutMs: REQUEST_TIMEOUT_MS,
       body: JSON.stringify({
         state: { instruction: text },
         model: JEV_MODEL,
         questions: buildJevQuestions(),
       }),
-      signal: controller.signal,
+      timeoutMessage: "AI 해석 시간이 초과되었습니다. 다시 시도해 주세요.",
+      cancelMessage: "AI 해석을 취소했습니다.",
     });
-    if (response.status === 429)
-      throw new ApiError(
-        429,
-        "rate_limited",
-        "AI 제공자 요청 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.",
-        true,
-      );
-    if (response.status === 529)
-      throw new ApiError(
-        503,
-        "unavailable",
-        "AI 제공자가 혼잡합니다. 잠시 후 다시 시도해 주세요.",
-        true,
-      );
-    if (!response.ok)
-      throw new ApiError(
-        502,
-        "provider",
-        "AI 제공자가 요청을 처리하지 못했습니다.",
-        response.status >= 500,
-      );
-    let payload: unknown;
-    try {
-      payload = await response.json();
-    } catch {
-      throw new ApiError(502, "provider", "AI 응답을 읽을 수 없습니다.", true);
-    }
+    const payload = response.payload;
     const typed = payload as Partial<JevResponse>;
-    const latencyMs = performance.now() - started;
+    const latencyMs = response.latencyMs;
     inputTokens =
       typeof typed.usage?.input_tokens === "number"
         ? typed.usage.input_tokens
@@ -520,15 +491,6 @@ export async function interpretWithJev(
       callError = error.code;
       throw error;
     }
-    if (error instanceof DOMException && error.name === "AbortError") {
-      callError = "unavailable";
-      throw new ApiError(
-        503,
-        "unavailable",
-        "AI 해석 시간이 초과되었습니다. 다시 시도해 주세요.",
-        true,
-      );
-    }
     callError = "unavailable";
     throw new ApiError(
       503,
@@ -537,7 +499,6 @@ export async function interpretWithJev(
       true,
     );
   } finally {
-    clearTimeout(timeout);
     const latencyMs = Math.round(performance.now() - started);
     if (!callRecorded) recordCall(latencyMs);
     logAiCall({

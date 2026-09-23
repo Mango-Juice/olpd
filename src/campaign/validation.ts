@@ -1,6 +1,6 @@
 import { isStageId } from "./catalog";
 import { CAMPAIGN_INPUT_LIMIT } from "./notebook";
-import type { EntityReference, InstructionProgram, PhysicalAction } from "./types";
+import type { EntityBinding, EntityReference, InstructionProgram, PhysicalAction } from "./types";
 
 const verbs = new Set(["move", "jump", "duck", "push", "pull", "place", "take", "release", "open", "close", "turn", "tie", "untie", "board", "dismount", "climb", "pour", "hold", "observe", "remember"]);
 const comparisons = new Set(["eq", "lt", "lte", "gt", "gte"]);
@@ -26,6 +26,10 @@ export function parsePhysicalAction(value: unknown): PhysicalAction | null {
   }
   return structuredClone(value) as unknown as PhysicalAction;
 }
+export function parseEntityBinding(value: unknown): EntityBinding | null {
+  return record(value) && exact(value, ["kind", "value"]) && value.kind === "public-kind" && name(value.value) && [...value.value].length <= 100
+    ? structuredClone(value) as unknown as EntityBinding : null;
+}
 /** JSON boundary validation is independent of whether the intended action is physically safe. */
 export function parseProgram(value: unknown): InstructionProgram | null {
   // The generous structural budget is a transport safety boundary, not a per-stage action limit.
@@ -45,6 +49,7 @@ export function parseProgram(value: unknown): InstructionProgram | null {
     if (input.kind === "if") return exact(input, ["kind", "condition", "then"], ["otherwise"]) && predicate(input.condition, depth + 1) && node(input.then, depth + 1) && (input.otherwise === undefined || node(input.otherwise, depth + 1));
     return false;
   }
-  if (!record(value) || !exact(value, ["version", "id", "text", "model", "scope", "guard", "body"], ["condition"]) || value.version !== 2 || !name(value.id) || !name(value.text) || [...value.text.trim()].length > CAMPAIGN_INPUT_LIMIT || !name(value.model) || typeof value.guard !== "boolean" || !record(value.scope) || !exact(value.scope, [], ["stageId", "region"]) || (value.scope.stageId !== undefined && !isStageId(value.scope.stageId)) || (value.scope.region !== undefined && !name(value.scope.region)) || (value.condition !== undefined && !predicate(value.condition, 0)) || !node(value.body, 0)) return null;
+  if (!record(value) || !exact(value, ["version", "id", "text", "model", "scope", "guard", "body"], ["condition", "bindings"]) || value.version !== 2 || !name(value.id) || !name(value.text) || [...value.text.trim()].length > CAMPAIGN_INPUT_LIMIT || !name(value.model) || typeof value.guard !== "boolean" || !record(value.scope) || !exact(value.scope, [], ["stageId", "region"]) || (value.scope.stageId !== undefined && !isStageId(value.scope.stageId)) || (value.scope.region !== undefined && !name(value.scope.region)) || (value.condition !== undefined && !predicate(value.condition, 0)) || !node(value.body, 0)) return null;
+  if (value.bindings !== undefined && (!record(value.bindings) || Object.keys(value.bindings).length === 0 || Object.keys(value.bindings).length > 64 || Object.entries(value.bindings).some(([id, binding]) => !name(id) || parseEntityBinding(binding) === null))) return null;
   return { ...structuredClone(value), text: value.text.trim() } as unknown as InstructionProgram;
 }

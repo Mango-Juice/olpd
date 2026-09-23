@@ -96,7 +96,7 @@ async function injectRunningClarificationFixture(runId: string, text: string) {
         import(/* @vite-ignore */ path);
       const [{ RAIN_STAGE }, { createStageRun, departStage }, { writeProgram }] =
         await Promise.all([
-          load("/src/campaign/stages/rain.ts"),
+          load("/tests/fixtures/campaign-worlds/rain.ts"),
           load("/src/campaign/run.ts"),
           load("/src/campaign/notebook.ts"),
         ]);
@@ -237,7 +237,6 @@ try {
   expect(runtimeRun.world.attempt).toBe(2);
   expect(runtimeRun.world.actors.hero.location).toEqual(runtimeRun.checkpoint.actors.hero.location);
   expect(runtimeRun.notebook).toMatchObject({
-    clarificationId: "browser-runtime-clarification-bad",
     canWrite: true,
     editing: true,
     erasers: 2,
@@ -262,7 +261,6 @@ try {
   expect(runtimeRun.world.attempt).toBe(2);
   expect(runtimeRun.world.actors.hero.location).toEqual(runtimeRun.checkpoint.actors.hero.location);
   expect(runtimeRun.notebook).toMatchObject({ canWrite: false, erasers: 2, bells: 0 });
-  expect(runtimeRun.notebook.clarificationId).toBeUndefined();
   expect(runtimeRun.notebook.instructions).toHaveLength(1);
   expect(runtimeRun.notebook.instructions[0].text).toBe(repairText);
   await expect(page.getByRole("button", { name: "이 메모로 출발 →" })).toBeEnabled();
@@ -279,7 +277,6 @@ try {
   await expect(page.locator(".campaign-notes")).toBeEmpty();
   const deletedRun = stageTwoRun(await campaignDocument());
   expect(deletedRun.notebook).toMatchObject({ canWrite: true, erasers: 2, bells: 0 });
-  expect(deletedRun.notebook.clarificationId).toBeUndefined();
   expect(deletedRun.notebook.instructions).toEqual([]);
   await expect(page.getByRole("button", { name: "이 메모로 출발 →" })).toBeEnabled();
   await page.screenshot({

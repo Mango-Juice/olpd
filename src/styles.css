@@ -1014,6 +1014,10 @@ textarea {
   .keyboard-open .topbar,
   .keyboard-open .intro,
   .keyboard-open .journey,
+  .keyboard-open .play-stage-progress,
+  .keyboard-open .play-hints,
+  .keyboard-open .campaign-goal,
+  .keyboard-open .campaign-story,
   .keyboard-open .notebook,
   .keyboard-open .record-line,
   .keyboard-open .below-note,
@@ -1026,6 +1030,12 @@ textarea {
   .keyboard-open .canvas-holder {
     aspect-ratio: 2.8;
     overflow: hidden;
+  }
+  .keyboard-open .campaign-map-viewport {
+    height: 130px;
+  }
+  .keyboard-open .campaign-scene-canvas {
+    height: 130px;
   }
   .keyboard-open .scene-head {
     top: 7px;

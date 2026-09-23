@@ -27,7 +27,7 @@ const stage: CampaignStageDefinition = {
   id: 2,
   title: "비에 잠긴 회랑",
   objective: "편지를 가지고 회랑을 건너야 해요.",
-  contentRevision: "quiet-v1",
+  contentRevision: "shared-v1",
   segments: [segment],
   practice: segment,
   story: { afterSegment: "never", object: "crate", text: "이야기" },
@@ -43,11 +43,11 @@ const memo: InstructionProgram = {
   body: { kind: "action", actor: "hero", verb: "move", target: "crate", destination: "door", amount: 7 },
 };
 
-function renderQuietPlay() {
+function renderCampaignPlay() {
   const base = createStageRun("quiet-ui", world);
   const run = {
     ...base,
-    notebook: { ...base.notebook, scratch: true as const, instructions: [memo] },
+    notebook: { ...base.notebook, instructions: [memo] },
   };
   return renderToStaticMarkup(createElement(CampaignPlay, {
     run,
@@ -56,36 +56,27 @@ function renderQuietPlay() {
     onCommit: async () => true,
     interpret: async () => memo,
     onRoadmap: () => undefined,
-    onPractice: () => undefined,
+    onNewChallenge: () => undefined,
   }));
 }
 
-describe("quiet campaign play UI", () => {
-  it("keeps the scene, memo and composer while hiding campaign ledgers and costs", () => {
-    const html = renderQuietPlay();
-
-    expect(html).toContain("나무 상자를 옮겨 돌문까지 길을 만드세요.");
+describe("shared campaign play UI", () => {
+  it("keeps Chapter 1's notebook, cost, playback and direct input controls", () => {
+    const html = renderCampaignPlay();
     expect(html).toContain("편지를 가지고 회랑을 건너야 해요.");
     expect(html).toContain("나무 상자를 돌문 앞으로 옮겨 줘");
-    expect(html).toContain("무엇을 할까요?");
-    expect(html).toContain("기억하고 출발");
+    expect(html).toContain("이번 생에서 남길 한 줄");
     expect(html).toContain("Enter ↵ 한 번이면 읽고 바로 출발해요.");
-    expect(html).not.toContain("이번 목표");
+    expect(html).toContain("남은 지우개");
+    expect(html).toContain("memory-drag-handle");
+    expect(html).toContain("memory-menu-toggle");
+    expect(html).toContain("erase-button");
+    expect(html).toContain("한 장면씩 보기");
+    expect(html).toContain("사망·부활");
+    expect(html).toContain("삭제 패널티");
+    expect(html).not.toContain(">수정</button>");
+    expect(html).not.toContain("자유롭게 고칠");
     expect(html).not.toContain("뜻 확인하기");
     expect(html).not.toContain("이 뜻으로 남기기");
-    expect(html).not.toContain("이 메모로 시작하기");
-    expect(html).not.toContain("남은 지우개");
-    expect(html).not.toContain("이번 시도의 관찰과 발자국");
-    expect(html).not.toContain("플레이 도구");
-    expect(html).not.toContain("지난 장의 메모");
-    expect(html.indexOf("campaign-goal")).toBeLessThan(html.indexOf("composer"));
-    expect(html.indexOf("composer")).toBeLessThan(html.indexOf("play-stage-progress"));
-  });
-
-  it("keeps direct memo controls visible without another disclosure", () => {
-    const html = renderQuietPlay();
-    expect(html).toContain('<div class="campaign-note-actions"><button');
-    expect(html).toContain(">수정</button>");
-    expect(html).toContain(">삭제</button>");
   });
 });

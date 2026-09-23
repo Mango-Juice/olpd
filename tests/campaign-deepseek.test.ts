@@ -4,8 +4,8 @@ import type { AddressInfo } from "node:net";
 import { handleCampaignInterpret } from "../server/campaign-http";
 import { DEEPSEEK_CAMPAIGN_TIMEOUT_MS, interpretCampaignWithDeepSeek } from "../server/campaign-deepseek";
 import { interpretCampaign } from "../server/campaign-service";
-import { RAIN_INTRO, RAIN_STAGE } from "../src/campaign/stages/rain";
-import { RAIN_REACH } from "../src/campaign/stages/rain-late";
+import { RAIN_INTRO, RAIN_STAGE } from "./fixtures/campaign-worlds/rain";
+import { RAIN_REACH } from "./fixtures/campaign-worlds/rain-late";
 import { resetRateLimitsForTests } from "../server/rate-limit";
 
 const action = { kind: "action", actor: "hero", verb: "board", target: "rain-cork" };
@@ -31,6 +31,17 @@ describe("DeepSeek campaign boundary", () => {
     const request = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body));
     expect(request).toMatchObject({ model: "deepseek-flash", thinking: { type: "disabled" }, temperature: 0, response_format: { type: "json_object" } });
     expect(result).toMatchObject({ needsConfirmation: false, confidence: null, program: { model: "deepseek-flash", text: "상자에 올라", body: action } });
+  });
+  it("emits a stage binding only for an explicit general rule and validates its public kind", async () => {
+    const world = RAIN_INTRO.enter(null);
+    world.entities["rain-cork"].publicKind = "box";
+    const general = { ...envelope(), scope: { mode: "stage" }, bindings: { "rain-cork": { kind: "public-kind", value: "box" } } };
+    const result = await interpretCampaignWithDeepSeek("상자가 있으면 옆으로 밀어", world, { fetchImpl: fake(general) });
+    expect(result.program).toMatchObject({ scope: { stageId: 2 }, bindings: general.bindings });
+
+    const invented = { ...general, bindings: { "rain-cork": { kind: "public-kind", value: "invented" } } };
+    await expect(interpretCampaignWithDeepSeek("상자가 있으면 옆으로 밀어", world, { fetchImpl: fake(invented) }))
+      .rejects.toMatchObject({ code: "uncertain" });
   });
   it("keeps hidden live state, stale facts, and credentials out of trace while preserving public context", async () => {
     const world = RAIN_INTRO.enter(null);
@@ -144,6 +155,7 @@ describe("DeepSeek campaign boundary", () => {
   it("rejects controls but accepts Arabic amounts and a valid 500-codepoint instruction", async () => {
     const fetchImpl = fake();
     await expect(interpretCampaignWithDeepSeek("상자\u0007", RAIN_INTRO.enter(null), { fetchImpl })).rejects.toMatchObject({ code: "input" });
+    await expect(interpretCampaignWithDeepSeek("상자를 밀고\n나가", RAIN_INTRO.enter(null), { fetchImpl })).rejects.toMatchObject({ code: "input" });
     expect(fetchImpl).not.toHaveBeenCalled();
     await interpretCampaignWithDeepSeek("물 2칸", RAIN_INTRO.enter(null), { fetchImpl });
     await interpretCampaignWithDeepSeek("가".repeat(500), RAIN_INTRO.enter(null), { fetchImpl });

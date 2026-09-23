@@ -43,7 +43,7 @@ describe("campaign program preflight", () => {
     expect(result.kind === "clarification" ? result.reason : "").toContain("움직이지 않음");
     expect(run).toEqual(originalRun);
     expect(proposed).toEqual(originalNotebook);
-    expect(run.notebook.bells).toBe(0);
+    expect(run.notebook.deaths).toBe(0);
   });
 
   it("validates later actions against the world produced by earlier actions", () => {
@@ -77,8 +77,8 @@ describe("campaign program preflight", () => {
 
     const actual = advanceStage(departStage({ ...run, notebook: proposed }), dynamics);
     expect(actual.events.some((event) => event.outcome === "failure")).toBe(true);
-    expect(actual.notebook.bells).toBe(1);
-    expect(actual.phase).toBe("bookmark");
+    expect(actual.notebook).toMatchObject({ deaths: 1, canWrite: true });
+    expect(actual.phase).toBe("failed");
   });
 
   it("marks a stable unresolved wait as admissible but limited", () => {
@@ -98,9 +98,10 @@ describe("campaign program preflight", () => {
       makeEntity("parcel", "소포", "fixture", 4, { movable: true, properties: { slot: "small" } }),
       makeEntity("parcel-stop", "소포 앞", "fixture", 4),
     ]));
+    // Stored low-to-high, so the move is the visible top-priority instruction.
     const proposed = notebook(run, [
-      instruction("move-first", { kind: "action", actor: "hero", verb: "move", target: "parcel-stop" }),
       instruction("take-second", { kind: "action", actor: "hero", verb: "take", target: "parcel" }),
+      instruction("move-first", { kind: "action", actor: "hero", verb: "move", target: "parcel-stop" }),
     ]);
 
     expect(preflightProgram(run, proposed, dynamics)).toEqual({ kind: "admissible", limited: false });

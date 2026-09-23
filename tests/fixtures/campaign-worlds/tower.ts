@@ -1,8 +1,8 @@
-import { at, makeEntity, makeHero, makeWorld, type CampaignStageDefinition, type SegmentDefinition } from "../level";
-import { resolveActionReferences } from "../conditions";
-import { currentLoad, executePhysicalAction } from "../physics";
-import type { ActionResult } from "../program";
-import type { Actor, Entity, PhysicalAction, Scalar, WorldState } from "../types";
+import { at, makeEntity, makeHero, makeWorld, type CampaignStageDefinition, type SegmentDefinition } from "../../../src/campaign/level";
+import { resolveActionReferences } from "../../../src/campaign/conditions";
+import { currentLoad, executePhysicalAction } from "../../../src/campaign/physics";
+import type { ActionResult } from "../../../src/campaign/program";
+import type { Actor, Entity, PhysicalAction, Scalar, WorldState } from "../../../src/campaign/types";
 
 const STAGE_ID = 9 as const;
 
@@ -423,6 +423,7 @@ const bellTrial: SegmentDefinition = {
 };
 
 export const TOWER_STAGE: CampaignStageDefinition = {
+  contentRevision: "shared-v1",
   id: STAGE_ID,
   title: "종탑의 안쪽",
   practice,

@@ -1,6 +1,7 @@
 import { chromium, expect, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createFirstForkDeathSave } from "./browser-fixtures";
+import { installLegacyBrowserHarness } from "./legacy-browser-harness";
 
 const base = process.env.APP_URL ?? "http://localhost:5173";
 await mkdir("artifacts", { recursive: true });
@@ -37,7 +38,7 @@ async function installAndOpen(page: Page) {
   console.log("drag-check: continued", await page.locator("summary").count());
   const notebook = page.locator("details.notebook");
   if (!(await notebook.evaluate((element) => element.hasAttribute("open"))))
-    await page.locator("summary").click();
+    await page.locator(".notebook-summary").click();
   await expect(page.locator(".instruction")).toHaveCount(4);
 }
 
@@ -94,6 +95,7 @@ try {
     viewport: { width: 1440, height: 1000 },
   });
   const desktop = await desktopContext.newPage();
+  await installLegacyBrowserHarness(desktop);
   desktop.on("pageerror", (error) => errors.push(`desktop: ${error.message}`));
   await installAndOpen(desktop);
   const desktopControls = await checkControls(desktop);
@@ -128,7 +130,7 @@ try {
       .locator("details.notebook")
       .evaluate((element) => element.hasAttribute("open")))
   )
-    await desktop.locator("summary").click();
+    await desktop.locator(".notebook-summary").click();
   expect((await state(desktop)).instructions).toEqual(
     afterDesktop.instructions,
   );
@@ -157,6 +159,7 @@ try {
     isMobile: true,
   });
   const mobile = await mobileContext.newPage();
+  await installLegacyBrowserHarness(mobile);
   mobile.on("pageerror", (error) => errors.push(`mobile: ${error.message}`));
   await installAndOpen(mobile);
   const mobileControls = await checkControls(mobile);

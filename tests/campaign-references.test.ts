@@ -3,7 +3,7 @@ import { readPublicProperty, resolveActionReferences } from "../src/campaign/con
 import { makeEntity, makeWorld } from "../src/campaign/level";
 import { executePhysicalAction } from "../src/campaign/physics";
 import { createCursor, stepProgram } from "../src/campaign/program";
-import { createStageRun, rewindStage } from "../src/campaign/run";
+import { acknowledgePresentation, advanceStage, createStageRun, departStage, rewindStage, writeStageProgram, type StageDynamics } from "../src/campaign/run";
 import { parseStageRun } from "../src/campaign/run-validation";
 import { parsePhysicalAction, parseProgram } from "../src/campaign/validation";
 import type { EntityReference, InstructionProgram, PhysicalAction, ProgramNode, WorldState } from "../src/campaign/types";
@@ -83,10 +83,10 @@ describe("runtime entity references", () => {
 
   it("serializes a bound cursor in a valid saved run and rejects forged literal roles", () => {
     const body = action();
-    const first = stepProgram(observe(fixture()), body, createCursor(), walk);
-    const run = createStageRun("reference-save", first.world);
-    run.phase = "running";
-    run.notebook.instructions = [program(body)];
+    const initial = observe(fixture());
+    const first = stepProgram(initial, body, createCursor(), walk);
+    const run = departStage(writeStageProgram(createStageRun("reference-save", initial), program(body)));
+    run.world = first.world;
     run.execution.active = { instructionId: "reference-program", cursor: first.cursor };
     const restored = parseStageRun(JSON.parse(JSON.stringify(run)));
     expect(restored).not.toBeNull();
@@ -98,13 +98,25 @@ describe("runtime entity references", () => {
   it("drops an in-flight binding on rewind and requires a fresh observation", () => {
     const body = action();
     const initial = observe(fixture());
-    const run = createStageRun("reference-rewind", initial);
-    const first = stepProgram(initial, body, createCursor(), walk);
-    run.world = first.world;
-    run.phase = "running";
-    run.notebook.instructions = [program(body)];
-    run.execution.active = { instructionId: "reference-program", cursor: first.cursor };
-    const rewound = rewindStage(run);
+    const dynamics: StageDynamics = {
+      execute: walk,
+      advance: (world) => ({ world, events: [], canChange: false }),
+      segmentComplete: () => false,
+      nextSegment: () => null,
+      sealAfter: () => null,
+    };
+    let run = departStage(writeStageProgram(createStageRun("reference-rewind", initial), program(body)));
+    run = advanceStage(run, dynamics);
+    expect(run.phase).toBe("running");
+    expect(run.execution.active?.cursor.resolvedAction?.target).toBe("east");
+    const failure: StageDynamics = {
+      ...dynamics,
+      execute: (world) => ({ world, outcome: "failure", reason: "이동이 막혔어요." }),
+    };
+    run = advanceStage(acknowledgePresentation(run), failure);
+    expect(run.phase).toBe("failed");
+    expect(run.notebook.deaths).toBe(1);
+    const rewound = rewindStage(acknowledgePresentation(run));
     expect(rewound.execution.active).toBeNull();
     expect(rewound.world.attempt).toBe(2);
     const retried = stepProgram(rewound.world, body, createCursor(), walk);

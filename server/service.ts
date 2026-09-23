@@ -56,6 +56,7 @@ export function validateRequest(value: unknown): InterpretRequest {
 export async function interpret(
   body: unknown,
   ip: string,
+  options: { signal?: AbortSignal } = {},
 ): Promise<InterpretResponse> {
   if (process.env.AI_ENABLED?.toLowerCase() === "false")
     throw new ApiError(
@@ -66,6 +67,6 @@ export async function interpret(
     );
   const request = validateRequest(body);
   enforceRateLimit(ip);
-  return (await interpretWithJev(request.text, request.rulesVersion))
+  return (await interpretWithJev(request.text, request.rulesVersion, { signal: options.signal }))
     .interpretation;
 }

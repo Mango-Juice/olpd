@@ -27,7 +27,8 @@ export interface SegmentDefinition {
 export interface CampaignStageDefinition {
   id: Exclude<StageId, 1>;
   title: string;
-  contentRevision?: "quiet-v1";
+  /** Required by registered campaign content; omitted only by legacy test stages. */
+  contentRevision?: "shared-v1";
   /** The chapter's purpose, never a list of steps or hidden completion rules. */
   objective?: string;
   segments: readonly SegmentDefinition[];
@@ -59,10 +60,7 @@ export function stageDynamics(stage: CampaignStageDefinition): StageDynamics {
       if (index < 0) throw new Error("다음 구간을 확인할 수 없어요.");
       const next = sequence[index + 1];
       if (!next) return null;
-      // Entering core is a hard boundary: onboarding tools, facts, and physical state do not leak.
-      const onboarding = isOnboardingSegment(stage, world.segmentId);
-      const entered = next.enter(onboarding && !isOnboardingSegment(stage, next.id) ? null : world);
-      if (onboarding || stage.contentRevision === "quiet-v1") return entered;
+      const entered = next.enter(world);
       const facts = [...world.facts];
       const seen = new Set(facts.map((fact) => JSON.stringify(fact)));
       for (const fact of entered.facts) {
@@ -71,7 +69,8 @@ export function stageDynamics(stage: CampaignStageDefinition): StageDynamics {
       }
       return { ...entered, tick: world.tick, segmentStartedAt: world.tick, attempt: world.attempt, facts };
     },
-    sealAfter: (id) => stage.id !== 10 ? null : id === stage.segments[1]?.id ? 1 : id === stage.segments[3]?.id ? 2 : stage.contentRevision === "quiet-v1" && id === stage.segments[4]?.id ? 3 : null,
+    // A life always retries from the chapter entrance; story seals are presentation only.
+    sealAfter: () => null,
     isOnboardingSegment: (id) => isOnboardingSegment(stage, id),
   };
 }
@@ -87,6 +86,7 @@ export function makeWorld(stageId: StageId, segmentId: string, entities: Entity[
   const previous = entities.find((entity) => entity.id === "letter");
   const letter = makeEntity("letter", "배달할 편지", hero.location.region, hero.location.x, {
     ...previous, description: "몸에 매단 편지 주머니. 손과 물건 고리를 차지하지 않으며 모험 중에는 내려놓지 않아요.",
+    publicKind: "letter",
     material: "cloth", movable: false, weight: 0, parent: "hero", location: { ...hero.location },
     properties: { ...previous?.properties, kind: "object", slot: "equipment", equipment: true, dry: previous?.properties.dry ?? true },
   });

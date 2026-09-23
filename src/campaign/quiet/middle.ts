@@ -20,6 +20,7 @@ import {
   resolvedAction,
   takeQuietItem,
 } from "./middle-helpers";
+import { authoredDefaultWalk } from "./public-kinds";
 
 const hints = ["눈앞의 사물과 길이 전부다.", "움직인 몸과 물건은 그 자리에 남는다.", "보이는 상태가 다음 행동을 결정한다."] as const;
 
@@ -32,6 +33,7 @@ function segment(
     ...segmentDefinition,
     description: descriptionsAreNames(names),
     hints,
+    idleAction: authoredDefaultWalk,
     advance: quietAdvance,
   };
 }
@@ -100,11 +102,7 @@ function gardenMove(world: WorldState, raw: PhysicalAction): ActionResult {
   const id = world.segmentId;
   const target = action.verb === "jump" && requestedTarget.properties.fixedSpike === true
     ? world.entities[`${id}-exit`]
-    : id === "05-v2-1" && action.verb === "move" && requestedTarget.id === `${id}-path`
-      ? world.entities[`${id}-exit`]
-      : id === "05-v2-3" && (action.verb === "move" || action.verb === "duck") && requestedTarget.id === `${id}-vine`
-        ? world.entities[`${id}-exit`]
-        : requestedTarget;
+    : requestedTarget;
   const from = world.actors.hero.location.x;
   const to = target.location.x;
 
@@ -494,7 +492,7 @@ const theatreDefinitions: SegmentDefinition[] = [
 export const QUIET_GARDEN_STAGE: CampaignStageDefinition = {
   id: 5,
   title: "뒤집힌 정원",
-  contentRevision: "quiet-v1",
+  contentRevision: "shared-v1",
   segments: gardenDefinitions,
   practice: gardenDefinitions[0],
   story: { afterSegment: "05-v2-6", object: "천장에 핀 꽃", text: "거꾸로 핀 꽃도 바람이 오는 쪽을 기억하고 있었다." },
@@ -503,7 +501,7 @@ export const QUIET_GARDEN_STAGE: CampaignStageDefinition = {
 export const QUIET_STOREHOUSE_STAGE: CampaignStageDefinition = {
   id: 6,
   title: "등불 보관소",
-  contentRevision: "quiet-v1",
+  contentRevision: "shared-v1",
   segments: storehouseDefinitions,
   practice: storehouseDefinitions[0],
   story: { afterSegment: "06-v2-6", object: "닳은 열쇠", text: "작은 열쇠는 마지막 문을 연 뒤에도 손안에 남았다." },
@@ -512,7 +510,7 @@ export const QUIET_STOREHOUSE_STAGE: CampaignStageDefinition = {
 export const QUIET_THEATRE_STAGE: CampaignStageDefinition = {
   id: 7,
   title: "평형 인형극장",
-  contentRevision: "quiet-v1",
+  contentRevision: "shared-v1",
   segments: theatreDefinitions,
   practice: theatreDefinitions[0],
   story: { afterSegment: "07-v2-6", object: "낡은 무대막", text: "막 뒤의 길은 한 사람이 아닌 두 사람의 발자국을 기다렸다." },

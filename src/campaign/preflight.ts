@@ -1,4 +1,4 @@
-import { advanceStage, departStage, type StageDynamics, type StageRun } from "./run";
+import { acknowledgePresentation, advanceStage, departStage, retryStage, type StageDynamics, type StageRun } from "./run";
 import type { Notebook } from "./notebook";
 import type { WorldEvent } from "./types";
 
@@ -27,6 +27,7 @@ function completedCurrentEncounter(run: StageRun): boolean {
 export function preflightProgram(run: StageRun, proposedNotebook: Notebook, dynamics: StageDynamics): ProgramPreflight {
   let dryRun = structuredClone(run);
   dryRun.notebook = structuredClone(proposedNotebook);
+  if (dryRun.phase === "failed") dryRun = acknowledgePresentation(retryStage(dryRun));
   dryRun = departStage(dryRun);
 
   if (dryRun.phase === "cleared") return { kind: "admissible", limited: false };
@@ -58,7 +59,7 @@ export function preflightProgram(run: StageRun, proposedNotebook: Notebook, dyna
       return { kind: "admissible", limited: false };
     }
 
-    dryRun = next;
+    dryRun = acknowledgePresentation(next);
   }
 
   return { kind: "admissible", limited: true };

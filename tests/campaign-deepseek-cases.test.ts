@@ -6,7 +6,7 @@ import {
   type DeepSeekCase,
 } from "../scripts/campaign-deepseek-cases";
 import { createCursor, stepProgram } from "../src/campaign/program";
-import { THEATRE_STAGE } from "../src/campaign/stages/theatre";
+import { THEATRE_STAGE } from "./fixtures/campaign-worlds/theatre";
 import type { InstructionProgram, PhysicalAction, Predicate, ProgramNode, WorldState } from "../src/campaign/types";
 
 function byId(id: string): DeepSeekCase {

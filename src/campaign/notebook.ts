@@ -1,93 +1,193 @@
+import {
+  MEMORY_INITIAL_ERASERS,
+  appendMemory,
+  consumeMemoryWrite,
+  deleteMemory,
+  grantMemoryWrite,
+  moveMemory,
+  placeMemory,
+} from "../game/memory";
 import type { InstructionProgram } from "./types";
 
 export const CAMPAIGN_INPUT_LIMIT = 500;
+
 export interface Notebook {
-  /** Highest priority first, matching the visible notebook. */
+  /** Persisted low-to-high. The player-facing notebook renders this in reverse. */
   instructions: InstructionProgram[];
   canWrite: boolean;
   erasers: number;
-  bells: number;
+  penaltyDeaths: number;
+  deaths: number;
   departed: boolean;
   editing: boolean;
-  /** Lives outside the rewind snapshot; initial segment includes the first free line. */
-  visitedBookmarks: string[];
-  /** Only the instruction rejected as impossible may be repaired or removed free. */
-  clarificationId?: string;
-  /** Refundable edit charges, keyed by the resulting instruction identity. */
-  writeCosts?: Record<string, { erasers: number; bells: number }>;
-  /** Onboarding owns one temporary line whose edits and resets never spend campaign resources. */
-  scratch?: boolean;
+  /** Deletion is a post-death action, never a free ready-state edit. */
+  canDelete: boolean;
 }
-export function createNotebook(firstSegment: string, scratch = false): Notebook {
-  return { instructions: [], canWrite: true, erasers: 2, bells: 0, departed: false, editing: true, visitedBookmarks: [firstSegment], ...(scratch ? { scratch: true } : {}) };
+
+export function createNotebook(): Notebook {
+  return {
+    instructions: [],
+    canWrite: true,
+    erasers: MEMORY_INITIAL_ERASERS,
+    penaltyDeaths: 0,
+    deaths: 0,
+    departed: false,
+    editing: true,
+    canDelete: false,
+  };
 }
-export function visitBookmark(book: Notebook, segment: string): Notebook {
-  if (book.visitedBookmarks.includes(segment)) return book;
-  return { ...book, canWrite: true, editing: true, visitedBookmarks: [...book.visitedBookmarks, segment] };
-}
+
 export function departNotebook(book: Notebook): Notebook {
-  if (book.clarificationId) throw new Error("뜻을 확인할 메모를 먼저 고치거나 지워 주세요.");
-  return { ...book, departed: true, editing: false, canWrite: false };
+  return {
+    ...consumeMemoryWrite(book),
+    departed: true,
+    editing: false,
+    canDelete: false,
+  };
 }
-export function rewindNotebook(book: Notebook): Notebook {
-  return { ...book, bells: book.bells + (book.scratch ? 0 : 1), canWrite: true, editing: true };
+
+/** A fatal outcome grants exactly one append opportunity while preserving the notebook. */
+export function killNotebook(book: Notebook): Notebook {
+  return {
+    ...grantMemoryWrite(book),
+    deaths: book.deaths + 1,
+    editing: true,
+    canDelete: true,
+  };
 }
-export function clarifyNotebook(book: Notebook, instructionId: string): Notebook {
-  if (!book.instructions.some((item) => item.id === instructionId)) throw new Error("확인할 메모를 찾을 수 없어요.");
-  const costs = { ...book.writeCosts };
-  const refund = costs[instructionId];
-  delete costs[instructionId];
-  return { ...book, clarificationId: instructionId, writeCosts: costs, editing: true, canWrite: true,
-    erasers: Math.min(2, book.erasers + (refund?.erasers ?? 0)), bells: Math.max(0, book.bells - (refund?.bells ?? 0)) };
+
+/** Retry consumes an unused grant and returns the same accumulated notebook to the entrance. */
+export function retryNotebook(book: Notebook): Notebook {
+  return {
+    ...consumeMemoryWrite(book),
+    departed: false,
+    editing: true,
+    canDelete: false,
+  };
 }
+
 function assertEditable(book: Notebook): void {
   if (!book.editing) throw new Error("행동이나 대기 중에는 메모를 바꿀 수 없어요.");
 }
-function deletionCost(book: Notebook): Pick<Notebook, "erasers" | "bells"> {
-  return book.erasers > 0 ? { erasers: book.erasers - 1, bells: book.bells } : { erasers: 0, bells: book.bells + 3 };
+
+function canonicalId(program: InstructionProgram, id: string | undefined): string | undefined {
+  if (id === undefined) return undefined;
+  const binding = program.bindings?.[id];
+  return binding ? `${binding.kind}:${binding.value}` : `literal:${id}`;
 }
-/** Call only after interpretation and explicit intent confirmation. Errors charge nothing. */
-export function writeProgram(book: Notebook, program: InstructionProgram, replaceId?: string): Notebook {
+
+function canonicalPredicate(program: InstructionProgram, predicate: NonNullable<InstructionProgram["condition"]>): unknown {
+  if (predicate.kind === "property") return { ...predicate, entity: canonicalId(program, predicate.entity) };
+  if (predicate.kind === "not") return { kind: "not", predicate: canonicalPredicate(program, predicate.predicate) };
+  return {
+    kind: predicate.kind,
+    predicates: predicate.predicates.map((item) => canonicalPredicate(program, item))
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+  };
+}
+
+function canonicalNode(program: InstructionProgram, node: InstructionProgram["body"]): unknown {
+  if (node.kind === "action") {
+    return {
+      ...node,
+      target: canonicalId(program, node.target),
+      destination: canonicalId(program, node.destination),
+      instrument: canonicalId(program, node.instrument),
+      references: node.references && Object.fromEntries(Object.entries(node.references).map(([role, reference]) =>
+        [role, { ...reference, entity: canonicalId(program, reference!.entity) }])),
+    };
+  }
+  if (node.kind === "wait") return { kind: "wait", until: canonicalPredicate(program, node.until) };
+  if (node.kind === "until") return { kind: "until", condition: canonicalPredicate(program, node.condition), body: canonicalNode(program, node.body) };
+  if (node.kind === "if") return { kind: "if", condition: canonicalPredicate(program, node.condition), then: canonicalNode(program, node.then), otherwise: node.otherwise && canonicalNode(program, node.otherwise) };
+  return { kind: node.kind, children: node.children.map((child) => canonicalNode(program, child)) };
+}
+
+function selectorSignature(program: InstructionProgram): string[] {
+  const ids = new Set<string>();
+  const add = (id: string | undefined) => {
+    const canonical = canonicalId(program, id);
+    if (canonical) ids.add(canonical);
+  };
+  const predicate = (value: NonNullable<InstructionProgram["condition"]>) => {
+    if (value.kind === "property") add(value.entity);
+    else if (value.kind === "not") predicate(value.predicate);
+    else value.predicates.forEach(predicate);
+  };
+  const node = (value: InstructionProgram["body"]) => {
+    if (value.kind === "action") {
+      add(value.target); add(value.destination); add(value.instrument);
+      Object.values(value.references ?? {}).forEach((reference) => add(reference?.entity));
+    } else if (value.kind === "wait") predicate(value.until);
+    else if (value.kind === "until") { predicate(value.condition); node(value.body); }
+    else if (value.kind === "if") { predicate(value.condition); node(value.then); if (value.otherwise) node(value.otherwise); }
+    else value.children.forEach(node);
+  };
+  if (program.condition) predicate(program.condition);
+  node(program.body);
+  return [...ids].sort();
+}
+
+function applicabilitySignature(program: InstructionProgram): string {
+  return JSON.stringify({
+    scope: { stageId: program.scope.stageId ?? null, region: program.scope.region ?? null },
+    selectors: selectorSignature(program),
+    condition: program.condition ? canonicalPredicate(program, program.condition) : null,
+  });
+}
+
+function behaviorSignature(program: InstructionProgram): string {
+  return JSON.stringify({ guard: program.guard, body: canonicalNode(program, program.body) });
+}
+
+function protectsSharedApplicability(program: InstructionProgram): boolean {
+  return program.scope.region === undefined && !!program.bindings && Object.keys(program.bindings).length > 0;
+}
+
+/** Append-only. A bad interpretation must be rejected before this function is called. */
+export function writeProgram(
+  book: Notebook,
+  program: InstructionProgram,
+  replaceId?: string,
+): Notebook {
   assertEditable(book);
-  if (!book.canWrite) throw new Error("새 한 줄 기회가 없어요.");
-  if (book.clarificationId && replaceId !== book.clarificationId) throw new Error("뜻을 확인할 메모 한 줄을 무료로 고칠 수 있어요.");
+  if (replaceId !== undefined) throw new Error("기존 메모는 덮어쓸 수 없어요. 지운 뒤 새 생에서 한 줄을 남겨 주세요.");
   const normalized = { ...structuredClone(program), text: program.text.trim() };
-  if (!normalized.text || [...normalized.text].length > CAMPAIGN_INPUT_LIMIT) throw new Error("한 줄은 1~500자로 적어 주세요.");
-  const index = replaceId === undefined ? -1 : book.instructions.findIndex((item) => item.id === replaceId);
-  if (replaceId !== undefined && index < 0) throw new Error("수정할 메모를 찾을 수 없어요.");
-  if (book.scratch && index < 0 && book.instructions.length > 0) throw new Error("도입에서는 임시 한 줄만 쓸 수 있어요.");
-  if (book.instructions.some((item, position) => item.id === program.id && position !== index)) throw new Error("같은 메모가 이미 있어요.");
-  const instructions = book.instructions.map((item) => structuredClone(item));
-  if (index < 0) instructions.unshift(normalized);
-  else instructions[index] = normalized;
-  const cost = book.scratch || index < 0 || replaceId === book.clarificationId ? { erasers: book.erasers, bells: book.bells } : deletionCost(book);
-  const writeCosts = { ...book.writeCosts };
-  if (replaceId) delete writeCosts[replaceId];
-  writeCosts[program.id] = { erasers: book.erasers - cost.erasers, bells: cost.bells - book.bells };
-  return { ...book, ...cost, instructions, writeCosts, clarificationId: undefined, canWrite: book.scratch ? true : false };
+  if (!normalized.text || [...normalized.text].length > CAMPAIGN_INPUT_LIMIT) {
+    throw new Error("한 줄은 1~500자로 적어 주세요.");
+  }
+  if (book.instructions.some((item) => item.id === normalized.id)) {
+    throw new Error("같은 메모가 이미 있어요.");
+  }
+  const conflict = protectsSharedApplicability(normalized) && book.instructions.find((item) =>
+    protectsSharedApplicability(item)
+    && applicabilitySignature(item) === applicabilitySignature(normalized)
+    && behaviorSignature(item) !== behaviorSignature(normalized));
+  if (conflict) {
+    throw new Error(`기존 메모 “${conflict.text}”와 조건이 같지만 행동이 달라요. 조건을 바꾸거나 기존 메모를 지워 주세요.`);
+  }
+  return appendMemory(book, normalized);
 }
+
 export function deleteProgram(book: Notebook, id: string): Notebook {
   assertEditable(book);
-  if (!book.instructions.some((item) => item.id === id)) return book;
-  if (book.clarificationId && book.clarificationId !== id) throw new Error("뜻을 확인할 메모를 먼저 고치거나 지워 주세요.");
-  const free = book.scratch || book.clarificationId === id;
-  const writeCosts = { ...book.writeCosts };
-  delete writeCosts[id];
-  return { ...book, ...(free ? {} : deletionCost(book)), writeCosts, clarificationId: undefined, canWrite: book.scratch ? true : book.canWrite, instructions: book.instructions.filter((item) => item.id !== id) };
+  if (!book.canDelete) throw new Error("죽은 뒤에만 기억을 지울 수 있어요.");
+  return deleteMemory<InstructionProgram, Notebook>(book, id, (item) => item.id).state;
 }
-export function reorderProgram(book: Notebook, id: string, position: number): Notebook {
+
+/** One-slot movement; up means toward the visible top. */
+export function moveProgram(book: Notebook, id: string, direction: "up" | "down"): Notebook {
   assertEditable(book);
-  const index = book.instructions.findIndex((item) => item.id === id);
-  if (index < 0 || !Number.isInteger(position) || position < 0 || position >= book.instructions.length || index === position) return book;
-  const instructions = [...book.instructions];
-  const [item] = instructions.splice(index, 1);
-  instructions.splice(position, 0, item);
-  return { ...book, instructions };
+  return moveMemory<InstructionProgram, Notebook>(book, id, direction, (item) => item.id);
 }
-export function copyArchivedProgram(book: Notebook, program: InstructionProgram): Notebook {
+
+/** Places around another item in the high-to-low order shown in the UI. */
+export function placeProgram(
+  book: Notebook,
+  id: string,
+  targetId: string,
+  position: "before" | "after",
+): Notebook {
   assertEditable(book);
-  if (book.scratch) throw new Error("본편 메모는 도입의 임시 한 줄로 가져올 수 없어요.");
-  if (book.departed) throw new Error("보관한 메모는 이 장의 첫 출발 전에만 복사할 수 있어요.");
-  if (book.instructions.some((item) => item.id === program.id)) return book;
-  return { ...book, instructions: [...book.instructions, structuredClone(program)] };
+  return placeMemory<InstructionProgram, Notebook>(book, id, targetId, position, (item) => item.id);
 }

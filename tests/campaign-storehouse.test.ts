@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { STOREHOUSE_PUBLIC_CATALOG, STOREHOUSE_STAGE } from "../src/campaign/stages/storehouse";
+import { STOREHOUSE_PUBLIC_CATALOG, STOREHOUSE_STAGE } from "./fixtures/campaign-worlds/storehouse";
 import { stageDynamics, type SegmentDefinition } from "../src/campaign/level";
-import { writeProgram } from "../src/campaign/notebook";
-import { advanceStage, createStageRun, departStage, type StageRun } from "../src/campaign/run";
+import { acknowledgePresentation, advanceStage, createStageRun, departStage, writeStageProgram, type StageRun } from "../src/campaign/run";
 import { parseStageRun } from "../src/campaign/run-validation";
 import type { InstructionProgram, PhysicalAction, ProgramNode, WorldState } from "../src/campaign/types";
 
@@ -67,24 +66,6 @@ function instruction(id: string, region: string, children: ProgramNode[]): Instr
   };
 }
 
-function playBookmark(runState: StageRun, program: InstructionProgram, expectedNext: string | "cleared"): StageRun {
-  let next = {
-    ...runState,
-    notebook: writeProgram(runState.notebook, program),
-  };
-  next = departStage(next);
-  for (let step = 0; step < 120 && next.world.segmentId === program.scope.region && next.phase !== "cleared"; step += 1) {
-    next = advanceStage(next, stageDynamics(STOREHOUSE_STAGE));
-    expect(next.phase, next.statusReason ?? "stage run stopped").not.toBe("blocked");
-    next = saved(next);
-  }
-  if (expectedNext === "cleared") expect(next.phase).toBe("cleared");
-  else {
-    expect(next.world.segmentId).toBe(expectedNext);
-    expect(next.phase).toBe("bookmark");
-  }
-  return next;
-}
 
 function openLowerDoor(definition: SegmentDefinition, state: WorldState): WorldState {
   return run(definition, state, [
@@ -160,65 +141,6 @@ describe("lantern storehouse public contract", () => {
     expect(definition.complete(state)).toBe(true);
     expect(state.entities["06-practice-key"].parent).toBe("06-practice-return");
     expect(definition.enter(null)).toEqual(fresh);
-  });
-});
-
-describe("continuous five-segment storehouse StageRun", () => {
-  it("round-trips every scheduler boundary and clears using actual resource locations", () => {
-    let stageRun = createStageRun("storehouse-continuous", segment("06-1").enter(null));
-
-    stageRun = playBookmark(stageRun, instruction("storehouse-06-1", "06-1", [
-      action("take", "06-1-key"), action("move", "06-1-lock-a"),
-      action("place", "06-1-key", { destination: "06-1-lock-a" }), action("turn", "06-1-key"), action("take", "06-1-key"),
-      action("move", "06-1-lock-b"), action("place", "06-1-key", { destination: "06-1-lock-b" }), action("turn", "06-1-key"),
-      action("move", "06-1-exit"),
-    ]), "06-2");
-
-    stageRun = playBookmark(stageRun, instruction("storehouse-06-2", "06-2", [
-      action("take", "06-2-lantern-a"), action("move", "06-2-hook-a"), action("place", "06-2-lantern-a", { destination: "06-2-hook-a" }),
-      action("move", "06-2-start"), action("take", "06-2-lantern-b"), action("move", "06-2-hook-b"), action("place", "06-2-lantern-b", { destination: "06-2-hook-b" }),
-      action("move", "06-2-hook-a"), action("take", "06-2-lantern-a"), action("move", "06-2-hook-c"), action("place", "06-2-lantern-a", { destination: "06-2-hook-c" }),
-      action("move", "06-2-hook-b"), action("take", "06-2-lantern-b"), action("move", "06-2-pedestal"), action("place", "06-2-lantern-b", { destination: "06-2-pedestal" }),
-      action("move", "06-2-hook-c"), action("take", "06-2-lantern-a"), action("move", "06-2-exit"),
-    ]), "06-3");
-    expect(stageRun.world.actors.hero.carrying).toContain("letter");
-    expect(stageRun.world.actors.hero.carrying).toContain("06-2-lantern-a");
-    expect(stageRun.world.entities["06-2-lantern-a"].parent).toBe("hero");
-    expect(stageRun.world.entities["06-2-lantern-a"].location).toEqual(stageRun.world.actors.hero.location);
-    expect(stageRun.world.entities["06-3-inventory"].properties).toMatchObject({ hand: "06-2-lantern-a", hooksUsed: 0 });
-
-    stageRun = playBookmark(stageRun, instruction("storehouse-06-3", "06-3", [
-      action("release", "06-2-lantern-a"),
-      action("take", "06-3-rope-loop"), action("place", "06-3-rope-loop", { destination: "06-3-basket" }), action("turn", "06-3-basket-winch"),
-      action("take", "06-3-striker"), action("take", "06-3-lens"), action("move", "06-3-destination"),
-      action("place", "06-3-lens", { destination: "06-3-lens-slot" }), action("place", "06-3-striker", { destination: "06-3-ignition-slot" }), action("turn", "06-3-striker"),
-      action("take", "06-3-rope-loop"), action("place", "06-3-rope-loop", { destination: "06-3-rope-handle" }), action("turn", "06-3-rope-loop"), action("move", "06-3-exit"),
-    ]), "06-4");
-
-    stageRun = playBookmark(stageRun, instruction("storehouse-06-4", "06-4", [
-      action("take", "06-4-lantern"), action("move", "06-4-light-pedestal"), action("place", "06-4-lantern", { destination: "06-4-light-pedestal" }), action("move", "06-4-light-chest"), action("open", "06-4-light-chest"),
-      action("take", "06-4-lantern"), action("move", "06-4-start"), action("take", "06-4-mirror-a"), action("move", "06-4-shadow-slot"), action("place", "06-4-mirror-a", { destination: "06-4-shadow-slot" }), action("move", "06-4-shadow-chest"), action("open", "06-4-shadow-chest"),
-      action("move", "06-4-alarm-pedestal"), action("place", "06-4-lantern", { destination: "06-4-alarm-pedestal" }), action("move", "06-4-start"), action("take", "06-4-mirror-b"), action("move", "06-4-alarm-slot"), action("place", "06-4-mirror-b", { destination: "06-4-alarm-slot" }), action("move", "06-4-alarm-chest"), action("open", "06-4-alarm-chest"), action("move", "06-4-exit"),
-    ]), "06-5");
-
-    stageRun = playBookmark(stageRun, instruction("storehouse-06-5", "06-5", [
-      action("take", "06-5-counterweight"), action("place", "06-5-counterweight", { destination: "06-5-drive-socket" }),
-      action("take", "06-5-key"), action("move", "06-5-lower-lock"), action("place", "06-5-key", { destination: "06-5-lower-lock" }), action("turn", "06-5-key"), action("take", "06-5-key"), action("move", "06-5-start"), action("release", "06-5-key"),
-      action("take", "06-5-lantern-a"), action("move", "06-5-cargo-basket"), action("place", "06-5-lantern-a", { destination: "06-5-cargo-basket" }), action("turn", "06-5-lower-winch"), action("turn", "06-5-lower-winch"),
-      action("move", "06-5-start"), action("take", "06-5-lantern-b"), action("move", "06-5-cargo-basket"), action("place", "06-5-lantern-b", { destination: "06-5-cargo-basket" }), action("turn", "06-5-lower-winch"),
-      action("move", "06-5-start"), action("take", "06-5-mirror-a"), action("take", "06-5-mirror-b"), action("take", "06-5-key"),
-      action("move", "06-5-elevator"), action("board", "06-5-elevator"), action("turn", "06-5-elevator-lever"), action("dismount", "06-5-elevator", { destination: "06-5-upper-dock" }),
-      action("move", "06-5-lamp-slot-a"), action("place", "06-5-mirror-a", { destination: "06-5-mirror-slot-a" }), action("place", "06-5-mirror-b", { destination: "06-5-mirror-slot-b" }),
-      action("move", "06-5-upper-shelf"), action("take", "06-5-lantern-a"), action("move", "06-5-lamp-slot-a"), action("place", "06-5-lantern-a", { destination: "06-5-lamp-slot-a" }),
-      action("move", "06-5-upper-shelf"), action("take", "06-5-lantern-b"), action("move", "06-5-lamp-slot-b"), action("place", "06-5-lantern-b", { destination: "06-5-lamp-slot-b" }),
-      action("move", "06-5-exit-locker"), action("place", "06-5-key", { destination: "06-5-exit-locker" }), action("turn", "06-5-key"), action("move", "06-5-exit"),
-    ]), "cleared");
-
-    expect(stageRun.clearedSegments).toEqual(["06-1", "06-2", "06-3", "06-4", "06-5"]);
-    expect(stageRun.notebook.instructions).toHaveLength(5);
-    expect(stageRun.world.entities["06-5-key"].parent).toBe("06-5-exit-locker");
-    expect(stageRun.world.entities["06-5-light-door"].properties.open).toBe(true);
-    expect(stageRun.world.entities["06-5-lantern-a"].properties.transportRoute).toBe("cargo-winch");
   });
 });
 
@@ -371,50 +293,43 @@ describe("finite resource alternatives and recovery", () => {
     expect(winch.entities["06-5-beam-map"].properties.path).toContain("receiver-a");
   });
 
-  it("returns a visible elevator overcapacity plan for free clarification with all resources restored", () => {
+  it("stops a visible elevator overcapacity plan without granting a free edit", () => {
     const definition = segment("06-5");
     let runState = createStageRun("storehouse-overload", definition.enter(null));
-    runState = {
-      ...runState,
-      notebook: writeProgram(runState.notebook, instruction("overload", "06-5", [
+    runState = writeStageProgram(runState, instruction("overload", "06-5", [
         action("take", "06-5-counterweight"), action("place", "06-5-counterweight", { destination: "06-5-drive-socket" }),
         action("take", "06-5-key"), action("move", "06-5-lower-lock"), action("place", "06-5-key", { destination: "06-5-lower-lock" }), action("turn", "06-5-key"),
         action("move", "06-5-start"), action("take", "06-5-lantern-a"), action("move", "06-5-elevator"), action("place", "06-5-lantern-a", { destination: "06-5-elevator" }),
         action("move", "06-5-start"), action("take", "06-5-lantern-b"), action("move", "06-5-elevator"), action("place", "06-5-lantern-b", { destination: "06-5-elevator" }), action("board", "06-5-elevator"),
-      ])),
-    };
+      ]));
     runState = departStage(runState);
-    for (let step = 0; step < 40 && !runState.notebook.clarificationId; step += 1) runState = advanceStage(runState, stageDynamics(STOREHOUSE_STAGE));
-    expect(runState.world.attempt).toBe(2);
-    expect(runState.phase).toBe("bookmark");
-    expect(runState.notebook.bells).toBe(0);
-    expect(runState.notebook.clarificationId).toBe("overload");
+    for (let step = 0; step < 40 && (runState.phase === "running" || runState.phase === "waiting"); step += 1) runState = advanceStage(acknowledgePresentation(runState), stageDynamics(STOREHOUSE_STAGE));
+    expect(runState.world.attempt).toBe(1);
+    expect(runState.phase).toBe("blocked");
+    expect(runState.notebook).toMatchObject({ deaths: 0, canWrite: false, canDelete: false });
     expect(runState.events.at(-1)?.outcome).toBe("clarification");
-    expect(runState.world.entities["06-5-counterweight"].parent).toBeNull();
-    expect(runState.world.entities["06-5-lantern-a"].parent).toBeNull();
-    expect(runState.world.entities["06-5-lantern-b"].parent).toBeNull();
+    expect(runState.world.entities["06-5-counterweight"].parent).toBe("06-5-drive-socket");
+    expect(runState.world.entities["06-5-lantern-a"].parent).toBe("06-5-elevator");
+    expect(runState.world.entities["06-5-lantern-b"].parent).toBe("06-5-elevator");
     expect(runState.world.entities["06-5-elevator"].properties).toMatchObject({ level: "lower", braked: true });
     expect(saved(runState)).toEqual(runState);
   });
 
-  it("rewinds a real closing-shutter collision as failure and charges one bell", () => {
+  it("keeps a real closing-shutter collision visible and grants one post-death write", () => {
     const definition = segment("06-2");
     let runState = createStageRun("storehouse-shutter", definition.enter(null));
-    runState = {
-      ...runState,
-      notebook: writeProgram(runState.notebook, instruction("shutter-failure", "06-2", [
+    runState = writeStageProgram(runState, instruction("shutter-failure", "06-2", [
         action("take", "06-2-lantern-a"), action("move", "06-2-hook-a"), action("place", "06-2-lantern-a", { destination: "06-2-hook-a" }),
         action("move", "06-2-start"), action("take", "06-2-lantern-b"), action("move", "06-2-hook-b"), action("place", "06-2-lantern-b", { destination: "06-2-hook-b" }),
         action("move", "06-2-hook-a"), action("take", "06-2-lantern-a"), action("move", "06-2-hook-c"), action("place", "06-2-lantern-a", { destination: "06-2-hook-c" }),
         action("move", "06-2-hook-b"), action("take", "06-2-lantern-b"), action("move", "06-2-sensor-c"),
         action("move", "06-2-start"),
-      ])),
-    };
+      ]));
     runState = departStage(runState);
-    for (let step = 0; step < 20 && runState.world.attempt === 1; step += 1) runState = advanceStage(runState, stageDynamics(STOREHOUSE_STAGE));
-    expect(runState.world.attempt).toBe(2);
-    expect(runState.phase).toBe("bookmark");
-    expect(runState.notebook.bells).toBe(1);
+    for (let step = 0; step < 20 && (runState.phase === "running" || runState.phase === "waiting"); step += 1) runState = advanceStage(acknowledgePresentation(runState), stageDynamics(STOREHOUSE_STAGE));
+    expect(runState.world.attempt).toBe(1);
+    expect(runState.phase).toBe("failed");
+    expect(runState.notebook).toMatchObject({ deaths: 1, canWrite: true, canDelete: true });
     expect(runState.events.some((event) => event.outcome === "failure" && event.reason.includes("셔터"))).toBe(true);
   });
 });

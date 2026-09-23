@@ -24,10 +24,10 @@ npm run dev
 ## 플레이
 
 - 서사 프롤로그는 SKIP할 수 있다. 1장 12장면과 2~10장 각 6장면, 총 66스테이지를 진행한다.
-- 2장 이후는 한 화면에 2~4개 요소만 둔다. 각 장면의 한 줄을 무료로 고치고, 실패한 장면에서 다시 시작한다. 내부 수치나 물체 설명표는 표시하지 않는다.
+- 2장 이후는 한 화면에 2~4개 요소만 둔다. 1장과 같이 메모를 누적하고, 죽은 뒤 한 줄을 더 써 장 입구부터 다시 시작한다. 지우개 두 개 이후 삭제는 한 줄당 3데스다. 내부 수치나 물체 설명표는 표시하지 않는다.
 - 1장의 기존 8방은 화면 1-5~1-12로 유지한다. 다음 장은 앞 장을 완료해야 열린다.
 - 물건·주체·순서·조건을 자연어로 적고 Enter로 바로 실행한다. 모델은 지침만 해석하고 물리와 성공은 코드가 결정한다.
-- 메모는 위쪽부터 우선한다. 기본 전진은 안전하게 열린 유일한 보행 경로에서만 수행하고, 상호작용이나 역할을 대신 결정하지 않는다.
+- 메모는 위쪽부터 우선한다. 맞는 메모가 없으면 저작된 앞길로 전진하며, 상호작용이나 역할을 대신 결정하지 않는다.
 - 관찰은 같은 화면의 윤곽과 움직임을 드러낸다. 10장의 세 봉인과 편지 이야기는 짧은 장면들로 이어진다.
 - 모든 장이 공용 화면과 원본 용사 아트를 쓰며, 장별 합성 BGM·음소거·모션 감소를 지원한다.
 - 진행과 메모는 자동 저장한다. 개편 전 2장 이후 기록은 별도 복구 자료로 보존하고 완료·해금 상태는 유지한다. 다중 창 충돌은 멈춰 알린다.
@@ -46,7 +46,7 @@ npm run typecheck     # 타입 검사만 필요할 때
 npx playwright install chromium
 ```
 
-브라우저 검사는 별도 터미널에서 `npm run dev`를 실행한 상태에서 수행한다. 새 캠페인의 기본 UI 검사는 `test:campaign:scenes`와 `test:onboarding:legacy`다. `test:onboarding`과 이전 DeepSeek 평가 스크립트는 개편 전 콘텐츠용 기록이며 새 난이도의 검증 근거가 아니다. 아래 구형 `test:browser`·`test:errors`·`test:notebook`은 이전 프롤로그/localStorage 흐름의 보존된 검사이며 새 캠페인 인수 증거로 사용하지 않는다.
+브라우저 검사는 별도 터미널에서 `npm run dev`를 실행한 상태에서 수행한다. Chapter 1 UI 검사는 테스트 전용 엔트리에서 실제 App과 공용 컴포넌트를 실행한다. 후속 장은 `test:campaign:shared`로 실제 QA 화면의 누적 메모·부활·재생·삭제 비용을 검사한다. `test:campaign:scenes`는 54개 장면 배치를 검사한다. 폐기된 콘텐츠 평가와 실제 API 정확도는 별도 범위다.
 
 | 명령 | 범위 | 실제 API / 선행 조건 |
 | --- | --- | --- |
@@ -55,19 +55,19 @@ npx playwright install chromium
 | `npm run test:priority` | 우선순위·동일 조건 충돌 거부 | 합성 저장·해석 응답, API 키 불필요 |
 | `npm run test:chronicle` | 연혁·장면 재생·완료 기록 보관 | 합성 저장 fixture, API 키 불필요 |
 | `npm run test:browser` | 구 프롤로그 원형 검사 | 실제 Jev, 서버 키 필요·호출 비용 발생 |
-| `npm run test:errors` | 통신·저장 오류, IME, 늦은 응답 | 늦은 응답 검사에서 실제 Jev 호출 |
+| `npm run test:errors` | 통신·저장 오류, IME, 늦은 응답 | 합성 응답, 실제 API 호출 없음 |
 | `npm run test:priority:live` | 우선순위·실제 해석 결과의 충돌 | 실제 Jev 호출 |
-| `npm run test:notebook` | 삭제 비용·공유·설정 | `test:browser`가 만든 같은 `CHECK_LABEL`의 저장 기록 필요 |
+| `npm run test:notebook` | 삭제 비용·공유·설정 | 결정적 코어 fixture, 외부 artifact 불필요 |
 | `npm run test:guards` | HTTP 입력 가드 | 실제 Jev 호출 |
 | `npm run eval:campaign -- --repeat=3` | 캠페인 의미·조건·협동·물리·지연 평가 | 실제 DeepSeek, `.env.local` 필요·호출 비용 발생 |
-| `pnpm exec tsx scripts/browser-quiet-command.ts` | 공용 Enter·IME·취소·오류·중복·저장/재접속 | provider fixture, 실제 실행기·저장 |
+| `npm run test:campaign:shared` | Enter·메모 누적·입구 부활·한 장면씩 재생·삭제 비용·모바일 | provider fixture, 실제 실행기·QA 저장 |
 | `pnpm exec tsx scripts/browser-quiet-scenes.ts` | 새 후속 54장면·고정 화면·장별 모바일·내부 패널 제거 | 실제 API 호출 없음 |
-| `pnpm exec tsx scripts/browser-onboarding-flow.ts` | 개편 전 도입 흐름 보존 검사 | 현재 콘텐츠 인수 검사 아님 |
 | `pnpm exec tsx scripts/browser-legacy-onboarding.ts` | 서사 SKIP·1장 도입4개·본편 인계 | provider stub, 실제 UI·저장 |
 | `pnpm exec tsx --env-file=.env.local scripts/evaluate-quiet-live.ts --all` | 새 54장면 대표 의도 실제 해석+실행 | DeepSeek 최대54회, 자동 재시도 없음 |
+| `npx tsx --env-file=.env.local scripts/evaluate-shared-live.ts` | Jev 및 DeepSeek 재사용 규칙·대기·협동 smoke | 최대 4회, `--only=02-v2-1`으로 1건 지정 가능 |
 | `npm run eval:jev` | 고정 한국어 합성 문장·상황 평가 | 실제 Jev, `.env.local` 필요·호출 비용 발생 |
 
-`test:ui`, `test:drag`, `test:priority`, `test:chronicle`은 `scripts/browser-fixtures.ts`로 검사 데이터를 만들어 과거 `artifacts/` 파일 없이 실행한다. 합성 해석은 자동화 검사에만 사용하며 실제 플레이의 해석 경로에는 포함되지 않는다. 이 검사 성공은 Jev의 실제 해석 정확도 검증과 구분한다.
+`test:ui`, `test:drag`, `test:priority`, `test:notebook`, `test:chronicle`은 `scripts/browser-fixtures.ts`로 검사 데이터를 만들어 과거 `artifacts/` 파일 없이 실행한다. 합성 해석은 자동화 검사에만 사용하며 실제 플레이의 해석 경로에는 포함되지 않는다. 이 검사 성공은 Jev의 실제 해석 정확도 검증과 구분한다.
 
 `APP_URL=https://...`로 대상 주소를 바꿀 수 있다. `CHECK_LABEL`을 지원하는 검사에서는 보고서와 실제 저장 기록의 접두어를 지정한다. 에뮬레이션·보고서·스크린샷은 `artifacts/`에 남는다. `npm run preview`는 빌드된 정적 화면만 제공하며 Node API를 띄우지 않는다.
 
@@ -113,8 +113,8 @@ API에는 서버 인스턴스 단위 IP 30회/분 제한과, 배포 프로젝트
 
 ### 로컬 QA 모드
 
-`pnpm dev` 후 `http://localhost:5173/?qa=1`을 열면 클리어 없이 구현된 장에 바로 입장할 수 있습니다. 프롤로그·1~6장과 실험 중인 7장을 제공하며, 미구현 8~10장은 입장 불가로 표시합니다. QA 메모·진행은 `one-line-per-death:qa:v1`에 별도 저장하며 일반 캠페인/연혁을 변경하지 않습니다. “새 QA 시작”은 해당 QA 슬롯만 초기화합니다. 일반 플레이는 `/`로 돌아갑니다. 개발 서버의 localhost에서만 열리고, AI 해석은 실제 API를 사용합니다.
+`pnpm dev` 후 `http://localhost:5173/?qa=1`을 열면 클리어 없이 구현된 장에 바로 입장할 수 있습니다. 프롤로그와 1~10장, 후속 장의 개별 스테이지를 모두 선택할 수 있습니다. QA 메모·진행은 `one-line-per-death:qa:shared-v1`에 별도 저장하며 일반 캠페인/연혁을 변경하지 않습니다. “새 QA 시작”은 해당 QA 슬롯만 초기화합니다. 일반 플레이는 `/`로 돌아갑니다. 개발 서버의 localhost에서만 열리고, AI 해석은 실제 API를 사용합니다.
 
 ### 장과 스테이지의 화면
 
-한 장 안에서 여러 스테이지를 차례로 진행합니다(예: 4장 안의 4-1~4-5). 플레이 화면은 1장과 같은 공용 헤더·장면/종이 메모장 배치·입력창·실마리·진행 표시를 사용합니다. 처음에는 목표와 첫 개념만 안내하고, 물건 설명은 선택했을 때, 전체 성질은 자세히 보기를 열었을 때 보여 줍니다. 이전 스테이지의 원인 장치 상태는 현재 물건과 섞지 않고 별도로 접어 둡니다.
+한 장 안에서 여러 스테이지를 차례로 진행합니다(예: 4-1~4-6). 메모장·입력창·재생 시계·대사·점수·기록은 1장의 코드를 공용 모듈로 추출해 함께 사용합니다. 맵과 행동 판정은 장별 어댑터입니다. 목적은 한 문장으로 안내하고, 한 화면의 물체·움직임으로 관계를 보여 줍니다. 내부 수치와 접힌 상세 성질 패널은 표시하지 않습니다. [모듈별 책임](docs/campaign-implementation.md)을 참고하세요.

@@ -681,6 +681,15 @@ const HERO_SPRITES: Record<HeroFrame["pose"], HeroSpriteSpec> = {
   jump: { x: 910, y: 40, width: 400, height: 365, baseline: 342 },
   duck: { x: 1370, y: 150, width: 390, height: 270, baseline: 244 },
   detour: { x: 500, y: 70, width: 340, height: 355, baseline: 334 },
+  push: { x: 500, y: 70, width: 340, height: 355, baseline: 334 },
+  pull: { x: 500, y: 70, width: 340, height: 355, baseline: 334 },
+  take: { x: 1370, y: 150, width: 390, height: 270, baseline: 244 },
+  place: { x: 1370, y: 150, width: 390, height: 270, baseline: 244 },
+  turn: { x: 45, y: 60, width: 340, height: 365, baseline: 344 },
+  hold: { x: 45, y: 60, width: 340, height: 365, baseline: 344 },
+  pour: { x: 1370, y: 150, width: 390, height: 270, baseline: 244 },
+  climb: { x: 500, y: 70, width: 340, height: 355, baseline: 334 },
+  interact: { x: 45, y: 60, width: 340, height: 365, baseline: 344 },
   death: { x: 60, y: 520, width: 380, height: 330, baseline: 306 },
   revive: { x: 510, y: 470, width: 420, height: 380, baseline: 356 },
   joy: { x: 990, y: 470, width: 430, height: 380, baseline: 352 },
@@ -727,6 +736,73 @@ function drawHeroLoadingSilhouette(
   ctx.arc(-10, -45, 4, 0, Math.PI * 2);
   ctx.arc(10, -45, 4, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
+}
+
+function drawInteractionGesture(
+  ctx: CanvasRenderingContext2D,
+  hero: HeroFrame,
+) {
+  if (!hero.contact || hero.contact.amount <= 0) return;
+  const { x, y, rotation, facing, pose, contact } = hero;
+  const cosine = Math.cos(rotation);
+  const sine = Math.sin(rotation);
+  const shoulder = {
+    x: x + cosine * facing * 9 + sine * 43,
+    y: y + sine * facing * 9 - cosine * 43,
+  };
+  const distance = Math.hypot(contact.x - shoulder.x, contact.y - shoulder.y);
+  if (distance > 92) return;
+  const bend = pose === "pull" ? -facing * 18 : facing * 8;
+  const elbow = {
+    x: (shoulder.x + contact.x) / 2 + bend,
+    y: (shoulder.y + contact.y) / 2 + (pose === "place" || pose === "take" ? 9 : -5),
+  };
+  const drawArm = (verticalOffset: number) => {
+    ctx.beginPath();
+    ctx.moveTo(shoulder.x, shoulder.y + verticalOffset);
+    ctx.quadraticCurveTo(elbow.x, elbow.y + verticalOffset, contact.x, contact.y + verticalOffset);
+    ctx.stroke();
+  };
+  ctx.save();
+  ctx.globalAlpha = hero.opacity * Math.min(1, contact.amount);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = C.mintDark;
+  ctx.lineWidth = 10;
+  drawArm(pose === "push" || pose === "hold" ? -5 : 0);
+  if (pose === "push" || pose === "hold") drawArm(5);
+  ctx.strokeStyle = "#dcebc9";
+  ctx.lineWidth = 5;
+  drawArm(pose === "push" || pose === "hold" ? -5 : 0);
+  if (pose === "push" || pose === "hold") drawArm(5);
+  ctx.fillStyle = C.peachLight;
+  for (const offset of pose === "push" || pose === "hold" ? [-5, 5] : [0]) {
+    ctx.beginPath();
+    ctx.arc(contact.x, contact.y + offset, 4.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (pose === "turn") {
+    ctx.strokeStyle = C.gold;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(contact.x, contact.y, 13, -0.9, 1.65);
+    ctx.stroke();
+  }
+  if (pose === "pour") {
+    ctx.save();
+    ctx.translate(elbow.x, elbow.y);
+    ctx.rotate(facing * 0.65);
+    ctx.fillStyle = C.moonSoft;
+    ctx.fillRect(-8, -6, 16, 12);
+    ctx.restore();
+    ctx.strokeStyle = C.moon;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(elbow.x + facing * 7, elbow.y + 5);
+    ctx.quadraticCurveTo(elbow.x + facing * 14, elbow.y + 8, contact.x, contact.y);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 
@@ -795,6 +871,7 @@ export function drawHero(ctx: CanvasRenderingContext2D, hero: HeroFrame, t: numb
     drawHeroLoadingSilhouette(ctx, x, y, scale);
   }
   ctx.restore();
+  drawInteractionGesture(ctx, hero);
 
   if (pose === "death" && hero.fatalKind)
     drawDeathMotif(ctx, x, y, phase, hero.opacity, hero.fatalKind);
@@ -884,7 +961,7 @@ function drawJoyMotif(
   }
 }
 
-function drawBlockedMotif(
+export function drawBlockedMotif(
   ctx: CanvasRenderingContext2D,
   hero: HeroFrame,
   t: number,

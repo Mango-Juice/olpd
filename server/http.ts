@@ -72,22 +72,32 @@ export async function handleInterpret(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
+  const controller = new AbortController();
+  const onAborted = () => controller.abort();
+  const onClosed = () => { if (!res.writableEnded) controller.abort(); };
+  req.on("aborted", onAborted);
+  res.on("close", onClosed);
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     const error = new ApiError(405, "input", "POST 요청만 지원합니다.");
     recordError(error.code);
     logApiError(error.code);
     send(res, error.status, error.toJSON());
+    req.off("aborted", onAborted);
+    res.off("close", onClosed);
     return;
   }
   try {
-    send(res, 200, await interpret(await readJson(req), clientIp(req)));
+    send(res, 200, await interpret(await readJson(req), clientIp(req), { signal: controller.signal }));
   } catch (error) {
     const apiError = asApiError(error);
     recordError(apiError.code);
     logApiError(apiError.code);
     if (apiError.status === 429) res.setHeader("Retry-After", "60");
     send(res, apiError.status, apiError.toJSON());
+  } finally {
+    req.off("aborted", onAborted);
+    res.off("close", onClosed);
   }
 }
 

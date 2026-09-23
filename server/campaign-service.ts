@@ -21,7 +21,7 @@ export function campaignContext(body: unknown, stageResolver: CampaignStageResol
   const request = parseCampaignInterpretRequest(body);
   if (!request || request.runId.length > 160 || !Number.isSafeInteger(request.revision) || !Number.isSafeInteger(request.attempt)) throw new ApiError(400, "input", "캠페인 요청의 실행 정보를 확인하지 못했어요.");
   const text = request.text.trim();
-  if (!text || [...text].length > 500 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(text)) throw new ApiError(400, "input", "지침은 제어 문자 없이 1~500자로 적어 주세요.");
+  if (!text || [...text].length > 500 || /[\u0000-\u001f\u007f]/u.test(text)) throw new ApiError(400, "input", "지침은 줄바꿈이나 제어 문자 없이 1~500자로 적어 주세요.");
   const world = parseWorldState(request.world);
   const stage = stageResolver(request.stageId);
   if (!world || !stage || world.stageId !== request.stageId || world.attempt !== request.attempt) throw new ApiError(400, "input", "현재 장의 세계 상태를 확인하지 못했어요.");
@@ -43,6 +43,8 @@ export function campaignContext(body: unknown, stageResolver: CampaignStageResol
     entity.material = known.material;
     entity.movable = known.movable;
     entity.reach = known.reach;
+    if (known.publicKind) entity.publicKind = known.publicKind;
+    else delete entity.publicKind;
     if (known.propertyOptions) entity.propertyOptions = structuredClone(known.propertyOptions);
     else delete entity.propertyOptions;
     if (known.properties.kind === "room-gravity-marker" && known.properties.fixedGravity === true) {
@@ -55,7 +57,7 @@ export function campaignContext(body: unknown, stageResolver: CampaignStageResol
     const known = actorCatalog.get(id);
     if (!known) throw new ApiError(400, "input", "현재 장에 없는 주체예요.");
     const sceneActor = segments.find((segment) => segment.id === world.segmentId)?.enter(null).actors[id];
-    if (stage.contentRevision === "quiet-v1" && sceneActor) {
+    if (/^\d{2}-v2-\d+$/.test(world.segmentId) && sceneActor) {
       // Gravity is visible actor orientation in the compact garden, not a fifth
       // clickable rules marker. Crossing its arch may change it during a scene.
       const gravity = actor.capabilities.find((capability) => capability.startsWith("gravity:"));

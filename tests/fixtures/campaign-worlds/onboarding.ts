@@ -1,7 +1,7 @@
-import { makeEntity, makeHero, makeWorld, stillWorld, type SegmentDefinition } from "../level";
-import { executePhysicalAction } from "../physics";
-import type { ActionResult } from "../program";
-import type { Actor, Entity, PhysicalAction, Scalar, StageId, WorldState } from "../types";
+import { makeEntity, makeHero, makeWorld, stillWorld, type SegmentDefinition } from "../../../src/campaign/level";
+import { executePhysicalAction } from "../../../src/campaign/physics";
+import type { ActionResult } from "../../../src/campaign/program";
+import type { Actor, Entity, PhysicalAction, Scalar, StageId, WorldState } from "../../../src/campaign/types";
 
 type LaterStageId = Exclude<StageId, 1>;
 

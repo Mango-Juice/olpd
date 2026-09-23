@@ -2,7 +2,6 @@ import { listStageArchives } from "../game/archive";
 import { loadSave, type StorageLike } from "../game/storage";
 import type { SaveData, Settings } from "../game/types";
 import { isStageId } from "./catalog";
-import { parseStageRun } from "./run-validation";
 import {
   completeVerifiedRun,
   createCampaignState,
@@ -21,7 +20,7 @@ export const CAMPAIGN_DATABASE = "one-line-per-death:campaign";
 export const CAMPAIGN_DATABASE_VERSION = 1;
 export const CAMPAIGN_STORE = "campaign";
 const ROOT_KEY = "root";
-const CAMPAIGN_DOCUMENT_VERSION = 2 as const;
+const CAMPAIGN_DOCUMENT_VERSION = 3 as const;
 
 export type CampaignRepositoryErrorCode =
   | "unavailable"
@@ -148,10 +147,13 @@ function validReference(value: unknown): value is CampaignRunReference {
   );
 }
 
-function preRevisionWorldRun(payload: unknown): { reference: CampaignRunReference; cleared: boolean } | null {
+function legacyWorldRun(payload: unknown): { reference: CampaignRunReference; cleared: boolean } | null {
   if (!isRecord(payload) || payload.kind !== "world") return null;
-  const run = parseStageRun(payload.run);
-  if (!run || run.contentRevision !== undefined) return null;
+  const run = payload.run;
+  if (!isRecord(run) || run.version !== 2 || typeof run.id !== "string" || !run.id.trim()
+    || !isStageId(run.stageId) || run.stageId === 1
+    || (run.contentRevision !== undefined && run.contentRevision !== "quiet-v1")
+    || !["bookmark", "running", "waiting", "blocked", "failed", "cleared"].includes(String(run.phase))) return null;
   return { reference: { runId: run.id, stageId: run.stageId }, cleared: run.phase === "cleared" };
 }
 
@@ -159,7 +161,7 @@ function validRecovery(value: unknown): value is CampaignRecoveryRecord {
   if (!isRecord(value) || (value.kind !== "active" && value.kind !== "archive") ||
     !validReference(value.reference) || value.reference.stageId === 1 ||
     typeof value.recoveredAt !== "number" || !Number.isFinite(value.recoveredAt) || value.recoveredAt < 0) return false;
-  const described = preRevisionWorldRun(value.payload);
+  const described = legacyWorldRun(value.payload);
   if (!described || !sameReference(described.reference, value.reference)) return false;
   if (value.kind === "active") return value.completedAt === undefined && !described.cleared;
   return typeof value.completedAt === "number" && Number.isFinite(value.completedAt) && value.completedAt >= 0 && described.cleared;
@@ -830,8 +832,10 @@ export class CampaignRepository<Run extends object> {
       const decoded = this.decodeDocument(value);
       return decoded.ok ? { ok: true, value: value as unknown as CampaignDocument } : decoded;
     }
-    if (!isRecord(value) || Object.hasOwn(value, "version") ||
-      !Array.isArray(value.activeRuns) || !Array.isArray(value.archives) || Object.hasOwn(value, "recoveries")) {
+    if (!isRecord(value) ||
+      (Object.hasOwn(value, "version") && value.version !== 2) ||
+      !Array.isArray(value.activeRuns) || !Array.isArray(value.archives) ||
+      (value.recoveries !== undefined && !Array.isArray(value.recoveries))) {
       return failure("corrupt", "캠페인 저장 데이터의 구조가 올바르지 않습니다.");
     }
     const stateResult = validateCampaignState(value.state);
@@ -854,7 +858,7 @@ export class CampaignRepository<Run extends object> {
         retainedActive.push({ reference: raw.reference, payload: structuredClone(raw.payload) });
         continue;
       }
-      const legacy = preRevisionWorldRun(raw.payload);
+      const legacy = legacyWorldRun(raw.payload);
       if (legacy) {
         if (legacy.cleared || !sameReference(legacy.reference, raw.reference)) {
           return failure("corrupt", "개편 전 활성 실행 기록을 검증하지 못했습니다.");
@@ -882,7 +886,7 @@ export class CampaignRepository<Run extends object> {
         retainedArchives.push({ reference: raw.reference, payload: structuredClone(raw.payload), completedAt: raw.completedAt });
         continue;
       }
-      const legacy = preRevisionWorldRun(raw.payload);
+      const legacy = legacyWorldRun(raw.payload);
       if (legacy) {
         if (!legacy.cleared || !sameReference(legacy.reference, raw.reference)) {
           return failure("corrupt", "개편 전 완료 실행 기록을 검증하지 못했습니다.");
@@ -897,6 +901,14 @@ export class CampaignRepository<Run extends object> {
       }
       if (!current.ok || !cleared) return failure("corrupt", "완료 실행 기록을 검증하지 못했습니다.");
       retainedArchives.push({ reference: raw.reference, payload: structuredClone(raw.payload), completedAt: raw.completedAt });
+    }
+
+    for (const raw of Array.isArray(value.recoveries) ? value.recoveries : []) {
+      if (!validRecovery(raw) || seen.has(raw.reference.runId)) {
+        return failure("corrupt", "기존 실행 보관 기록을 검증하지 못했습니다.");
+      }
+      seen.add(raw.reference.runId);
+      recoveries.push(structuredClone(raw));
     }
 
     const expectedActive = stateResult.value.stages.flatMap((stage) => stage.activeRun ? [stage.activeRun] : []);

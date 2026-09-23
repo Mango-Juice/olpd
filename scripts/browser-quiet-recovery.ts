@@ -2,7 +2,7 @@ import { chromium, expect } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createCampaignState } from '../src/campaign/progress';
 import { createStageRun } from '../src/campaign/run';
-import { RAIN_STAGE } from '../src/campaign/stages/rain';
+import { RAIN_STAGE } from '../tests/fixtures/campaign-worlds/rain';
 const state = createCampaignState('historical-browser');
 state.stages[0] = { stageId: 1, status: 'completed', activeRun: null, completion: { run: { stageId: 1, runId: 'old-one' }, completedAt: 1234, source: 'legacy' } };
 const oldRun = createStageRun('old-two', RAIN_STAGE.segments[0].enter(null));

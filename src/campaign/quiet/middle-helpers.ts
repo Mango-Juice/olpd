@@ -2,6 +2,7 @@ import { makeEntity, makeHero, makeWorld, stillWorld, type SegmentDefinition } f
 import { resolveActionReferences } from "../conditions";
 import type { ActionResult } from "../program";
 import type { Actor, Entity, PhysicalAction, Scalar, StageId, WorldState } from "../types";
+import { authoredPublicKind } from "./public-kinds";
 
 export const quietEntity = (
   id: string,
@@ -13,6 +14,7 @@ export const quietEntity = (
   patch: Partial<Entity> = {},
 ): Entity => makeEntity(id, name, region, x, {
   description: name,
+  publicKind: authoredPublicKind(id),
   location: { region, x, y },
   properties: { kind: "object", ...properties },
   ...patch,

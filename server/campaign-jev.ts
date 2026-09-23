@@ -19,6 +19,7 @@ import {
 } from "./campaign-contracts.js";
 import { ApiError } from "./errors.js";
 import { logAiCall, recordCall } from "./metrics.js";
+import { postProviderJson } from "./provider-http.js";
 
 const ENDPOINT = "https://api.typesafe.ai/v1/systemone";
 const NONE = "NONE";
@@ -329,11 +330,8 @@ async function callJev(apiKey: string, fetchImpl: typeof fetch, phase: CampaignJ
   const started = performance.now(); let inputTokens = 0; let outputTokens = 0; let error: string | null = null;
   emitTrace(trace, { kind: "request", phase, state, questions });
   try {
-    const http = await fetchImpl(ENDPOINT, { method: "POST", headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" }, body, signal });
-    if (http.status === 429) throw new ApiError(429, "rate_limited", "AI 제공자 요청 한도에 도달했습니다. 잠시 후 다시 시도해 주세요.", true);
-    if (http.status === 529) throw new ApiError(503, "unavailable", "AI 제공자가 혼잡합니다. 잠시 후 다시 시도해 주세요.", true);
-    if (!http.ok) throw new ApiError(502, "provider", "AI 제공자가 요청을 처리하지 못했습니다.", http.status >= 500);
-    let payload: unknown; try { payload = await http.json(); } catch { throw new ApiError(502, "provider", "AI 응답을 읽을 수 없습니다.", true); }
+    const http = await postProviderJson({ url: ENDPOINT, apiKey, body, signal, fetchImpl });
+    const payload = http.payload;
     if (isRecord(payload) && isRecord(payload.usage)) { inputTokens = Number(payload.usage.input_tokens) || 0; outputTokens = Number(payload.usage.output_tokens) || 0; }
     const validated = validateResponse(payload, questions);
     emitTrace(trace, { kind: "response", phase, response: validated });

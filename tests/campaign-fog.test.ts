@@ -3,8 +3,8 @@ import { stageDynamics, type SegmentDefinition } from "../src/campaign/level";
 import { writeProgram } from "../src/campaign/notebook";
 import { createCursor, stepProgram } from "../src/campaign/program";
 import { formatEntityFacts } from "../src/campaign/presentation";
-import { advanceStage, createStageRun, departStage } from "../src/campaign/run";
-import { FOG_STAGE } from "../src/campaign/stages/fog";
+import { acknowledgePresentation, advanceStage, createStageRun, departStage } from "../src/campaign/run";
+import { FOG_STAGE } from "./fixtures/campaign-worlds/fog";
 import type { InstructionProgram, PhysicalAction, ProgramNode, WorldState } from "../src/campaign/types";
 
 const action = (
@@ -54,7 +54,7 @@ function replayProviderShape(region: string, body: ProgramNode): ReturnType<type
   stageRun = departStage(stageRun);
   const dynamics = stageDynamics(FOG_STAGE);
   for (let step = 0; step < 128 && !stageRun.clearedSegments.includes(region); step += 1) {
-    stageRun = advanceStage(stageRun, dynamics);
+    stageRun = advanceStage(acknowledgePresentation(stageRun), dynamics);
     expect(stageRun.phase, stageRun.statusReason ?? undefined).not.toBe("failed");
     expect(stageRun.phase, stageRun.statusReason ?? undefined).not.toBe("blocked");
   }
@@ -346,7 +346,7 @@ describe("stage dynamics retry boundary", () => {
     const opened = run(valve, [action("move", "08-1-valve-bank"), action("pull", "08-1-square-valve")]);
     expect(valve.idleAction?.(opened)).toEqual(action("move", "08-1-exit"));
     let valveRun = departStage(createStageRun("fog-idle-valve", opened));
-    valveRun = advanceStage(valveRun, dynamics);
+    valveRun = advanceStage(acknowledgePresentation(valveRun), dynamics);
     expect(valveRun.clearedSegments).toContain("08-1");
     expect(valveRun.world.segmentId).toBe("08-2");
 

@@ -1,8 +1,8 @@
 /** Frozen eight-case Jev comparison cohort; no production provider changes. */
 import { mkdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { RAIN_INTRO } from "../src/campaign/stages/rain";
-import { RAIN_REACH } from "../src/campaign/stages/rain-late";
+import { RAIN_INTRO } from "../tests/fixtures/campaign-worlds/rain";
+import { RAIN_REACH } from "../tests/fixtures/campaign-worlds/rain-late";
 import { parseProgram } from "../src/campaign/validation";
 import { formatProperty, propertyVisibility } from "../src/campaign/presentation";
 import type { InstructionProgram, PhysicalAction, ProgramNode, Verb, WorldState } from "../src/campaign/types";

@@ -1,8 +1,8 @@
 import { RAIN_BOATS, RAIN_ORGAN, RAIN_REACH } from "./rain-late";
-import { at, makeEntity, makeWorld, stillWorld, type SegmentDefinition } from "../level";
-import { executePhysicalAction } from "../physics";
-import type { ActionResult } from "../program";
-import type { PhysicalAction, WorldState } from "../types";
+import { at, makeEntity, makeWorld, stillWorld, type SegmentDefinition } from "../../../src/campaign/level";
+import { executePhysicalAction } from "../../../src/campaign/physics";
+import type { ActionResult } from "../../../src/campaign/program";
+import type { PhysicalAction, WorldState } from "../../../src/campaign/types";
 
 function failure(world: WorldState, reason: string): ActionResult {
   return { world, outcome: "failure", reason };
@@ -142,7 +142,7 @@ export const RAIN_CHANNELS: SegmentDefinition = {
 };
 
 
-export const RAIN_STAGE: import("../level").CampaignStageDefinition = {
+export const RAIN_STAGE: import("../../../src/campaign/level").CampaignStageDefinition = {
   id: 2, title: "비에 잠긴 회랑",
   segments: [RAIN_INTRO, RAIN_CHANNELS, RAIN_REACH, RAIN_BOATS, RAIN_ORGAN],
   practice: RAIN_PRACTICE,

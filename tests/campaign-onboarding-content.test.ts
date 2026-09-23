@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SegmentDefinition } from "../src/campaign/level";
 import { executePhysicalAction } from "../src/campaign/physics";
 import { createCursor, stepProgram } from "../src/campaign/program";
-import { ONBOARDING_STAGES } from "../src/campaign/stages/onboarding";
+import { ONBOARDING_STAGES } from "./fixtures/campaign-worlds/onboarding";
 import type { PhysicalAction, Predicate, ProgramNode, StageId, WorldState } from "../src/campaign/types";
 
 const action = (

@@ -1,6 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import type { SceneComposition } from "../campaign/level";
+import type { StagePresentation } from "../campaign/run";
 import type { EntityId, WorldState, Verb } from "../campaign/types";
+import {
+  campaignPresentationDuration,
+  campaignSoundCuesBetween,
+  type SoundCue,
+} from "../render/animation";
 import {
   CAMPAIGN_VIEW_HEIGHT,
   CAMPAIGN_VIEW_WIDTH,
@@ -8,7 +14,12 @@ import {
   renderCampaignScene,
   type CampaignEntityLayout,
 } from "../render/campaign-scene";
-import { onHeroSpriteReady } from "../render/scene";
+import {
+  advancePlaybackTimeline,
+  useCanvasPlayback,
+  type PlaybackTimeline,
+} from "../hooks/useCanvasPlayback";
+import { PlaySceneHeading } from "./PlaySessionControls";
 import "./CampaignCanvas.css";
 
 export interface CampaignCanvasProps {
@@ -19,6 +30,11 @@ export interface CampaignCanvasProps {
   displayNumber?: number;
   reducedMotion: boolean;
   paused: boolean;
+  presentation?: StagePresentation | null;
+  /** Keeps terminal Chapter 1-style result frames visible after acknowledgement. */
+  settledPresentation?: StagePresentation | null;
+  onPlaybackEnd?: () => void;
+  onSound?: (cue: SoundCue) => void;
   selectedEntityId?: EntityId;
   onSelectEntity?: (id: EntityId) => void;
 }
@@ -40,81 +56,42 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const layoutRef = useRef<CampaignEntityLayout[]>([]);
   const liveRef = useRef(props);
-  const sceneTimeRef = useRef(0);
-  const transitionRef = useRef({ world: props.world, previous: props.world, startedAt: 0 });
-  const hiddenRef = useRef(typeof document !== "undefined" ? document.hidden : false);
+  const playbackRef = useRef<(PlaybackTimeline & { id: string }) | null>(null);
   liveRef.current = props;
 
-  useEffect(() => {
-    const onVisibility = () => { hiddenRef.current = document.hidden; };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, []);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
-    if (!canvas || !context) return;
-    let raf = 0;
-    let previous = performance.now();
-    let paintedWorld: WorldState | null = null;
-    let paintedScene: SceneComposition | undefined;
-    let paintedSelection: EntityId | undefined;
-    let paintedWidth = 0;
-    let paintedHeight = 0;
-    let paintedAt = 0;
-
-    const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const width = Math.max(1, Math.round(canvas.clientWidth * dpr));
-      const height = Math.max(1, Math.round(canvas.clientHeight * dpr));
-      if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width;
-        canvas.height = height;
-      }
-    };
-    const observer = new ResizeObserver(resize);
-    observer.observe(canvas);
-    resize();
-
-    const draw = (now: number) => {
+  useCanvasPlayback({
+    canvasRef,
+    paused: props.paused,
+    reducedMotion: props.reducedMotion,
+    draw: ({ canvas, context, deltaMs, sceneTime, reducedMotion }) => {
       const current = liveRef.current;
-      if (transitionRef.current.world !== current.world) {
-        const old = transitionRef.current.world;
-        transitionRef.current = {
-          world: current.world,
-          previous: old.segmentId === current.world.segmentId && old.attempt === current.world.attempt
-            ? old : current.world,
-          startedAt: now,
-        };
+      let playbackProgress = 1;
+      if (current.presentation) {
+        const duration = campaignPresentationDuration(
+          current.presentation,
+          current.reducedMotion,
+        );
+        if (playbackRef.current?.id !== current.presentation.id) {
+          playbackRef.current = {
+            id: current.presentation.id,
+            elapsed: 0,
+            duration,
+            cueProgress: 0,
+            ended: false,
+          };
+        }
+        playbackProgress = advancePlaybackTimeline(playbackRef.current, {
+          deltaMs,
+          cuesBetween: (from, to) =>
+            campaignSoundCuesBetween(current.presentation!, from, to),
+          onCue: current.onSound,
+          onEnd: current.onPlaybackEnd,
+        });
+      } else {
+        // Settled state is already the result of a completed presentation.
+        // Re-interpolating old world snapshots here would visibly replay it backwards.
+        playbackRef.current = null;
       }
-      const delta = Math.min(50, Math.max(0, now - previous));
-      previous = now;
-      if (!current.paused && !hiddenRef.current && !current.reducedMotion) {
-        sceneTimeRef.current += delta / 1000;
-      }
-      const transitionAge = now - transitionRef.current.startedAt;
-      const transitioning = transitionRef.current.previous !== current.world
-        && transitionAge < 280 && !current.reducedMotion;
-      const finalFrameNeeded = !current.reducedMotion
-        && transitionRef.current.previous !== current.world
-        && transitionAge >= 280 && paintedAt < transitionRef.current.startedAt + 280;
-      const animated = (!current.paused && !current.reducedMotion && !hiddenRef.current)
-        || transitioning || finalFrameNeeded;
-      if (paintedWorld === current.world && paintedScene === current.scene
-        && paintedSelection === current.selectedEntityId
-        && paintedWidth === canvas.width && paintedHeight === canvas.height
-        && (!animated || now - paintedAt < 32)) {
-        raf = requestAnimationFrame(draw);
-        return;
-      }
-      paintedWorld = current.world;
-      paintedScene = current.scene;
-      paintedSelection = current.selectedEntityId;
-      paintedWidth = canvas.width;
-      paintedHeight = canvas.height;
-      paintedAt = now;
-
       const scale = Math.min(
         canvas.width / CAMPAIGN_VIEW_WIDTH,
         canvas.height / CAMPAIGN_VIEW_HEIGHT,
@@ -131,30 +108,21 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
       layoutRef.current = renderCampaignScene(context, {
         world: current.world,
         scene: current.scene,
-        previousWorld: transitionRef.current.previous,
         actorVerbs: current.actorVerbs,
-        transitionProgress: current.reducedMotion ? 1 : Math.min(1, transitionAge / 280),
+        presentation: current.presentation ?? current.settledPresentation,
+        playbackProgress,
         title: current.title,
         displayNumber: current.displayNumber,
-        time: sceneTimeRef.current,
-        reducedMotion: current.reducedMotion,
+        time: sceneTime,
+        reducedMotion,
         selectedEntityId: current.selectedEntityId,
         labelScale,
       });
-      raf = requestAnimationFrame(draw);
-    };
-
-    const stopWatchingSprite = onHeroSpriteReady(() => { paintedWorld = null; });
-    raf = requestAnimationFrame(draw);
-    return () => {
-      stopWatchingSprite();
-      cancelAnimationFrame(raf);
-      observer.disconnect();
-    };
-  }, []);
+    },
+  });
 
   const selectFromCanvas = (clientX: number, clientY: number) => {
-    if (!props.onSelectEntity || !canvasRef.current) return;
+    if (props.presentation || props.settledPresentation || !props.onSelectEntity || !canvasRef.current) return;
     const bounds = canvasRef.current.getBoundingClientRect();
     const scale = Math.min(
       bounds.width / CAMPAIGN_VIEW_WIDTH,
@@ -168,18 +136,30 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
     if (target) props.onSelectEntity(target);
   };
 
-  const entities = visibleEntities(props.world);
+  const displayedPresentation = props.presentation ?? props.settledPresentation;
+  const visibleWorld = displayedPresentation
+    ? displayedPresentation.outcome === "revive"
+      ? displayedPresentation.after
+      : displayedPresentation.before
+    : props.world;
+  const entities = visibleEntities(visibleWorld);
   const selected = props.selectedEntityId && entities.some((entity) => entity.id === props.selectedEntityId)
-    ? props.world.entities[props.selectedEntityId]
+    ? visibleWorld.entities[props.selectedEntityId]
     : undefined;
   const ariaState = `${props.title}. ${entities.map((entity) => entity.name).join(", ")}.`;
 
   return (
     <figure className="campaign-scene campaign-canvas" data-scene-width={CAMPAIGN_VIEW_WIDTH}>
-      <div className="campaign-map-heading">
-        <strong>{props.title}</strong>
-        <span>{props.world.stageId}장{props.displayNumber === undefined ? "" : ` · 스테이지 ${props.displayNumber}`}</span>
-      </div>
+      <PlaySceneHeading
+        eyebrow={`CHAPTER ${String(visibleWorld.stageId).padStart(2, "0")}${props.displayNumber === undefined ? "" : ` · STAGE ${props.displayNumber}`}`}
+        title={props.title}
+      >
+        {props.displayNumber === undefined ? null : (
+          <span className="chapter-number">
+            {visibleWorld.stageId}-{props.displayNumber}
+          </span>
+        )}
+      </PlaySceneHeading>
       <div className="campaign-map-viewport">
         <canvas
           ref={canvasRef}
@@ -188,7 +168,7 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
           width={CAMPAIGN_VIEW_WIDTH}
           height={CAMPAIGN_VIEW_HEIGHT}
           onClick={(event) => selectFromCanvas(event.clientX, event.clientY)}
-          className={props.onSelectEntity ? "campaign-scene-canvas is-interactive" : "campaign-scene-canvas"}
+          className={props.onSelectEntity && !displayedPresentation ? "campaign-scene-canvas is-interactive" : "campaign-scene-canvas"}
         >
           {ariaState}
         </canvas>
@@ -197,7 +177,7 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
         <p role="status" aria-live="polite" aria-atomic="true">
           {selected ? `${selected.name} 선택됨` : ""}
         </p>
-        {props.onSelectEntity ? (
+        {props.onSelectEntity && !displayedPresentation ? (
           <ol aria-label="장면 속 물건">
             {entities.map((entity) => (
               <li key={entity.id}>

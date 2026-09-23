@@ -1,7 +1,7 @@
-import { at, makeEntity, makeHero, makeWorld, type CampaignStageDefinition, type SegmentDefinition } from "../level";
-import { executePhysicalAction } from "../physics";
-import type { ActionResult } from "../program";
-import type { Actor, Entity, PhysicalAction, Scalar, WorldState } from "../types";
+import { at, makeEntity, makeHero, makeWorld, type CampaignStageDefinition, type SegmentDefinition } from "../../../src/campaign/level";
+import { executePhysicalAction } from "../../../src/campaign/physics";
+import type { ActionResult } from "../../../src/campaign/program";
+import type { Actor, Entity, PhysicalAction, Scalar, WorldState } from "../../../src/campaign/types";
 
 const STAGE_ID = 7 as const;
 
@@ -552,6 +552,7 @@ const finalAct: SegmentDefinition = {
 };
 
 export const THEATRE_STAGE: CampaignStageDefinition = {
+  contentRevision: "shared-v1",
   id: STAGE_ID,
   title: "평형 인형극장",
   practice,

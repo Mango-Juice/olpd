@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { RAIN_INTRO } from "../src/campaign/stages/rain";
+import { RAIN_INTRO } from "./fixtures/campaign-worlds/rain";
 import { executePhysicalAction } from "../src/campaign/physics";
 import type { PhysicalAction } from "../src/campaign/types";
 const action = (verb: PhysicalAction["verb"], target: string, destination?: string): PhysicalAction => ({ kind: "action", actor: "hero", verb, target, ...(destination ? { destination } : {}) });
@@ -41,7 +41,7 @@ it("02-1 leaving the launched cork unattended loses its reachable boarding windo
   expect(second.world.entities["rain-cork"].location.x).toBe(8);
 });
 
-import { RAIN_CHANNELS } from "../src/campaign/stages/rain";
+import { RAIN_CHANNELS } from "./fixtures/campaign-worlds/rain";
 it("02-2 direct inflow then cutoff and balanced small inflow both float the bridge", () => {
   for (const approach of ["gate", "plug"] as const) {
     let state = RAIN_CHANNELS.enter(null);
@@ -71,7 +71,7 @@ it("02-2 continuing the fast inflow floods the start despite the overflow drain"
 });
 
 
-import { createStageRun, departStage, advanceStage } from "../src/campaign/run";
+import { acknowledgePresentation, createStageRun, departStage, advanceStage } from "../src/campaign/run";
 import { writeProgram } from "../src/campaign/notebook";
 import type { ProgramNode } from "../src/campaign/types";
 it("02-2 a wait that is already satisfied consumes no extra flow tick before closing the gate", () => {
@@ -84,9 +84,9 @@ it("02-2 a wait that is already satisfied consumes no extra flow tick before clo
   run.notebook = writeProgram(run.notebook, { version: 2, id: "flow-plan", text: "수문을 열고 수위가 위 눈금에 닿으면 닫은 다음 부교를 타고 출구에서 내려", model: "physical-fixture", scope: {}, guard: false, body });
   run = departStage(run);
   for (let tick = 0; tick < 10 && run.phase !== "cleared"; tick++) {
-    run = advanceStage(run, { execute: RAIN_CHANNELS.execute!, advance: RAIN_CHANNELS.advance, segmentComplete: RAIN_CHANNELS.complete, nextSegment: () => null, sealAfter: () => null });
+    run = advanceStage(acknowledgePresentation(run), { execute: RAIN_CHANNELS.execute!, advance: RAIN_CHANNELS.advance, segmentComplete: RAIN_CHANNELS.complete, nextSegment: () => null, sealAfter: () => null });
   }
   expect(run.phase).toBe("cleared");
-  expect(run.notebook.bells).toBe(0);
+  expect(run.notebook.deaths).toBe(0);
   expect(run.world.entities["channels-tank"].properties.level).toBe(3);
 });

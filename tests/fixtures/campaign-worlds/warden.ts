@@ -1,7 +1,7 @@
-import { at, makeEntity, makeHero, makeWorld, type CampaignStageDefinition, type SegmentDefinition } from "../level";
-import { currentLoad, entityMass, executePhysicalAction, validateAction } from "../physics";
-import type { ActionResult } from "../program";
-import type { Actor, Entity, PhysicalAction, Scalar, WorldState } from "../types";
+import { at, makeEntity, makeHero, makeWorld, type CampaignStageDefinition, type SegmentDefinition } from "../../../src/campaign/level";
+import { currentLoad, entityMass, executePhysicalAction, validateAction } from "../../../src/campaign/physics";
+import type { ActionResult } from "../../../src/campaign/program";
+import type { Actor, Entity, PhysicalAction, Scalar, WorldState } from "../../../src/campaign/types";
 
 const MOVEMENT = new Set<PhysicalAction["verb"]>(["move", "jump", "duck", "climb"]);
 const LEFT = "10-5-left-handle";
@@ -404,4 +404,5 @@ const practice: SegmentDefinition = {
   advance: (world) => advance(world, (next) => { next.entities["10-practice-arm"].properties.orientation = next.tick % 4; next.entities["10-practice-arm"].properties.phase = next.tick % 4 >= 2 ? "retracted" : "extended"; }, true),
   complete: (world) => at(world, "hero", "10-practice-line"),
 };
-export const WARDEN_STAGE: CampaignStageDefinition = { id: 10, title: "돌아오지 못한 문지기", practice, segments: [familiarGesture, attackTurnsSeal, mirrorGarden, recoverTool, seenConnection, finalDuty], story: { afterSegment: "10-6", object: "10-6-ending-letter", text: "여기까지는 내가 길을 적었어. 다음 길은 네가 골라 줘. 이제는 같이 가자." } };
+export const WARDEN_STAGE: CampaignStageDefinition = {
+  contentRevision: "shared-v1", id: 10, title: "돌아오지 못한 문지기", practice, segments: [familiarGesture, attackTurnsSeal, mirrorGarden, recoverTool, seenConnection, finalDuty], story: { afterSegment: "10-6", object: "10-6-ending-letter", text: "여기까지는 내가 길을 적었어. 다음 길은 네가 골라 줘. 이제는 같이 가자." } };

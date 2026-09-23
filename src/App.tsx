@@ -1,9 +1,25 @@
+import { postInterpretJson } from "./services/interpret-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isInterpretation } from "./game/interpretation";
 import { PrologueGuide } from "./components/PrologueGuide";
 import { DungeonCanvas } from "./components/DungeonCanvas";
 import { LegacyOnboarding } from "./components/LegacyOnboarding";
+import { MemoryNotebook } from "./components/MemoryNotebook";
 import { PlayCommandComposer } from "./components/PlayCommandComposer";
+import {
+  PlayHelpDialog,
+  PlaySettingsDialog,
+  PlayShareDialog,
+} from "./components/PlayDialogs";
+import {
+  PlayClearPanel,
+  PlayDeathScore,
+  PlayLaunchControls,
+  PlaySceneFooter,
+  PlaySceneCaption,
+  PlaySceneHeading,
+  PlaySessionControls,
+} from "./components/PlaySessionControls";
 import Modal from "./components/Modal";
 import {
   PlayHeader,
@@ -11,7 +27,6 @@ import {
   PlayHints,
   PlayIntro,
   PlayLayout,
-  PlayNotebook,
   PlayStageProgress,
 } from "./components/PlayChrome";
 import StageChronicle from "./components/StageChronicle";
@@ -68,6 +83,7 @@ import type {
   Settings,
 } from "./game/types";
 import { usePlayCommand } from "./hooks/usePlayCommand";
+import { useMobileKeyboardLayout } from "./hooks/useMobileKeyboardLayout";
 
 type Popup = "help" | "settings" | "new" | "share" | "storage" | null;
 const initialSettings: Settings = {
@@ -118,28 +134,10 @@ async function interpretOnboardingLine(
   text: string,
   signal: AbortSignal,
 ): Promise<Interpretation> {
-  const response = await fetch("/api/interpret", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      text,
-      dungeonVersion: DUNGEON_VERSION,
-      rulesVersion: RULES_VERSION,
-    }),
-    signal,
-  });
-  if (response.status === 429) {
-    throw new Error("요청이 잠시 몰렸어요. 1분 뒤 다시 시도해 주세요.");
-  }
-  const data = await response.json().catch(() => {
-    throw new Error("해석 서버의 응답을 읽지 못했어요. 잠시 후 다시 시도해 주세요.");
-  });
-  if (!response.ok) {
-    throw new Error(
-      data?.error?.message ?? data?.message ?? "뜻을 확인하지 못했어요.",
-    );
-  }
-  const value: unknown = data?.interpretation ?? data;
+  const data = await postInterpretJson("/api/interpret", {
+    text, dungeonVersion: DUNGEON_VERSION, rulesVersion: RULES_VERSION,
+  }, signal);
+  const value: unknown = data && typeof data === "object" && "interpretation" in data ? data.interpretation : data;
   if (!isInterpretation(value)) {
     throw new Error("해석 응답이 올바르지 않아요. 다시 시도해 주세요.");
   }
@@ -214,8 +212,7 @@ export default function App({ bridge }: AppProps = {}) {
   const conflictRef = useRef(false);
   const [paused, setPaused] = useState(false);
   const [hidden, setHidden] = useState(document.hidden);
-  const [keyboard, setKeyboard] = useState(false);
-  const [erasing, setErasing] = useState(false);
+  const keyboard = useMobileKeyboardLayout();
   const [reviving, setReviving] = useState(false);
   const [animating, setAnimating] = useState(false);
   const [sceneMode, setSceneMode] = useState<"entrance" | "action">("action");
@@ -223,7 +220,6 @@ export default function App({ bridge }: AppProps = {}) {
   const [draft, setDraft] = useState("");
   const [actionError, setActionError] = useState("");
   const [popup, setPopup] = useState<Popup>(null);
-  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [shareInstructions, setShareInstructions] = useState(false);
   const [notice, setNotice] = useState("");
   const practiceCount =
@@ -234,7 +230,6 @@ export default function App({ bridge }: AppProps = {}) {
   const busy = useRef(false);
   const saving = useRef(false);
   const presentedClears = useRef(new Set<string>());
-  const notebook = useRef<HTMLDetailsElement>(null);
   const stepModeRef = useRef(false);
   const [awaitingNext, setAwaitingNext] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -244,17 +239,6 @@ export default function App({ bridge }: AppProps = {}) {
   );
   const [archiveError, setArchiveError] = useState("");
   const archivedRuns = useRef(new Set<string>());
-  const [priorityNotice, setPriorityNotice] = useState("");
-  const [editingMemory, setEditingMemory] = useState<string | null>(null);
-  const [draggedMemory, setDraggedMemory] = useState<string | null>(null);
-  const [dropTarget, setDropTarget] = useState<{
-    id: string;
-    position: "before" | "after";
-  } | null>(null);
-  const dragRef = useRef<string | null>(null);
-  const dropRef = useRef<{ id: string; position: "before" | "after" } | null>(
-    null,
-  );
   useEffect(() => {
     const handler = () => setHidden(document.hidden);
     document.addEventListener("visibilitychange", handler);
@@ -313,96 +297,54 @@ export default function App({ bridge }: AppProps = {}) {
       setMusicPlayback({ stageId: MEMORY_DUNGEON_STAGE_ID, playing: false }),
     [],
   );
-  useEffect(() => {
-    const query = window.matchMedia("(min-width: 801px)");
-    const change = () => {
-      if (query.matches && notebook.current) notebook.current.open = true;
-    };
-    change();
-    query.addEventListener("change", change);
-    return () => query.removeEventListener("change", change);
-  }, []);
-  useEffect(() => {
-    let fullHeight = window.innerHeight;
-    const viewport = window.visualViewport;
-    const update = () => {
-      fullHeight = Math.max(fullHeight, window.innerHeight);
-      setKeyboard(
-        window.innerWidth <= 800 &&
-          document.activeElement?.tagName === "TEXTAREA" &&
-          (viewport?.height ?? window.innerHeight) < fullHeight * 0.78,
-      );
-    };
-    viewport?.addEventListener("resize", update);
-    window.addEventListener("resize", update);
-    document.addEventListener("focusout", update);
-    return () => {
-      viewport?.removeEventListener("resize", update);
-      window.removeEventListener("resize", update);
-      document.removeEventListener("focusout", update);
-    };
-  }, []);
-  useEffect(() => {
-    if (!notebook.current?.open || window.innerWidth <= 800) return;
-    const list =
-      notebook.current.querySelector<HTMLUListElement>(".instruction-list");
-    const active = list?.querySelector<HTMLElement>(".instruction.active");
-    if (list && active) {
-      const top =
-        active.getBoundingClientRect().top -
-        list.getBoundingClientRect().top +
-        list.scrollTop;
-      list.scrollTo({
-        top: Math.max(0, top - 8),
-        behavior: settings.reducedMotion ? "instant" : "smooth",
+  const persist = useCallback(
+    async (next: RunState) => {
+      if (conflictRef.current) return false;
+      let nextBest = bestRef.current;
+      if (next.phase === "cleared" && !next.tutorial)
+        nextBest =
+          nextBest === null ? score(next) : Math.min(nextBest, score(next));
+      const data = makeSave(next, {
+        writer: writer.current,
+        settings: settingsRef.current,
+        best: nextBest,
+        tutorialCompleted: completedRef.current,
       });
-    }
-  }, [state.lastEvent?.id, settings.reducedMotion]);
-  const persist = useCallback(async (next: RunState) => {
-    if (conflictRef.current) return false;
-    let nextBest = bestRef.current;
-    if (next.phase === "cleared" && !next.tutorial)
-      nextBest =
-        nextBest === null ? score(next) : Math.min(nextBest, score(next));
-    const data = makeSave(next, {
-      writer: writer.current,
-      settings: settingsRef.current,
-      best: nextBest,
-      tutorialCompleted: completedRef.current,
-    });
-    let saved: StorageResult<unknown>;
-    try {
-      saved = bridge
-        ? await bridge.save(data)
-        : writeSave(data, { expected: expected.current });
-    } catch (cause) {
-      saved = {
-        ok: false,
-        error: {
-          code: "write",
-          message: "게임 상태를 저장하지 못했습니다.",
-          cause,
-        },
-      };
-    }
-    if (!saved.ok) {
-      setStorageError(
-        "자동 저장을 완료하지 못했어요. 기록을 내보내거나 저장을 다시 시도해 주세요.",
-      );
-      if (saved.error.code === "conflict") {
-        conflictRef.current = true;
-        setConflict(true);
-        setPaused(true);
+      let saved: StorageResult<unknown>;
+      try {
+        saved = bridge
+          ? await bridge.save(data)
+          : writeSave(data, { expected: expected.current });
+      } catch (cause) {
+        saved = {
+          ok: false,
+          error: {
+            code: "write",
+            message: "게임 상태를 저장하지 못했습니다.",
+            cause,
+          },
+        };
       }
-      return false;
-    }
-    if (!bridge)
-      expected.current = { writer: writer.current, revision: next.revision };
-    setStorageError("");
-    bestRef.current = nextBest;
-    setBest(nextBest);
-    return true;
-  }, [bridge]);
+      if (!saved.ok) {
+        setStorageError(
+          "자동 저장을 완료하지 못했어요. 기록을 내보내거나 저장을 다시 시도해 주세요.",
+        );
+        if (saved.error.code === "conflict") {
+          conflictRef.current = true;
+          setConflict(true);
+          setPaused(true);
+        }
+        return false;
+      }
+      if (!bridge)
+        expected.current = { writer: writer.current, revision: next.revision };
+      setStorageError("");
+      bestRef.current = nextBest;
+      setBest(nextBest);
+      return true;
+    },
+    [bridge],
+  );
   const commit = useCallback(
     async (next: RunState, afterSave?: () => void | Promise<void>) => {
       if (conflictRef.current || saving.current) return false;
@@ -479,33 +421,36 @@ export default function App({ bridge }: AppProps = {}) {
     persist,
     persistOnboarding,
   ]);
-  const archiveCleared = useCallback(async (completed: RunState) => {
-    if (
-      completed.phase !== "cleared" ||
-      completed.tutorial ||
-      archivedRuns.current.has(completed.id)
-    )
-      return true;
-    if (bridge) return true;
-    try {
-      await archiveStage(
-        makeSave(completed, {
-          writer: writer.current,
-          settings: settingsRef.current,
-          best: bestRef.current,
-          tutorialCompleted: completedRef.current,
-        }),
-      );
-      archivedRuns.current.add(completed.id);
-      setArchiveError("");
-      return true;
-    } catch {
-      setArchiveError(
-        "완료한 모험을 보관하지 못했어요. 현재 기록은 남아 있으니 다시 시도해 주세요.",
-      );
-      return false;
-    }
-  }, [bridge]);
+  const archiveCleared = useCallback(
+    async (completed: RunState) => {
+      if (
+        completed.phase !== "cleared" ||
+        completed.tutorial ||
+        archivedRuns.current.has(completed.id)
+      )
+        return true;
+      if (bridge) return true;
+      try {
+        await archiveStage(
+          makeSave(completed, {
+            writer: writer.current,
+            settings: settingsRef.current,
+            best: bestRef.current,
+            tutorialCompleted: completedRef.current,
+          }),
+        );
+        archivedRuns.current.add(completed.id);
+        setArchiveError("");
+        return true;
+      } catch {
+        setArchiveError(
+          "완료한 모험을 보관하지 못했어요. 현재 기록은 남아 있으니 다시 시도해 주세요.",
+        );
+        return false;
+      }
+    },
+    [bridge],
+  );
   useEffect(() => {
     if (started && state.phase === "cleared" && !state.tutorial)
       void archiveCleared(state);
@@ -592,11 +537,6 @@ export default function App({ bridge }: AppProps = {}) {
     }
     next = startRun(next);
     if (await commit(next)) {
-      setEditingMemory(null);
-      setDraggedMemory(null);
-      setDropTarget(null);
-      dragRef.current = null;
-      dropRef.current = null;
       setNotice("");
       setAwaitingNext(false);
       setReviving(revivingNext);
@@ -690,34 +630,27 @@ export default function App({ bridge }: AppProps = {}) {
       busy.current = false;
     }
   };
-  const erase = async () => {
-    if (!deleteId || busy.current || conflict) return;
+  const erase = async (id: string) => {
+    if (busy.current || conflict) return false;
     busy.current = true;
     try {
-      const next = deleteInstruction(stateRef.current, deleteId);
-      if (
-        await commit(next, async () => {
-          setErasing(true);
-          await new Promise((resolve) =>
-            setTimeout(resolve, settings.reducedMotion ? 0 : 220),
-          );
-        })
-      ) {
+      const previous = stateRef.current;
+      const next = deleteInstruction(previous, id);
+      if (await commit(next)) {
         setNotice(
-          stateRef.current.erasers === 0 &&
-            next.penaltyDeaths > state.penaltyDeaths
+          previous.erasers === 0 && next.penaltyDeaths > previous.penaltyDeaths
             ? "여러 번 부활한 끝에, 한 줄의 기억이 사라졌어요."
             : "한 줄을 지웠어요. 빈자리에서도 다시 시작할 수 있어요.",
         );
         playSound("erase", settings.muted);
-        setDeleteId(null);
+        return true;
       }
     } catch (cause) {
       setActionError(String(cause));
     } finally {
       busy.current = false;
-      setErasing(false);
     }
+    return false;
   };
   const newChallenge = async () => {
     if (busy.current || conflictRef.current) return;
@@ -731,10 +664,7 @@ export default function App({ bridge }: AppProps = {}) {
       const next = newRun(true);
       next.revision = stateRef.current.revision + 1;
       const freshOnboarding = createOnboardingProgress(next.id);
-      if (
-        (await persistOnboarding(freshOnboarding)) &&
-        (await commit(next))
-      ) {
+      if ((await persistOnboarding(freshOnboarding)) && (await commit(next))) {
         cancelDraft();
         setDraft("");
         setAnimating(false);
@@ -768,9 +698,7 @@ export default function App({ bridge }: AppProps = {}) {
       busy.current = false;
     }
   };
-  const completeFormalOnboarding = async (
-    completed: OnboardingProgress,
-  ) => {
+  const completeFormalOnboarding = async (completed: OnboardingProgress) => {
     if (busy.current || conflictRef.current) return;
     busy.current = true;
     const previous = completedRef.current;
@@ -913,77 +841,31 @@ export default function App({ bridge }: AppProps = {}) {
     animating && !awaitingNext ? state.events.slice(0, -1) : state.events;
   const canReorder = started && isRest && !pending && !conflict;
   const changePriority = async (id: string, direction: "up" | "down") => {
-    if (!canReorder || busy.current) return;
+    if (!canReorder || busy.current) return false;
     busy.current = true;
     const next = moveInstruction(stateRef.current, id, direction);
     try {
-      if (next !== stateRef.current && (await commit(next))) {
-        const text = next.instructions.find((item) => item.id === id)?.text;
-        setPriorityNotice(
-          `“${text}” 우선순위를 ${direction === "up" ? "높였어요" : "낮췄어요"}.`,
-        );
-      }
+      return next !== stateRef.current && (await commit(next));
     } finally {
       busy.current = false;
     }
   };
-  const startMemoryDrag = (id: string) => {
-    if (!canReorder) return false;
-    dragRef.current = id;
-    setDraggedMemory(id);
-    setEditingMemory(null);
-    return true;
-  };
-  const targetMemoryDrag = (clientX: number, clientY: number) => {
-    if (!dragRef.current || !canReorder) return;
-    const list =
-      notebook.current?.querySelector<HTMLElement>(".instruction-list");
-    if (list) {
-      const bounds = list.getBoundingClientRect();
-      if (clientY < bounds.top + 28) list.scrollTop -= 18;
-      else if (clientY > bounds.bottom - 28) list.scrollTop += 18;
+  const placePriority = async (
+    id: string,
+    targetId: string,
+    position: "before" | "after",
+  ) => {
+    if (!canReorder || busy.current) return false;
+    busy.current = true;
+    const next = placeInstruction(stateRef.current, id, targetId, position);
+    try {
+      return next !== stateRef.current && (await commit(next));
+    } finally {
+      busy.current = false;
     }
-    const row = document
-      .elementFromPoint(clientX, clientY)
-      ?.closest<HTMLElement>("[data-memory-id]");
-    const id = row?.dataset.memoryId;
-    if (!row || !id || id === dragRef.current) {
-      dropRef.current = null;
-      setDropTarget(null);
-      return;
-    }
-    const bounds = row.getBoundingClientRect();
-    const target = {
-      id,
-      position:
-        clientY < bounds.top + bounds.height / 2
-          ? ("before" as const)
-          : ("after" as const),
-    };
-    dropRef.current = target;
-    setDropTarget(target);
-  };
-  const finishMemoryDrag = async (apply: boolean) => {
-    const id = dragRef.current;
-    const target = dropRef.current;
-    if (apply && canReorder && id && target) {
-      const next = placeInstruction(
-        stateRef.current,
-        id,
-        target.id,
-        target.position,
-      );
-      if (next !== stateRef.current && (await commit(next)))
-        setPriorityNotice("메모 우선순위를 바꿨어요.");
-    }
-    dragRef.current = null;
-    dropRef.current = null;
-    setDraggedMemory(null);
-    setDropTarget(null);
   };
   const displayedDeaths =
     state.deaths - (animating && event?.outcome === "death" ? 1 : 0);
-  const selected = state.instructions.find((x) => x.id === deleteId);
   const shareText = `죽을 때마다 한 줄\n${score(state)}데스로 던전 탈출!\n사망·자진 부활 ${state.deaths} + 삭제 패널티 ${state.penaltyDeaths}${
     shareInstructions
       ? "\n\n나의 메모장\n" +
@@ -1048,7 +930,9 @@ export default function App({ bridge }: AppProps = {}) {
           </div>
         )}
         {storageError && (
-          <div className="banner" role="alert">{storageError}</div>
+          <div className="banner" role="alert">
+            {storageError}
+          </div>
         )}
         <LegacyOnboarding
           progress={onboardingProgress}
@@ -1071,7 +955,9 @@ export default function App({ bridge }: AppProps = {}) {
             <ul>
               <li>입력한 한 줄은 저장된 뒤 같은 장면에서 곧바로 실행돼요.</li>
               <li>실패해도 데스나 지우개를 쓰지 않고 같은 자리로 돌아와요.</li>
-              <li>임시 한 줄은 연습 기록에만 남고 본편 메모로 복사되지 않아요.</li>
+              <li>
+                임시 한 줄은 연습 기록에만 남고 본편 메모로 복사되지 않아요.
+              </li>
             </ul>
             <button className="primary wide" onClick={() => setPopup(null)}>
               알겠어요
@@ -1121,21 +1007,26 @@ export default function App({ bridge }: AppProps = {}) {
       <PlayHeader
         actions={
           <>
-          {bridge && (
-            <button
-              className="subtle"
-              onClick={() => {
-                cancelDraft();
-                bridge.onRoadmap();
+            {bridge && (
+              <button
+                className="subtle"
+                onClick={() => {
+                  cancelDraft();
+                  bridge.onRoadmap();
+                }}
+              >
+                여정 지도
+              </button>
+            )}
+            <PlayUtilityActions
+              muted={settings.muted}
+              onHelp={() => setPopup("help")}
+              onToggleSound={() => {
+                unlockAudio();
+                changeSettings({ ...settings, muted: !settings.muted });
               }}
-            >
-              여정 지도
-            </button>
-          )}
-          <PlayUtilityActions muted={settings.muted}
-            onHelp={() => setPopup("help")}
-            onToggleSound={() => { unlockAudio(); changeSettings({ ...settings, muted: !settings.muted }); }}
-            onSettings={() => setPopup("settings")} />
+              onSettings={() => setPopup("settings")}
+            />
           </>
         }
       />
@@ -1177,15 +1068,7 @@ export default function App({ bridge }: AppProps = {}) {
           <div
             className={`scene-frame ${OBSERVATIONS[event?.observation ?? observation.id].sidePath && sceneMode !== "entrance" ? "has-side-path" : ""}`}
           >
-            <div className="scene-head">
-              <div>
-                <span className="room-tag">
-                  {state.tutorial
-                    ? "PROLOGUE · 시작의 방"
-                    : `첫 번째 여정 · STAGE 1-${Math.min(displayedRoom + 5, 12)}`}
-                </span>
-                <h2>{room.name}</h2>
-              </div>
+            <PlaySceneHeading eyebrow={state.tutorial ? "PROLOGUE · 시작의 방" : `첫 번째 여정 · STAGE 1-${Math.min(displayedRoom + 5, 12)}`} title={room.name}>
               {state.tutorial ? (
                 <button
                   type="button"
@@ -1202,7 +1085,7 @@ export default function App({ bridge }: AppProps = {}) {
                   {Math.min(displayedRoom + 5, 12)} / 12
                 </span>
               )}
-            </div>
+            </PlaySceneHeading>
             <div className="canvas-holder">
               <DungeonCanvas
                 observation={observation}
@@ -1223,37 +1106,16 @@ export default function App({ bridge }: AppProps = {}) {
               (animating ||
                 state.phase === "dead" ||
                 state.phase === "blocked") && (
-                <div
-                  className={`scene-caption ${sceneMode === "entrance" ? "returning" : ""} ${!animating && state.phase === "dead" ? "accident" : ""}`}
-                  aria-live={animating ? "off" : "polite"}
-                >
-                  <span className="caption-kicker">
-                    {sceneMode === "entrance"
-                      ? "다시, 던전 입구에서"
-                      : !animating
-                        ? "방금 무슨 일이 있었냐면…"
-                        : event?.instructionId
-                          ? `기억한 말 · ${OBSERVATIONS[event?.observation ?? observation.id].label}`
-                          : "메모가 없을 때는"}
-                  </span>
-                  <strong>
-                    {sceneMode === "entrance"
-                      ? "몸은 다시 태어나도, 메모는 꼭 챙겨 갈게."
-                      : `“${activeMemory}”`}
-                  </strong>
-                  <span className="caption-action">
-                    {sceneMode === "entrance"
-                      ? "처음부터 다시 걸어가요"
-                      : !animating
-                        ? event?.reason
-                        : ACTION_LABELS[event?.action ?? "advance"]}
-                  </span>
+                <PlaySceneCaption returning={sceneMode === "entrance"} accident={!animating && state.phase === "dead"} animating={animating}
+                  kicker={sceneMode === "entrance" ? "다시, 던전 입구에서" : !animating ? "방금 무슨 일이 있었냐면…" : event?.instructionId ? `기억한 말 · ${OBSERVATIONS[event?.observation ?? observation.id].label}` : "메모가 없을 때는"}
+                  memory={sceneMode === "entrance" ? "몸은 다시 태어나도, 메모는 꼭 챙겨 갈게." : `“${activeMemory}”`}
+                  action={sceneMode === "entrance" ? "처음부터 다시 걸어가요" : !animating ? event?.reason : ACTION_LABELS[event?.action ?? "advance"]}>
                   {showDetourHint && (
                     <span className="route-hint">
                       옆길로 <b>우회</b>해 볼까?
                     </span>
                   )}
-                </div>
+                </PlaySceneCaption>
               )}
             {!started && (
               <div className="title-start">
@@ -1272,10 +1134,9 @@ export default function App({ bridge }: AppProps = {}) {
                 )}
               </div>
             )}
-            <div className="scene-foot">
-              <span>
-                <i />
-                {!started
+            <PlaySceneFooter
+              status={
+                !started
                   ? "한 줄에서 시작되는 모험"
                   : pending
                     ? "용사가 한 줄을 읽고 있어요"
@@ -1287,71 +1148,45 @@ export default function App({ bridge }: AppProps = {}) {
                           ? "넘어진 자리에도 기억은 남아"
                           : actualPhase === "cleared"
                             ? "던전 탈출 성공 · 모든 한 줄의 기억"
-                            : "천천히, 한 걸음씩"}
-              </span>
-              {started && (animating || state.phase === "running") ? (
-                <button
-                  onClick={async () => {
-                    if (awaitingNext) {
-                      if (await playNext()) {
-                        setAwaitingNext(false);
-                        setPaused(false);
-                      }
-                    } else setPaused((x) => !x);
-                  }}
-                  aria-label={paused ? "다시 재생" : "일시정지"}
-                >
-                  {paused ? "▶ 다시 재생" : "Ⅱ 일시정지"}
-                </button>
-              ) : (
-                <span>✦ {state.tutorial ? "연습 기록" : "기억의 던전"}</span>
-              )}
-            </div>
+                            : "천천히, 한 걸음씩"
+              }
+              playing={started && (animating || state.phase === "running")}
+              paused={paused}
+              label={state.tutorial ? "연습 기록" : "기억의 던전"}
+              onTogglePause={async () => {
+                if (awaitingNext) {
+                  if (await playNext()) {
+                    setAwaitingNext(false);
+                    setPaused(false);
+                  }
+                } else setPaused((value) => !value);
+              }}
+            />
           </div>
           {started && (
-            <div className="playback-tools">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={sceneByScene}
-                  onChange={async (e) => {
-                    setSceneByScene(e.target.checked);
-                    stepModeRef.current = e.target.checked;
-                    if (!e.target.checked && awaitingNext) {
-                      if (await playNext()) {
-                        setAwaitingNext(false);
-                        setPaused(false);
-                      }
-                    }
-                  }}
-                />
-                한 장면씩 보기
-              </label>
-              {awaitingNext && (
-                <button
-                  className="secondary"
-                  onClick={async () => {
-                    if (await playNext()) {
-                      setAwaitingNext(false);
-                      setPaused(false);
-                    }
-                  }}
-                >
-                  다음 장면 →
-                </button>
-              )}
-              {completedEvents.length > 0 && (
-                <button
-                  className="subtle"
-                  onClick={() => {
-                    setShowHistory(true);
-                    setPaused(true);
-                  }}
-                >
-                  방금 무슨 일이?
-                </button>
-              )}
-            </div>
+            <PlaySessionControls
+              sceneByScene={sceneByScene}
+              onSceneByScene={async (value) => {
+                setSceneByScene(value);
+                stepModeRef.current = value;
+                if (!value && awaitingNext && (await playNext())) {
+                  setAwaitingNext(false);
+                  setPaused(false);
+                }
+              }}
+              awaitingNext={awaitingNext}
+              onNext={async () => {
+                if (await playNext()) {
+                  setAwaitingNext(false);
+                  setPaused(false);
+                }
+              }}
+              hasHistory={completedEvents.length > 0}
+              onHistory={() => {
+                setShowHistory(true);
+                setPaused(true);
+              }}
+            />
           )}
           {!started && !state.tutorial && (
             <ol className="first-guide">
@@ -1442,34 +1277,16 @@ export default function App({ bridge }: AppProps = {}) {
           {started &&
             isRest &&
             !(state.tutorial && state.instructions.length === 0) && (
-              <div className="action-row">
-                <button
-                  className={state.canWrite ? "secondary" : "primary"}
-                  onClick={launch}
-                  disabled={
-                    pending ||
-                    conflict ||
-                    (state.tutorial && state.instructions.length === 0)
-                  }
-                >
-                  {state.phase === "dead"
-                    ? state.canWrite
-                      ? "한 줄 더 쓰지 않고 다시 출발"
-                      : "입구에서 다시 출발"
-                    : "모험 출발"}{" "}
-                  <span>→</span>
-                </button>
-                {state.canWrite && state.phase === "dead" && (
-                  <span className="helper">
-                    지침 없이 출발하면 이번 작성 기회는 사라져요.
-                  </span>
-                )}
-                {!state.canWrite && (
-                  <span className="saved-mark">
-                    ✓ 한 줄을 메모장에 기억했어요
-                  </span>
-                )}
-              </div>
+              <PlayLaunchControls
+                dead={state.phase === "dead"}
+                canWrite={state.canWrite}
+                disabled={
+                  pending ||
+                  conflict ||
+                  (state.tutorial && state.instructions.length === 0)
+                }
+                onLaunch={launch}
+              />
             )}
           {started && !animating && state.phase === "blocked" && (
             <button
@@ -1509,9 +1326,7 @@ export default function App({ bridge }: AppProps = {}) {
                     <button
                       className="secondary"
                       onClick={async () => {
-                        if (
-                          await commit(practiceDeletion(stateRef.current))
-                        )
+                        if (await commit(practiceDeletion(stateRef.current)))
                           playSound("erase", settings.muted);
                       }}
                     >
@@ -1530,293 +1345,95 @@ export default function App({ bridge }: AppProps = {}) {
             </div>
           )}
           {started && !animating && state.phase === "cleared" && (
-            <div className="composer">
-              <span className="eyebrow">A SMALL HERO, A BIG ADVENTURE</span>
-              <div className="win-score">
-                {score(state)} <span style={{ fontSize: 18 }}>데스의 기억</span>
-              </div>
-              <p className="helper">
-                사망·자진 부활 {state.deaths} + 삭제 패널티{" "}
-                {state.penaltyDeaths} · 최고 기록 {best ?? score(state)}데스
-              </p>
-              <div className="action-row">
-                <button className="primary" onClick={() => openChronicle(true)}>
-                  우리의 모험 돌아보기
-                </button>
-                <button
-                  className="secondary"
-                  onClick={() => {
-                    setNotice("");
-                    setPopup("share");
-                  }}
-                >
-                  우리의 모험 공유하기 ↗
-                </button>
-                <button className="secondary" onClick={() => setPopup("new")}>
-                  새로운 도전
-                </button>
-              </div>
-            </div>
+            <PlayClearPanel
+              deaths={state.deaths}
+              penaltyDeaths={state.penaltyDeaths}
+              best={best}
+              onChronicle={() => openChronicle(true)}
+              onShare={() => {
+                setNotice("");
+                setPopup("share");
+              }}
+              onNew={() => setPopup("new")}
+            />
           )}
           {notice && (
             <p className="helper" role="status">
               {notice}
             </p>
           )}
-          <div className="record-line">
-            <span>
-              <strong className="score">
-                {state.tutorial ? "—" : displayedDeaths + state.penaltyDeaths}
-              </strong>{" "}
-              데스
-            </span>
-            <span>
-              사망·부활{" "}
-              <strong>{state.tutorial ? "연습" : displayedDeaths}</strong>
-            </span>
-            <span>
-              삭제 패널티{" "}
-              <strong>{state.tutorial ? "없음" : state.penaltyDeaths}</strong>
-            </span>
-            {best !== null && (
-              <span>
-                최고 <strong>{best}</strong>
-              </span>
-            )}
-          </div>
+          <PlayDeathScore
+            deaths={displayedDeaths}
+            penaltyDeaths={state.penaltyDeaths}
+            best={best}
+            tutorial={state.tutorial}
+          />
         </section>
-        <PlayNotebook
-          count={state.instructions.length}
-          className={reviving ? "remembering" : undefined}
-          notebookRef={notebook}
+        <MemoryNotebook
+          entries={[...state.instructions].reverse().map((item) => ({
+            id: item.id,
+            text: item.text,
+            actionLabel: ACTION_LABELS[item.interpretation.action],
+          }))}
+          erasers={state.erasers}
+          eraserCapacity={CONFIG.initialErasers}
+          deletionPenalty={CONFIG.deletionPenalty}
+          tutorial={state.tutorial}
+          activeId={started ? event?.instructionId : undefined}
+          animating={animating}
+          reviving={reviving}
+          canDelete={
+            started &&
+            state.phase === "dead" &&
+            !animating &&
+            !state.tutorial &&
+            !pending &&
+            !conflict
+          }
+          canReorder={canReorder}
+          reducedMotion={settings.reducedMotion}
+          onDelete={erase}
+          onMove={changePriority}
+          onPlace={placePriority}
         >
-            <p className="memory-priority">상황이 맞으면 위쪽 메모부터 ↓</p>
-            <span className="sr-only" role="status">
-              {priorityNotice}
-            </span>
-            <ul
-              className="instruction-list"
-              aria-label="위쪽부터 우선 적용하는 메모. 손잡이 드래그 또는 메모 관리 메뉴로 순서를 바꿀 수 있어요"
-            >
-              {[...state.instructions].reverse().map((item, i) => (
-                <li
-                  key={item.id}
-                  data-memory-id={item.id}
-                  data-drop-position={
-                    dropTarget?.id === item.id ? dropTarget.position : undefined
-                  }
-                  className={`instruction ${draggedMemory === item.id ? "dragging" : ""} ${erasing && deleteId === item.id ? "erasing" : ""} ${event?.instructionId === item.id && started ? "active" : ""}`}
-                  onDragOver={(e) => {
-                    if (dragRef.current && canReorder) {
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = "move";
-                      targetMemoryDrag(e.clientX, e.clientY);
-                    }
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    targetMemoryDrag(e.clientX, e.clientY);
-                    finishMemoryDrag(true);
-                  }}
-                >
-                  <span
-                    className={`memory-drag-handle ${canReorder ? "enabled" : ""}`}
-                    draggable={canReorder}
-                    title="드래그해서 우선순위 변경"
-                    aria-hidden="true"
-                    onDragStart={(e) => {
-                      if (!startMemoryDrag(item.id)) {
-                        e.preventDefault();
-                        return;
-                      }
-                      e.dataTransfer.effectAllowed = "move";
-                      e.dataTransfer.setData("text/plain", item.id);
-                    }}
-                    onDragEnd={() => finishMemoryDrag(false)}
-                    onPointerDown={(e) => {
-                      if (
-                        e.pointerType !== "mouse" &&
-                        startMemoryDrag(item.id)
-                      ) {
-                        e.preventDefault();
-                        e.currentTarget.setPointerCapture(e.pointerId);
-                      }
-                    }}
-                    onPointerMove={(e) => {
-                      if (
-                        e.pointerType !== "mouse" &&
-                        e.currentTarget.hasPointerCapture(e.pointerId)
-                      ) {
-                        e.preventDefault();
-                        targetMemoryDrag(e.clientX, e.clientY);
-                      }
-                    }}
-                    onPointerUp={(e) => {
-                      if (
-                        e.pointerType !== "mouse" &&
-                        e.currentTarget.hasPointerCapture(e.pointerId)
-                      ) {
-                        targetMemoryDrag(e.clientX, e.clientY);
-                        finishMemoryDrag(true);
-                        e.currentTarget.releasePointerCapture(e.pointerId);
-                      }
-                    }}
-                    onPointerCancel={() => finishMemoryDrag(false)}
-                  >
-                    ⠿
-                  </span>
-                  <span className="line-text">
-                    {item.text}
-                    {event?.instructionId === item.id && started && (
-                      <span className="memory-selected">
-                        {animating ? "이번에 따르는 기억" : "방금 따른 기억"}
-                      </span>
-                    )}
-                    <small>{ACTION_LABELS[item.interpretation.action]}</small>
-                  </span>
-                  <div className="memory-actions">
-                    <button
-                      type="button"
-                      className="erase-button"
-                      aria-label={`${item.text} 삭제`}
-                      title="메모 삭제"
-                      onClick={() => setDeleteId(item.id)}
-                      disabled={
-                        !started ||
-                        state.phase !== "dead" ||
-                        animating ||
-                        state.tutorial ||
-                        pending ||
-                        conflict
-                      }
-                    >
-                      ⌫
-                    </button>
-                    <button
-                      type="button"
-                      className="memory-menu-toggle"
-                      aria-label={`${item.text} 메모 관리`}
-                      aria-expanded={editingMemory === item.id}
-                      aria-controls={`memory-tools-${item.id}`}
-                      disabled={!canReorder || state.instructions.length < 2}
-                      onClick={() =>
-                        setEditingMemory((open) =>
-                          open === item.id ? null : item.id,
-                        )
-                      }
-                    >
-                      ···
-                    </button>
-                  </div>
-                  {editingMemory === item.id && started && isRest && (
-                    <div
-                      className="memory-tools"
-                      id={`memory-tools-${item.id}`}
-                      role="group"
-                      aria-label={`${item.text} 메모 편집`}
-                    >
-                      {state.instructions.length > 1 && (
-                        <div
-                          className="priority-controls"
-                          aria-label={`${item.text} 우선순위`}
-                        >
-                          <button
-                            type="button"
-                            aria-label={`${item.text} 우선순위 높이기`}
-                            title="우선순위 높이기"
-                            disabled={!canReorder || i === 0}
-                            onClick={() => changePriority(item.id, "up")}
-                          >
-                            ↑ 위로
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`${item.text} 우선순위 낮추기`}
-                            title="우선순위 낮추기"
-                            disabled={
-                              !canReorder || i === state.instructions.length - 1
-                            }
-                            onClick={() => changePriority(item.id, "down")}
-                          >
-                            ↓ 아래로
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </li>
-              ))}
-              {state.instructions.length === 0 && (
-                <li className="empty-note">
-                  아직 비어 있는 작은 메모장.
-                  <br />첫 번째 기억을 남겨주세요.
-                </li>
-              )}
-              {Array.from(
-                { length: Math.max(0, 3 - state.instructions.length) },
-                (_, i) => (
-                  <li
-                    className="empty-line"
-                    key={`empty${i}`}
-                    aria-hidden="true"
-                  />
-                ),
-              )}
-            </ul>
-            <div className="paper-foot">
-              <span>남은 지우개</span>
-              <div className="erasers" aria-label={`지우개 ${state.erasers}개`}>
-                {Array.from({ length: CONFIG.initialErasers }, (_, i) => i).map(
-                  (i) => (
-                    <span
-                      key={i}
-                      className={`eraser ${i >= state.erasers ? "spent" : ""}`}
-                    />
-                  ),
-                )}
-              </div>
-            </div>
-            <p className="paper-note">
-              지우개를 다 쓰면, 한 줄을 지울 때 +{CONFIG.deletionPenalty}데스.
-            </p>
-            {onboardingProgress?.attempts.length ? (
-              <details className="onboarding-history">
-                <summary>
-                  정식 도입 연습 기록 · {onboardingProgress.attempts.length}번
-                </summary>
-                <p>
-                  아래 문장은 학습 기록이며, 본편에서 따르는 활성 메모와는
-                  별개예요.
-                </p>
-                <ol>
-                  {onboardingProgress.attempts.map((attempt) => (
-                    <li key={attempt.sequence}>
-                      <small>
-                        1-
-                        {ONBOARDING_STAGES.findIndex(
-                          (stage) => stage.id === attempt.stageId,
-                        ) + 1}
-                      </small>{" "}
-                      “{attempt.text}”
-                      <span>
-                        {attempt.applied
-                          ? `${ACTION_LABELS[attempt.action]} · ${attempt.succeeded ? "목표 도달" : "무료 복구"}`
-                          : "조건 불일치 · 실행 안 됨"}
-                      </span>
-                    </li>
-                  ))}
-                </ol>
-              </details>
-            ) : boot.data && !state.tutorial ? (
-              <details className="onboarding-history">
-                <summary>이전 진행 이어가기 · 정식 도입 면제</summary>
-                <p>
-                  기존 본편 기록을 그대로 이어가며, 플레이하지 않은 도입 완료
-                  연혁은 만들지 않았어요.
-                </p>
-              </details>
-            ) : null}
-        </PlayNotebook>
+          {onboardingProgress?.attempts.length ? (
+            <details className="onboarding-history">
+              <summary>
+                정식 도입 연습 기록 · {onboardingProgress.attempts.length}번
+              </summary>
+              <p>
+                아래 문장은 학습 기록이며, 본편에서 따르는 활성 메모와는
+                별개예요.
+              </p>
+              <ol>
+                {onboardingProgress.attempts.map((attempt) => (
+                  <li key={attempt.sequence}>
+                    <small>
+                      1-
+                      {ONBOARDING_STAGES.findIndex(
+                        (stage) => stage.id === attempt.stageId,
+                      ) + 1}
+                    </small>{" "}
+                    “{attempt.text}”
+                    <span>
+                      {attempt.applied
+                        ? `${ACTION_LABELS[attempt.action]} · ${attempt.succeeded ? "목표 도달" : "무료 복구"}`
+                        : "조건 불일치 · 실행 안 됨"}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            </details>
+          ) : boot.data && !state.tutorial ? (
+            <details className="onboarding-history">
+              <summary>이전 진행 이어가기 · 정식 도입 면제</summary>
+              <p>
+                기존 본편 기록을 그대로 이어가며, 플레이하지 않은 도입 완료
+                연혁은 만들지 않았어요.
+              </p>
+            </details>
+          ) : null}
+        </MemoryNotebook>
       </PlayLayout>
       <footer className="footer">
         <span>
@@ -1864,80 +1481,19 @@ export default function App({ bridge }: AppProps = {}) {
         />
       )}
       {popup === "help" && (
-        <Modal title="한 줄씩, 함께 배우는 모험" onClose={() => setPopup(null)}>
-          <p>
-            용사는 기본적으로 앞으로 걸어요. 넘어진 이유를 보고, 다음 생에
-            기억할 지침을 한 줄 남겨주세요.
-          </p>
-          <ul>
-            <li>
-              용사가 할 행동을 자연스럽게 적어요. 한 줄에는 한 가지 행동을, 여러
-              조건에 같은 행동을 연결해도 좋아요.
-            </li>
-            <li>
-              현재 상황에 맞는 메모 중 화면 위쪽 한 줄을 따라요. 출발 전에
-              손잡이를 드래그하거나 ··· 메뉴의 ↑↓로 우선순위를 바꿀 수 있어요.
-            </li>
-            <li>
-              사망 한 번당 새 지침은 최대 한 줄. 쓰지 않고 출발하면 기회는
-              사라져요.
-            </li>
-            <li>
-              같은 상황에 서로 다른 행동을 새로 기억할 수는 없어요. 조건을
-              구체적으로 바꾸거나 기존 메모를 지워주세요.
-            </li>
-            <li>
-              지우개 {CONFIG.initialErasers}개를 먼저 쓰고, 소진 후에는 삭제 한
-              줄마다 {CONFIG.deletionPenalty}데스예요.
-            </li>
-            <li>
-              전진 지침을 지워도 기본 전진은 계속돼요. 막히면 +1데스로 부활할 수
-              있어요.
-            </li>
-            <li>이미 본 같은 행동은 3배속. 탭을 떠나면 자동으로 멈춰요.</li>
-          </ul>
-          <p>
-            {bridge
-              ? "진행은 여정 기록에 자동 저장됩니다."
-              : "기록은 이 브라우저에만 저장됩니다. 다른 기기와 동기화되지 않아요."}
-          </p>
-          <button className="primary wide" onClick={() => setPopup(null)}>
-            기억했어요
-          </button>
-        </Modal>
+        <PlayHelpDialog
+          campaign={Boolean(bridge)}
+          onClose={() => setPopup(null)}
+        />
       )}
       {popup === "settings" && (
-        <Modal title="작은 모험의 설정" onClose={() => setPopup(null)}>
-          <label>
-            <input
-              type="checkbox"
-              checked={settings.muted}
-              onChange={(e) =>
-                changeSettings({ ...settings, muted: e.target.checked })
-              }
-            />
-            배경음악·효과음 끄기
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={settings.reducedMotion}
-              onChange={(e) =>
-                changeSettings({ ...settings, reducedMotion: e.target.checked })
-              }
-            />
-            움직임과 장식 효과 줄이기
-          </label>
-          <p>자동 저장은 마지막으로 확정된 판단 지점을 기억해요.</p>
-          <div className="action-row">
-            <button className="secondary" onClick={exportSave}>
-              기록 내보내기
-            </button>
-            <button className="secondary" onClick={() => setPopup("new")}>
-              새 도전 시작
-            </button>
-          </div>
-        </Modal>
+        <PlaySettingsDialog
+          settings={settings}
+          onChange={changeSettings}
+          onExport={exportSave}
+          onNew={() => setPopup("new")}
+          onClose={() => setPopup(null)}
+        />
       )}
       {popup === "new" && (
         <Modal title="새 메모장을 펼칠까요?" onClose={() => setPopup(null)}>
@@ -1971,8 +1527,7 @@ export default function App({ bridge }: AppProps = {}) {
               onClick={async () => {
                 if (await commit(stateRef.current)) {
                   setPopup(null);
-                  if (stateRef.current.phase === "running")
-                    await playNext();
+                  if (stateRef.current.phase === "running") await playNext();
                 }
               }}
             >
@@ -1990,78 +1545,23 @@ export default function App({ bridge }: AppProps = {}) {
           </div>
         </Modal>
       )}
-      {selected && (
-        <Modal
-          title="이 기억을 지울까요?"
-          onClose={() => {
-            if (!erasing) setDeleteId(null);
-          }}
-        >
-          <blockquote>{selected.text}</blockquote>
-          <p>
-            비용:{" "}
-            <strong>
-              {state.erasers > 0
-                ? "지우개 1개"
-                : `${CONFIG.deletionPenalty}데스`}
-            </strong>
-            . 지운 기억은 되돌릴 수 없어요.
-            {state.erasers === 0
-              ? " 패널티로 새 작성 기회가 생기지는 않아요."
-              : ""}
-          </p>
-          <div className="action-row">
-            <button
-              className="primary danger"
-              onClick={erase}
-              disabled={conflict || erasing}
-            >
-              비용을 사용하고 삭제
-            </button>
-            <button
-              className="secondary"
-              disabled={erasing}
-              onClick={() => setDeleteId(null)}
-            >
-              취소
-            </button>
-          </div>
-        </Modal>
-      )}
       {popup === "share" && (
-        <Modal title="우리의 모험을 남겨요" onClose={() => setPopup(null)}>
-          <p>
-            아래 내용 그대로 공유해요. 링크를 연 친구는 자신의 새 기록으로
-            시작합니다.
-          </p>
-          <label>
-            <input
-              type="checkbox"
-              checked={shareInstructions}
-              onChange={(e) => setShareInstructions(e.target.checked)}
-            />
-            최종 메모장도 함께 공유
-          </label>
-          <pre>{shareText}</pre>
-          <div className="action-row">
-            <button className="primary" onClick={copyShare}>
-              내용 복사
-            </button>
-            {typeof navigator.share === "function" && (
-              <button
-                className="secondary"
-                onClick={() =>
-                  navigator
+        <PlayShareDialog
+          text={shareText}
+          includeNotes={shareInstructions}
+          onIncludeNotes={setShareInstructions}
+          notice={notice}
+          onCopy={copyShare}
+          onSystemShare={
+            typeof navigator.share === "function"
+              ? () =>
+                  void navigator
                     .share({ title: "죽을 때마다 한 줄", text: shareText })
                     .catch(() => setNotice("공유를 취소했어요."))
-                }
-              >
-                시스템 공유
-              </button>
-            )}
-          </div>
-          {notice && <p role="status">{notice}</p>}
-        </Modal>
+              : undefined
+          }
+          onClose={() => setPopup(null)}
+        />
       )}
     </div>
   );

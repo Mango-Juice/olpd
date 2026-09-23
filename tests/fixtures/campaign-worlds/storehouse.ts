@@ -1,7 +1,7 @@
-import { at, makeEntity, makeHero, makeWorld, type CampaignStageDefinition, type SegmentDefinition } from "../level";
-import { currentLoad, entityMass, executePhysicalAction } from "../physics";
-import type { ActionResult } from "../program";
-import type { Entity, PhysicalAction, Scalar, WorldState } from "../types";
+import { at, makeEntity, makeHero, makeWorld, type CampaignStageDefinition, type SegmentDefinition } from "../../../src/campaign/level";
+import { currentLoad, entityMass, executePhysicalAction } from "../../../src/campaign/physics";
+import type { ActionResult } from "../../../src/campaign/program";
+import type { Entity, PhysicalAction, Scalar, WorldState } from "../../../src/campaign/types";
 
 const STAGE_ID = 6 as const;
 
@@ -663,6 +663,7 @@ const finalInventory: SegmentDefinition = {
 };
 
 export const STOREHOUSE_STAGE: CampaignStageDefinition = {
+  contentRevision: "shared-v1",
   id: STAGE_ID,
   title: "등불 보관소",
   practice,

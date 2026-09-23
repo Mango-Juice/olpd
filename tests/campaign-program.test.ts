@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { writeProgram } from "../src/campaign/notebook";
 import { createCursor, stepProgram, type ActionExecutor } from "../src/campaign/program";
-import { advanceStage, createStageRun, departStage, type StageDynamics } from "../src/campaign/run";
+import { acknowledgePresentation, advanceStage, createStageRun, departStage, writeStageProgram, type StageDynamics } from "../src/campaign/run";
 import { parseStageRun } from "../src/campaign/run-validation";
 import type { InstructionProgram, PhysicalAction, ProgramNode, WorldState } from "../src/campaign/types";
 const world = (): WorldState => ({ stageId: 7, segmentId: "07-1", tick: 0, attempt: 1, entities: {}, actors: {}, visible: [], facts: [] });
@@ -117,8 +116,7 @@ it("restores an atomic move in transit and advances its sequence only on arrival
     advance: (current) => ({ world: { ...current, tick: current.tick + 1 }, events: [], canChange: false }),
     segmentComplete: () => false, nextSegment: () => null, sealAfter: () => null,
   };
-  let run = createStageRun("walking-save", cooperationWorld());
-  run.notebook = writeProgram(run.notebook, program);
+  let run = writeStageProgram(createStageRun("walking-save", cooperationWorld()), program);
   run = advanceStage(departStage(run), dynamics);
   expect(run.world.actors.hero.location.x).toBe(1);
   expect(run.world.tick).toBe(1);
@@ -126,11 +124,11 @@ it("restores an atomic move in transit and advances its sequence only on arrival
   expect(run.events.at(-1)?.outcome).toBe("safe");
   const restored = parseStageRun(JSON.parse(JSON.stringify(run)));
   expect(restored).not.toBeNull();
-  run = advanceStage(restored!, dynamics);
+  run = advanceStage(acknowledgePresentation(restored!), dynamics);
   expect(run.world.actors.hero.location.x).toBe(2);
   expect(run.world.tick).toBe(2);
   expect(run.execution.active?.cursor.index).toBe(1);
-  run = advanceStage(run, dynamics);
+  run = advanceStage(acknowledgePresentation(run), dynamics);
   expect(executed).toEqual(["move", "move", "observe"]);
   expect(run.world.tick).toBe(3);
 });
@@ -319,9 +317,6 @@ it("keeps an unexecuted sequence cursor pristine when an earlier parallel branch
     guard: false,
     body,
   };
-  let run = createStageRun("blocked-cursor", state);
-  run.notebook = writeProgram(run.notebook, program);
-  run = departStage(run);
   const dynamics: StageDynamics = {
     execute: (current, physicalAction) => physicalAction.verb === "move"
       ? { world: current, outcome: "blocked", reason: "닫힌 길" }
@@ -331,12 +326,16 @@ it("keeps an unexecuted sequence cursor pristine when an earlier parallel branch
     nextSegment: () => null,
     sealAfter: () => null,
   };
+  const stepped = stepProgram(state, body, createCursor(), dynamics.execute);
+  expect(stepped.outcome).toBe("blocked");
+  expect(stepped.cursor.children).toHaveLength(2);
+  expect(stepped.cursor.children[1]).toEqual(createCursor([1]));
+
+  let run = departStage(writeStageProgram(createStageRun("blocked-cursor", state), program));
   run = advanceStage(run, dynamics);
   expect(run.phase).toBe("blocked");
-  expect(run.execution.active?.cursor.children).toHaveLength(2);
-  expect(run.execution.active?.cursor.children[1]).toEqual(createCursor([1]));
+  expect(run.execution.active).toBeNull();
   const restored = parseStageRun(JSON.parse(JSON.stringify(run)));
   expect(restored).not.toBeNull();
-  expect(restored?.execution.active?.cursor.children).toHaveLength(2);
-  expect(restored?.execution.active?.cursor.children[1]).toEqual(createCursor([1]));
+  expect(restored?.execution.active).toBeNull();
 });

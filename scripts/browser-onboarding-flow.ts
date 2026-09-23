@@ -50,11 +50,8 @@ try {
   expect(saved.checkpoint.segmentId).toBe("02-1");
   expect(saved.notebook.instructions).toEqual([]);
   expect(saved.notebook.canWrite).toBe(true);
-  expect(saved.notebook.bells).toBe(0);
+  expect(saved.notebook.deaths).toBe(0);
   expect(saved.notebook.erasers).toBe(2);
-  expect(saved.learning.completedSegmentIds).toHaveLength(3);
-  expect(saved.learning.attemptedSentences).toHaveLength(3);
-  expect(saved.notebook.visitedBookmarks).toEqual(["02-1"]);
   expect(await page.evaluate(async () => (await indexedDB.databases()).map((database) => database.name))).toEqual(before);
   expect(errors).toEqual([]);
   await page.screenshot({ path: "artifacts/onboarding-handoff.png", fullPage: true });
