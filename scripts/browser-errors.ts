@@ -8,6 +8,7 @@ await mkdir("artifacts", { recursive: true });
 const browser = await chromium.launch();
 const context = await browser.newContext({
   viewport: { width: 390, height: 844 },
+  hasTouch: true,
 });
 const page = await context.newPage();
 await installLegacyBrowserHarness(page);
@@ -110,13 +111,33 @@ try {
       .toJSON(),
     h: innerHeight,
   }));
-  if (bounds.scene.top < 0 || bounds.input.bottom > bounds.h)
+  if (bounds.scene.bottom <= 0 || bounds.input.top < 0 || bounds.input.bottom > bounds.h)
     throw new Error(
       `Keyboard layout hides core controls ${JSON.stringify(bounds)}`,
     );
   report.push(
     "Compact 390x430 keyboard viewport keeps scene and input visible",
   );
+  let tapCalls = 0;
+  await page.route("**/api/interpret", route => { tapCalls += 1; return route.abort("failed"); });
+  for (const composing of [false, true]) {
+    await page.locator("#instruction").focus();
+    await expect(page.locator(".shell")).toHaveClass(/keyboard-open/);
+    if (composing) {
+      await page.locator("#instruction").dispatchEvent("compositionstart", { data: "어" });
+      await page.locator("#instruction").dispatchEvent("keydown", { key: "Enter", isComposing: true, keyCode: 229 });
+    }
+    const beforeTap = tapCalls;
+    await page.getByRole("button", { name: "기억하고 출발" }).tap();
+    await expect.poll(() => tapCalls).toBe(beforeTap + 1);
+    await expect(page.locator(".error")).toBeVisible();
+    await expect(page.locator("#instruction")).toHaveValue("계속 앞으로 걸어");
+    await page.waitForTimeout(150);
+    expect(tapCalls).toBe(beforeTap + 1);
+    if (composing) await page.locator("#instruction").dispatchEvent("compositionend", { data: "어" });
+  }
+  await page.unroute("**/api/interpret");
+  report.push("One touch submits once from compact keyboard layout, including composing Korean; failed request preserves draft");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator("#instruction").blur();
   // Storage denial is injected as a browser capability failure, not an AI substitute.
@@ -126,7 +147,7 @@ try {
     };
   });
   await page.getByRole("button", { name: "소리 끄기" }).click();
-  await expect(page.getByRole("alert")).toContainText("자동 저장");
+  await expect(page.getByRole("alert").filter({ hasText: "자동 저장" })).toBeVisible();
   expect(
     await page.evaluate(() => localStorage.getItem("one-line-per-death:save")),
   ).toBe(before);
@@ -138,7 +159,7 @@ try {
     localStorage.setItem("one-line-per-death:save", "{broken");
   });
   await bp.goto(base);
-  await expect(bp.getByRole("alert")).toContainText("자동 저장을 완료하지 못했어요");
+  await expect(bp.getByRole("alert")).toContainText("저장된 기록을 읽을 수 없어요");
   expect(
     await bp.evaluate(() => localStorage.getItem("one-line-per-death:save")),
   ).toBe("{broken");

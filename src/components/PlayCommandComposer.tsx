@@ -20,13 +20,19 @@ interface Props {
 /** One keyboard, IME, pending/error and submit experience for the whole adventure. */
 export function PlayCommandComposer({ id, value, onChange, onSubmit, onCancel, pending, error, disabled = false, maxLength, label = '용사에게 남길 한 줄', placeholder = '용사가 할 행동을 한 줄로 적어 주세요.', children }: Props) {
   const composing = useRef(false);
+  const input = useRef<HTMLTextAreaElement>(null);
   const count = [...value].length;
   return <PlayComposer ariaLabel={label} onSubmit={(event) => {
     event.preventDefault();
-    if (!composing.current && !pending && !disabled) void onSubmit(value);
+    if (pending || disabled || !value.trim() || count > maxLength) return;
+    // Submit clicks are intentional even during IME composition; Enter is guarded below.
+    // Blur only after the click lands, so the compact mobile layout cannot move its target.
+    const text = input.current?.value ?? value;
+    input.current?.blur();
+    void onSubmit(text);
   }}>
     <label htmlFor={id}>{label}</label>
-    <textarea id={id} data-play-command value={value} rows={2} placeholder={placeholder}
+    <textarea ref={input} id={id} data-play-command value={value} rows={2} placeholder={placeholder}
       disabled={disabled} aria-describedby={`${id}-help${error ? ` ${id}-error` : ''}`}
       onChange={(event) => { onCancel(); onChange(event.target.value); }}
       onCompositionStart={() => { composing.current = true; }}
@@ -41,7 +47,9 @@ export function PlayCommandComposer({ id, value, onChange, onSubmit, onCancel, p
       <span className="count">{count} / {maxLength}</span>
       <div className="compose-actions">
         <span className="compose-cancel">{pending ? <button type="button" className="subtle" onClick={onCancel}>취소</button> : null}</span>
-        <button type="submit" className="primary" disabled={pending || disabled || !value.trim() || count > maxLength}>
+        <button type="submit" className="primary" onPointerDown={(event) => {
+          if (event.button === 0 && document.activeElement === input.current) event.preventDefault();
+        }} disabled={pending || disabled || !value.trim() || count > maxLength}>
           {pending ? <><span className="pulse" />읽고 있어요…</> : <>기억하고 출발 <span aria-hidden="true">↗</span></>}
         </button>
       </div>
