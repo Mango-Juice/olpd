@@ -1,5 +1,5 @@
 import type { ActionResult } from "./program";
-import { isPublicProperty, resolveActionReferences } from "./conditions";
+import { isPublicProperty, resolveActionReferences } from "./conditions.js";
 import type { Actor, Entity, PhysicalAction, WorldState } from "./types";
 
 export type ActionValidation =

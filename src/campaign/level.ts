@@ -1,5 +1,5 @@
 import type { ActionExecutor } from "./program";
-import { executePhysicalAction } from "./physics";
+import { executePhysicalAction } from "./physics.js";
 import type { EnvironmentStep, StageDynamics } from "./run";
 import type { Actor, Entity, PhysicalAction, StageId, WorldState } from "./types";
 import type { SpatialBody, SpatialSurface } from "./spatial/types";

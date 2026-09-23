@@ -1,5 +1,5 @@
-import { isStageId, stageSummary } from "./catalog";
-import { parsePhysicalAction, parseProgram } from "./validation";
+import { isStageId, stageSummary } from "./catalog.js";
+import { parsePhysicalAction, parseProgram } from "./validation.js";
 import type { StagePresentation, StageRun } from "./run";
 import type { ProgramCursor } from "./program";
 import type { EntityBinding, InstructionProgram, ProgramNode, WorldState } from "./types";

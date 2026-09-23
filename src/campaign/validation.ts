@@ -1,5 +1,5 @@
-import { isStageId } from "./catalog";
-import { CAMPAIGN_INPUT_LIMIT } from "./notebook";
+import { isStageId } from "./catalog.js";
+import { CAMPAIGN_INPUT_LIMIT } from "./notebook.js";
 import type { EntityBinding, EntityReference, InstructionProgram, PhysicalAction } from "./types";
 
 const verbs = new Set(["move", "jump", "duck", "push", "pull", "place", "take", "release", "open", "close", "turn", "tie", "untie", "board", "dismount", "climb", "pour", "hold", "observe", "remember"]);

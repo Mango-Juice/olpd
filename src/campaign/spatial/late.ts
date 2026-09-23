@@ -1,5 +1,5 @@
-import { authoredEntity, all, near, property } from './authored';
-import { createSpatialStage } from './engine';
+import { authoredEntity, all, near, property } from './authored.js';
+import { createSpatialStage } from './engine.js';
 import type { SpatialChapterDefinition, SpatialSceneDefinition, SpatialCondition, SpatialCycle } from './types';
 
 const E = (id: string, name: string, x: number, y: number, kind = 'object', extra: Record<string, string | number | boolean> = {}) =>

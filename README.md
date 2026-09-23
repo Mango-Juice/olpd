@@ -89,6 +89,7 @@ Vercel 프로젝트 `olpd`에 Vite와 Node API를 함께 배포한다. 서버 �
 npx vercel link --project olpd --scope <본인 스코프>
 npx vercel env add TYPESAFE_API_KEY production --sensitive
 npx vercel env add DEEPSEEK_API_KEY production --sensitive
+npx tsx scripts/check-server-imports.ts
 npx vercel deploy --prod
 ```
 

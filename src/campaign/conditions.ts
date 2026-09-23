@@ -1,4 +1,4 @@
-import { propertyVisibility } from "./presentation";
+import { propertyVisibility } from "./presentation.js";
 import type { ActionReferenceRole, EntityReference, PhysicalAction, Predicate, Scalar, Truth, WorldState } from "./types";
 
 /** Shared knowledge boundary: neither unknown keys nor hidden properties are evidence. */

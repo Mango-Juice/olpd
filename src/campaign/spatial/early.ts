@@ -1,7 +1,7 @@
 import type { CampaignStageDefinition } from '../level';
 import type { Entity, Scalar } from '../types';
-import { authoredEntity, all, atPosition, not, property } from './authored';
-import { createSpatialStage } from './engine';
+import { authoredEntity, all, atPosition, not, property } from './authored.js';
+import { createSpatialStage } from './engine.js';
 import type { SpatialBody, SpatialChapterDefinition, SpatialCondition, SpatialInteraction, SpatialSceneDefinition, SpatialSurface } from './types';
 
 const floor = (from = 0, to = 10, y = 0): SpatialSurface => ({ from, to, y, z: 0, depth: 1.2 });

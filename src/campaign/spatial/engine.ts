@@ -1,4 +1,4 @@
-import { makeHero, makeWorld, type CampaignStageDefinition, type SegmentDefinition } from '../level';
+import { makeHero, makeWorld, type CampaignStageDefinition, type SegmentDefinition } from '../level.js';
 import type { ActionResult } from '../program';
 import type { EnvironmentStep } from '../run';
 import type { Actor, Entity, PhysicalAction, WorldState } from '../types';

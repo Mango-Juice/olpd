@@ -1,6 +1,6 @@
 import type { CampaignStageDefinition } from '../level';
-import { authoredEntity, all, near, not, property } from './authored';
-import { createSpatialStage } from './engine';
+import { authoredEntity, all, near, not, property } from './authored.js';
+import { createSpatialStage } from './engine.js';
 import type { SpatialChapterDefinition, SpatialCondition, SpatialSceneDefinition } from './types';
 
 const id = (chapter: string, room: number, object: string) => `${chapter}-v2-${room}-${object}`;

@@ -1,6 +1,6 @@
 import type { CampaignStageDefinition } from './level';
 import type { StageId } from './types';
-import { SPATIAL_STAGES } from './spatial/catalog';
+import { SPATIAL_STAGES } from './spatial/catalog.js';
 
 const CHAPTER_PURPOSE: Partial<Record<StageId, string>> = {
   2: '편지를 젖지 않게 지키며 회랑을 건너야 해요.',

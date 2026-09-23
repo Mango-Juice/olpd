@@ -1,5 +1,5 @@
-import { makeEntity } from '../level';
-import { authoredPublicKind } from '../public-kinds';
+import { makeEntity } from '../level.js';
+import { authoredPublicKind } from '../public-kinds.js';
 import type { Entity } from '../types';
 import type { SpatialCondition } from './types';
 export function authoredEntity(id: string, name: string, region: string, x: number, y: number, properties: Entity['properties'] = {}, patch: Partial<Entity> = {}): Entity {

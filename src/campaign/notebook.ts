@@ -6,7 +6,7 @@ import {
   grantMemoryWrite,
   moveMemory,
   placeMemory,
-} from "../game/memory";
+} from "../game/memory.js";
 import type { InstructionProgram } from "./types";
 
 export const CAMPAIGN_INPUT_LIMIT = 500;

@@ -1,4 +1,4 @@
-import { MEMORY_INITIAL_ERASERS, MEMORY_DELETE_PENALTY } from "./memory";
+import { MEMORY_INITIAL_ERASERS, MEMORY_DELETE_PENALTY } from "./memory.js";
 import type { Action, Observation, ObservationId, Room } from "./types";
 export const GAME_VERSION = "1";
 export const DUNGEON_VERSION = "1";
