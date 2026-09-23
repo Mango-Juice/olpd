@@ -278,6 +278,8 @@ export default function App({ bridge }: AppProps = {}) {
         (started || onboardingActive) &&
         state.phase !== "cleared" &&
         !paused &&
+        !popup &&
+        !showHistory &&
         !hidden &&
         !conflict,
       intensity: onboardingActive
@@ -292,6 +294,8 @@ export default function App({ bridge }: AppProps = {}) {
     state.phase,
     state.room,
     paused,
+    popup,
+    showHistory,
     hidden,
     conflict,
     showChronicle,
@@ -1098,7 +1102,7 @@ export default function App({ bridge }: AppProps = {}) {
                 observation={observation}
                 event={started && !stoppedWithoutInstruction ? event : null}
                 phase={started ? state.phase : "title"}
-                paused={paused || hidden || conflict}
+                paused={paused || hidden || conflict || !!popup || showHistory || showChronicle}
                 reducedMotion={settings.reducedMotion}
                 onPlaybackEnd={onPlaybackEnd}
                 onSceneModeChange={(mode) => {

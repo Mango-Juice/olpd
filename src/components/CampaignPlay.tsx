@@ -100,9 +100,9 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
     return () => document.removeEventListener("visibilitychange", update);
   }, []);
   useEffect(() => {
-    setMusicPlayback({ stageId: musicStageId, playing: !hidden && !paused && !showChronicle && !failedSave && (run.phase !== "cleared" || animating), intensity: musicIntensity });
+    setMusicPlayback({ stageId: musicStageId, playing: !hidden && !paused && !showChronicle && !popup && !failedSave && (run.phase !== "cleared" || animating), intensity: musicIntensity });
     return () => setMusicPlayback({ stageId: musicStageId, playing: false });
-  }, [musicStageId, musicIntensity, hidden, paused, showChronicle, failedSave, run.phase, animating]);
+  }, [musicStageId, musicIntensity, hidden, paused, showChronicle, popup, failedSave, run.phase, animating]);
   useEffect(() => setAudioMuted(settings.muted), [settings.muted]);
   useEffect(() => { setSelected(undefined); setShowStory(false); }, [displayedId]);
 
@@ -125,13 +125,13 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
   // The animation callback is the only boundary that releases the next judgement.
   // No elapsed-time timer may move the world independently of its presentation.
   useEffect(() => {
-    if (paused || hidden || saving || failedSave || awaitingNext || showChronicle || run.presentation) return;
+    if (paused || hidden || saving || failedSave || awaitingNext || showChronicle || popup || run.presentation) return;
     const resumed = resumeConsumedRules(run);
     if (resumed !== run) { void commit(resumed); return; }
     if (run.phase !== "running" && run.phase !== "waiting") return;
     if (committing.current || live.current.revision !== run.revision) return;
     void commit(advanceStage(run, stageDynamics(stage)));
-  }, [run, stage, paused, hidden, saving, failedSave, awaitingNext, showChronicle]);
+  }, [run, stage, paused, hidden, saving, failedSave, awaitingNext, showChronicle, popup]);
 
   async function playbackEnded() {
     const current = live.current;
@@ -204,7 +204,7 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
         <div className="scene-frame campaign-scene">
           <CampaignCanvas world={run.world} scene={segment.scene} presentation={presentation} settledPresentation={settledPresentation} onPlaybackEnd={() => { void playbackEnded(); }}
             onSound={(cue) => playSound(cue, settings.muted)} displayNumber={displayedSegments.indexOf(segment) + 1}
-            title={segment.title} reducedMotion={settings.reducedMotion} paused={paused || hidden || saving || showChronicle || !!failedSave}
+            title={segment.title} reducedMotion={settings.reducedMotion} paused={paused || hidden || saving || showChronicle || !!popup || !!failedSave}
             selectedEntityId={selected} onSelectEntity={setSelected} />
           {(animating || run.phase === "failed" || run.phase === "blocked") && <PlaySceneCaption
             returning={presentation?.outcome === "revive"} accident={!animating && run.phase === "failed"} animating={animating}

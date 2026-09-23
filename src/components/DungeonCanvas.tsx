@@ -1,3 +1,4 @@
+import { onHeroSpriteReady } from "../render/scene";
 import { useEffect, useRef } from "react";
 import { ACTION_LABELS, OBSERVATIONS } from "../game/content";
 import type { ExecutionEvent, Observation, Phase } from "../game/types";
@@ -156,6 +157,7 @@ export function DungeonCanvas(props: DungeonCanvasProps) {
   }, [props.event, props.phase, props.reducedMotion]);
 
   useCanvasPlayback({
+    subscribeUpdates: onHeroSpriteReady,
     canvasRef,
     paused: props.paused,
     reducedMotion: props.reducedMotion,

@@ -72,11 +72,7 @@ function stonePath(
   ctx.closePath();
 }
 
-function drawBackdrop(
-  ctx: CanvasRenderingContext2D,
-  t: number,
-  reducedMotion: boolean,
-) {
+function drawStaticBackdrop(ctx: CanvasRenderingContext2D) {
   const bg = ctx.createLinearGradient(0, 0, 0, VIEW_HEIGHT);
   bg.addColorStop(0, "#11132f");
   bg.addColorStop(0.42, "#1b1d48");
@@ -163,7 +159,73 @@ function drawBackdrop(
   mist.addColorStop(1, "rgba(184,220,222,.11)");
   ctx.fillStyle = mist;
   ctx.fillRect(0, 278, VIEW_WIDTH, 130);
+}
 
+type BackdropRaster = {
+  image: OffscreenCanvas | HTMLCanvasElement;
+  scaleX: number;
+  scaleY: number;
+  phaseX: number;
+  phaseY: number;
+};
+const backdropRasters = new WeakMap<CanvasRenderingContext2D, BackdropRaster>();
+// A 960x500 tile at 3x consumes 17.3 MiB. Larger transforms draw directly.
+const MAX_BACKDROP_RASTER_BYTES = 20 * 1024 * 1024;
+
+function drawCachedStaticBackdrop(ctx: CanvasRenderingContext2D) {
+  const transform = ctx.getTransform?.();
+  const scaleX = transform?.a;
+  const scaleY = transform?.d;
+  const pixelWidth = scaleX === undefined ? 0 : VIEW_WIDTH * scaleX;
+  const pixelHeight = scaleY === undefined ? 0 : VIEW_HEIGHT * scaleY;
+  const phaseX = transform ? transform.e - Math.floor(transform.e) : 0;
+  const phaseY = transform ? transform.f - Math.floor(transform.f) : 0;
+  const cacheable = transform && scaleX > 0 && scaleY > 0
+    && transform.b === 0 && transform.c === 0
+    && Number.isFinite(transform.e) && Number.isFinite(transform.f)
+    && Number.isFinite(pixelWidth) && Number.isFinite(pixelHeight)
+    && Math.ceil(phaseX + pixelWidth) * Math.ceil(phaseY + pixelHeight) * 4 <= MAX_BACKDROP_RASTER_BYTES
+    && ctx.globalAlpha === 1 && ctx.globalCompositeOperation === "source-over"
+    && (!ctx.filter || ctx.filter === "none") && ctx.shadowBlur === 0;
+  if (!cacheable || typeof ctx.drawImage !== "function") {
+    drawStaticBackdrop(ctx);
+    return;
+  }
+
+  let raster = backdropRasters.get(ctx);
+  if (!raster || raster.scaleX !== scaleX || raster.scaleY !== scaleY
+    || Math.abs(raster.phaseX - phaseX) > 1e-9 || Math.abs(raster.phaseY - phaseY) > 1e-9) {
+    const rasterWidth = Math.ceil(phaseX + pixelWidth);
+    const rasterHeight = Math.ceil(phaseY + pixelHeight);
+    const image = typeof OffscreenCanvas !== "undefined"
+      ? new OffscreenCanvas(rasterWidth, rasterHeight)
+      : typeof document !== "undefined" ? document.createElement("canvas") : null;
+    if (!image) {
+      drawStaticBackdrop(ctx);
+      return;
+    }
+    image.width = rasterWidth;
+    image.height = rasterHeight;
+    const imageContext = image.getContext("2d") as CanvasRenderingContext2D | null;
+    if (!imageContext) {
+      drawStaticBackdrop(ctx);
+      return;
+    }
+    imageContext.setTransform(scaleX, 0, 0, scaleY, phaseX, phaseY);
+    drawStaticBackdrop(imageContext);
+    raster = { image, scaleX, scaleY, phaseX, phaseY };
+    backdropRasters.set(ctx, raster);
+  }
+  // Rasterize at the exact device-pixel phase, then copy pixels without scaling.
+  // The existing clip remains in device coordinates across setTransform.
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(raster.image, Math.floor(transform.e), Math.floor(transform.f));
+  ctx.restore();
+}
+
+function drawBackdrop(ctx: CanvasRenderingContext2D, t: number, reducedMotion: boolean) {
+  drawCachedStaticBackdrop(ctx);
   drawVines(ctx, t, reducedMotion);
 }
 

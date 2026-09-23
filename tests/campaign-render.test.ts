@@ -76,4 +76,18 @@ describe("campaign scene layout compatibility", () => {
     });
     expect(campaignEntitySignals(door)).toEqual(["open:false", "locked:true", "direction:up"]);
   });
+
+  it("recomputes public layouts after in-place world changes", () => {
+    const marker = makeEntity("gravity", "중력 표식", "mutable", 2, {
+      properties: { kind: "room-gravity-marker", gravity: "down" },
+    });
+    const world = makeWorld(5, "mutable", [marker], makeHero("mutable", 2));
+    expect(layoutCampaignActors(world)[0].rotation).toBe(0);
+    world.entities.gravity.properties.gravity = "up";
+    expect(layoutCampaignActors(world)[0].rotation).toBe(Math.PI);
+    const before = layoutCampaignEntities(world)[0];
+    world.entities.gravity.location.x = 7;
+    const after = layoutCampaignEntities(world)[0];
+    expect(after.x).not.toBe(before.x);
+  });
 });

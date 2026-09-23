@@ -17,6 +17,7 @@ interface CanvasPlaybackOptions {
   reducedMotion: boolean;
   draw: (frame: CanvasPlaybackFrame) => void;
   onFrameStats?: (fps: number) => void;
+  subscribeUpdates?: (invalidate: () => void) => () => void;
 }
 
 /**
@@ -29,10 +30,11 @@ interface CanvasPlaybackOptions {
 export function useCanvasPlayback(options: CanvasPlaybackOptions): void {
   const live = useRef(options);
   live.current = options;
+  const invalidate = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const canvas = live.current.canvasRef.current;
-    const context = canvas?.getContext("2d");
+    const context = canvas?.getContext("2d", { alpha: false });
     if (!canvas || !context) return;
 
     let raf = 0;
@@ -43,6 +45,15 @@ export function useCanvasPlayback(options: CanvasPlaybackOptions): void {
     let fpsFrames = 0;
     let lowFpsDuration = 0;
     let reducedDecoration = false;
+    let healthyDuration = 0;
+    let disposed = false;
+
+    const requestDraw = () => {
+      if (disposed || hidden || raf) return;
+      previousTime = performance.now();
+      raf = requestAnimationFrame(draw);
+    };
+    invalidate.current = requestDraw;
 
     const resize = () => {
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -51,20 +62,25 @@ export function useCanvasPlayback(options: CanvasPlaybackOptions): void {
       if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width;
         canvas.height = height;
+        requestDraw();
       }
     };
     const observer = new ResizeObserver(resize);
-    observer.observe(canvas);
-    resize();
 
     const onVisibility = () => {
       hidden = document.hidden;
       // Never count time spent outside the tab when the next RAF arrives.
       previousTime = performance.now();
+      fpsStarted = previousTime;
+      fpsFrames = 0;
+      if (hidden) { cancelAnimationFrame(raf); raf = 0; }
+      else requestDraw();
     };
     document.addEventListener("visibilitychange", onVisibility);
 
     const draw = (now: number) => {
+      raf = 0;
+      if (disposed || hidden) return;
       const current = live.current;
       const paused = current.paused || hidden;
       const rawDelta = Math.min(50, Math.max(0, now - previousTime));
@@ -89,10 +105,13 @@ export function useCanvasPlayback(options: CanvasPlaybackOptions): void {
           const fps = Math.round((fpsFrames * 1000) / sampleDuration);
           current.onFrameStats?.(fps);
           if (fps < 45) {
+            healthyDuration = 0;
             lowFpsDuration += sampleDuration;
             if (lowFpsDuration >= 2000) reducedDecoration = true;
           } else {
             lowFpsDuration = 0;
+            healthyDuration += sampleDuration;
+            if (healthyDuration >= 5000) reducedDecoration = false;
           }
           fpsStarted = now;
           fpsFrames = 0;
@@ -101,16 +120,28 @@ export function useCanvasPlayback(options: CanvasPlaybackOptions): void {
         fpsStarted = now;
         fpsFrames = 0;
       }
-      raf = requestAnimationFrame(draw);
+      if (!live.current.paused && !hidden) raf = requestAnimationFrame(draw);
     };
 
-    raf = requestAnimationFrame(draw);
+    observer.observe(canvas);
+    resize();
+    const stopUpdates = live.current.subscribeUpdates?.(requestDraw);
+    document.fonts?.addEventListener("loadingdone", requestDraw);
+    requestDraw();
     return () => {
+      disposed = true;
+      invalidate.current = null;
       cancelAnimationFrame(raf);
+      stopUpdates?.();
+      document.fonts?.removeEventListener("loadingdone", requestDraw);
       observer.disconnect();
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
+
+  // A paused canvas redraws only for a committed prop change, resize or asset load.
+  // Calling this after every render keeps selection and restored frames fresh.
+  useEffect(() => { invalidate.current?.(); });
 }
 
 export interface PlaybackTimeline {

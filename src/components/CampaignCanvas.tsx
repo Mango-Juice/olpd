@@ -1,3 +1,4 @@
+import { onHeroSpriteReady } from "../render/scene";
 import { useRef } from "react";
 import type { SceneComposition } from "../campaign/level";
 import type { StagePresentation } from "../campaign/run";
@@ -59,6 +60,7 @@ export function CampaignCanvas(props: CampaignCanvasProps) {
   liveRef.current = props;
 
   useCanvasPlayback({
+    subscribeUpdates: onHeroSpriteReady,
     canvasRef,
     paused: props.paused,
     reducedMotion: props.reducedMotion,

@@ -81,14 +81,45 @@ interface SceneRegion {
   columns: SceneColumn[];
 }
 interface SceneGeometry { width: number; regions: SceneRegion[]; spatial?: SpatialComposition }
-const sceneGeometryCache = new Map<string, SceneGeometry>();
+
+interface RenderLayouts {
+  geometry: SceneGeometry;
+  actors: CampaignActorLayout[];
+  entitiesByScale: Map<number, CampaignEntityLayout[]>;
+}
+
+// World snapshots in the render path are replaced on change. Public layout helpers
+// deliberately stay uncached because callers may edit their worlds in place.
+const renderLayoutCache = new WeakMap<WorldState, Map<SceneComposition | undefined, RenderLayouts>>();
+
+function renderLayouts(world: WorldState, scene: SceneComposition | undefined, labelScale: number) {
+  let scenes = renderLayoutCache.get(world);
+  if (!scenes) {
+    scenes = new Map();
+    renderLayoutCache.set(world, scenes);
+  }
+  let cached = scenes.get(scene);
+  if (!cached) {
+    const geometry = createSceneGeometry(world, scene);
+    cached = {
+      geometry,
+      actors: layoutActorsWithGeometry(world, geometry, layoutCampaignEntitiesBase(world, geometry)),
+      entitiesByScale: new Map(),
+    };
+    scenes.set(scene, cached);
+    if (scenes.size > 4) scenes.delete(scenes.keys().next().value!);
+  }
+  let entities = cached.entitiesByScale.get(labelScale);
+  if (!entities) {
+    entities = layoutCampaignEntitiesWithGeometry(world, cached.geometry, labelScale);
+    cached.entitiesByScale.set(labelScale, entities);
+    if (cached.entitiesByScale.size > 4) cached.entitiesByScale.delete(cached.entitiesByScale.keys().next().value!);
+  }
+  return { geometry: cached.geometry, actors: cached.actors, entities };
+}
 
 const gravityValue = (value: string | null): Gravity =>
   value === "up" || value === "left" || value === "right" ? value : "down";
-
-function sceneSignature(scene?: SceneComposition): string {
-  return scene ? `${scene.ceiling === true}:${scene.floors.map((floor) => `${floor.from},${floor.to},${floor.y}`).join("|")}` : "fallback";
-}
 
 function createSceneGeometry(world: WorldState, scene?: SceneComposition): SceneGeometry {
   if (isSpatialScene(scene)) {
@@ -98,12 +129,6 @@ function createSceneGeometry(world: WorldState, scene?: SceneComposition): Scene
     }] };
   }
   const entities = visibleEntities(world);
-  const actorSignature = Object.values(world.actors)
-    .map((actor) => `${actor.id}@${actor.location.region},${actor.location.x},${actor.location.y}`)
-    .sort().join("+");
-  const cacheKey = `${world.stageId}:${world.segmentId}:${world.attempt}:${sceneSignature(scene)}:${actorSignature}:${entities.map((entity) => `${entity.id}@${entity.location.region},${entity.location.x},${entity.location.y}`).join("|")}`;
-  const cached = sceneGeometryCache.get(cacheKey);
-  if (cached) return cached;
   const regionIds = [...new Set(entities.map((entity) => entity.location.region))];
   if (!regionIds.length) regionIds.push(world.actors.hero?.location.region ?? world.segmentId);
   const regionGap = regionIds.length > 1 ? 24 : 0;
@@ -137,10 +162,7 @@ function createSceneGeometry(world: WorldState, scene?: SceneComposition): Scene
     });
     return { id: regionId, start, end, gravity, label, columns };
   });
-  const geometry = { width: CAMPAIGN_VIEW_WIDTH, regions };
-  sceneGeometryCache.set(cacheKey, geometry);
-  if (sceneGeometryCache.size > 80) sceneGeometryCache.delete(sceneGeometryCache.keys().next().value!);
-  return geometry;
+  return { width: CAMPAIGN_VIEW_WIDTH, regions };
 }
 
 function sceneRegion(geometry: SceneGeometry, regionId: string): SceneRegion {
@@ -197,6 +219,14 @@ export function layoutCampaignEntities(
   labelScale = 1,
 ): CampaignEntityLayout[] {
   const geometry = createSceneGeometry(world, scene);
+  return layoutCampaignEntitiesWithGeometry(world, geometry, labelScale);
+}
+
+function layoutCampaignEntitiesWithGeometry(
+  world: WorldState,
+  geometry: SceneGeometry,
+  labelScale: number,
+): CampaignEntityLayout[] {
   const base = layoutCampaignEntitiesBase(world, geometry);
   const actors = layoutActorsWithGeometry(world, geometry, base);
   const attachedCount = new Map<string, number>();
@@ -609,7 +639,8 @@ export function renderCampaignScene(
   } = options;
   const world = presentation?.after ?? options.world;
   const labelScale = Math.max(1, Math.min(2.3, options.labelScale ?? 1));
-  const geometry = createSceneGeometry(world, options.scene);
+  const currentLayout = renderLayouts(world, options.scene, labelScale);
+  const geometry = currentLayout.geometry;
   const presentationProgress = Math.max(
     0,
     Math.min(1, options.playbackProgress ?? 1),
@@ -626,8 +657,9 @@ export function renderCampaignScene(
   const stateWorld = presentation && presentationProgress < 0.53
     ? presentation.before
     : world;
-  const oldActors = layoutCampaignActors(previous, options.scene);
-  const finalActors = layoutCampaignActors(world, options.scene);
+  const previousLayout = previous === world ? currentLayout : renderLayouts(previous, options.scene, labelScale);
+  const oldActors = previousLayout.actors;
+  const finalActors = currentLayout.actors;
   const spatial = isSpatialScene(options.scene);
   const traceForActor = (id: string) => spatial && presentation
     ? presentation.events.find((event) => event.motion?.actor === id)?.motion
@@ -647,8 +679,8 @@ export function renderCampaignScene(
       facing: (actor.x < old.x ? -1 : 1) as 1 | -1,
     };
   });
-  const oldLayouts = layoutCampaignEntities(previous, options.scene, labelScale);
-  const layouts = layoutCampaignEntities(world, options.scene, labelScale).map((layout) => {
+  const oldLayouts = previousLayout.entities;
+  const layouts = currentLayout.entities.map((layout) => {
     let finalX = layout.x;
     let finalY = layout.y;
     if (layout.relation !== "world" && layout.actorId) {
@@ -671,7 +703,8 @@ export function renderCampaignScene(
       entity: stateWorld.entities[layout.id] ?? layout.entity,
       x,
       y,
-      labelBounds: { ...layout.labelBounds, x: layout.labelBounds.x + dx, y: layout.labelBounds.y + dy } };
+      labelBounds: { ...layout.labelBounds, x: layout.labelBounds.x + dx, y: layout.labelBounds.y + dy },
+      bodyBounds: layout.bodyBounds ? { ...layout.bodyBounds } : undefined };
   });
   drawBackdrop(ctx, stateWorld, time, reducedMotion, geometry, options.scene);
   const byId = new Map(layouts.map((layout) => [layout.id, layout]));
