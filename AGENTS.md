@@ -213,6 +213,8 @@ When no stronger task-specific evidence applies:
 
 When uncertain between adjacent options, choose the cheaper one only when errors are inexpensive and easy to detect. Prefer the stronger option when errors would be subtle or costly to undo.
 
+Choose **latest version of model**.
+
 ### Availability and reporting
 
 Use only models and reasoning settings exposed by the current environment. Apply routing through supported tool parameters or configured agent roles; naming a model in an assignment does not by itself confirm that the runtime selected it.
