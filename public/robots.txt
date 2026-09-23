@@ -1,2 +1,7 @@
 User-agent: *
-Disallow: /
+Allow: /
+Disallow: /api/
+Disallow: /?qa=
+Disallow: /*&qa=
+
+Sitemap: https://olpd.vercel.app/sitemap.xml

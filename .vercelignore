@@ -1,7 +1,34 @@
+# Vercel supplies secrets; never upload local credentials or QA output.
 .env*
+.vercel/
+.git/
+node_modules/
+dist/
+coverage/
 artifacts/
+playwright-report/
+test-results/
+blob-report/
+*.log
+*.tsbuildinfo
+*.pem
+*.key
+*.p12
+*.pfx
+.codex/
+.idea/
+.vscode/
+.DS_Store
+._*
+Thumbs.db
+*.swp
+*.swo
+*~
+one-line-per-death-save*.json
+one-line-per-death-campaign*.json
+
+# Development-only material (still versioned in Git where appropriate).
 docs/
 tests/
 scripts/
 AGENTS.md
-PLAN.md

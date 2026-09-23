@@ -1,9 +1,34 @@
+# Dependencies and generated output
 node_modules/
 dist/
+coverage/
+*.tsbuildinfo
+
+# Server credentials (only the empty template is public)
 .env*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Local deployment state, diagnostics and browser artifacts
 .vercel/
 artifacts/
-coverage/
+playwright-report/
+test-results/
+blob-report/
 *.log
-.vercel
+
+# Local tools, editor/OS files and recovery exports
+.codex/
+.idea/
+.vscode/
+.DS_Store
+._*
+Thumbs.db
+*.swp
+*.swo
+*~
+/one-line-per-death-save*.json
+/one-line-per-death-campaign*.json

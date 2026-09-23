@@ -84,7 +84,7 @@ npx playwright install chromium
 
 ## 배포·운영
 
-Vercel 프로젝트 `olpd`에 Vite와 Node API를 함께 배포한다. 서버 비밀값 `TYPESAFE_API_KEY`와 `DEEPSEEK_API_KEY`를 production/preview 환경에 설정한다. `.env.local`, `.vercel`, 테스트 저장 기록은 Git에서 제외한다. 사이트 및 robots 응답은 noindex/nofollow다.
+Vercel 프로젝트 `olpd`에 Vite와 Node API를 함께 배포한다. 서버 비밀값 `TYPESAFE_API_KEY`와 `DEEPSEEK_API_KEY`를 production/preview 환경에 설정한다. `.env.local`, `.vercel`, 테스트 저장 기록은 Git에서 제외한다. 운영 페이지는 검색 수집을 허용하고 API는 noindex를 유지한다. 메타 정보·공유 이미지·소유 확인·사이트맵 제출 절차는 [공개 운영 준비](docs/publishing.md)를 참고한다.
 
 ```sh
 npx vercel link --project olpd --scope <본인 스코프>
