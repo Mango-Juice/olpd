@@ -1,4 +1,6 @@
 :root {
+  /* Preserve the authored dungeon/paper palette under browser auto-darkening. */
+  color-scheme: only light;
   font-size: 14px;
   font-family: "Noto Sans KR Variable", sans-serif;
   color: #e7e7e9;

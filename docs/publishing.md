@@ -36,3 +36,9 @@
     SITE_URL=https://olpd.vercel.app npm run check:seo
 
 마지막 명령은 배포 후 실행한다. 검사는 초기 HTML의 인증값·canonical·메타·JSON-LD, 검색 차단 여부, robots/sitemap 및 PNG 실제 크기를 확인한다. 공개 후에는 새 브라우저에서 게임 진입과 API 기동도 함께 확인한다. 검색 서비스 계정의 인증 결과나 실제 플랫폼별 공유 미리보기까지 확인하는 검사는 아니다.
+
+## 모바일 자동 다크모드
+
+게임은 자체 배경·종이·잉크 색상을 사용한다. 초기 HTML의 color-scheme 메타와 CSS :root에 only light를 지정해 브라우저의 자동 색상 변환을 거부한다. 밝은 게임 테마로 바꾸는 설정이 아니다. [Chrome 자동 다크모드 제외 안내](https://developer.chrome.com/blog/auto-dark-theme)
+
+390px Chromium에서 light/dark 선호 및 Emulation.setAutoDarkModeOverride를 켠 메모장 PNG가 동일함을 확인했다. 실제 휴대전화의 모든 브라우저, 확장 기능 또는 OS 접근성 색상 반전까지 차단한다고 보장하지 않는다. 검사 자료는 Git 제외 artifacts/color-scheme/에 보관한다.
