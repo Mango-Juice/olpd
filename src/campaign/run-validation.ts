@@ -1,3 +1,4 @@
+import { STAGNATION_LIMIT } from "./stagnation.js";
 import { isStageId, stageSummary } from "./catalog.js";
 import { parsePhysicalAction, parseProgram } from "./validation.js";
 import type { StagePresentation, StageRun } from "./run";
@@ -127,6 +128,9 @@ function validPresentation(value: unknown, stageId: number): value is StagePrese
 /** Rejects damaged supported snapshots before constructing a runtime. */
 export function parseStageRun(value: unknown): StageRun | null {
   if (!record(value) || value.version !== 3 || (value.contentRevision !== "shared-v1" && value.contentRevision !== "spatial-v1")
+    || (value.stagnation !== undefined && (!record(value.stagnation)
+      || typeof value.stagnation.key !== "string" || !integer(value.stagnation.count)
+      || value.stagnation.count < 1 || value.stagnation.count >= STAGNATION_LIMIT))
     || !Array.isArray(value.waitingStates) || !value.waitingStates.every((item) => typeof item === "string")
     || !name(value.id) || !isStageId(value.stageId) || value.stageId === 1 || !integer(value.revision)
     || !(value.statusReason === null || typeof value.statusReason === "string")
