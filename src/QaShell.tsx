@@ -11,8 +11,8 @@ import { resolveStage } from "./campaign/registry";
 import { createCampaignRun, createStageRun, type StageRun } from "./campaign/run";
 import { parseProgram } from "./campaign/validation";
 import { parseStageRun } from "./campaign/run-validation";
-import { newRun, skipTutorial } from "./game/core";
-import { createOnboardingProgress, isOnboardingProgress, type OnboardingProgress } from "./game/onboarding";
+import { newChapterRun } from "./game/core";
+import { isOnboardingProgress, type OnboardingProgress } from "./game/onboarding";
 import { makeSave } from "./game/storage";
 import type { Settings } from "./game/types";
 import type { StageId } from "./campaign/types";
@@ -74,13 +74,12 @@ export default function QaShell() {
     if (!fresh && slots[key]) { setSelected(key); return; }
     let slot: Slot;
     if (id < 2) {
-      slot = { label: id === 0 ? "프롤로그" : "1장 · 기억의 던전", run: { kind: "legacy", save: makeSave(id === 0 ? newRun(true) : skipTutorial(newRun(true)), { writer: "local-qa", settings, tutorialCompleted: id === 1 }) } };
+      slot = { label: id === 0 ? "프롤로그" : "1장 · 기억의 던전", run: { kind: "legacy", save: makeSave(newChapterRun(), { writer: "local-qa", settings, tutorialCompleted: id === 1 }) } };
     } else {
       const stage = qaStage(id as StageId);
       if (!stage) return;
       slot = { label: `${id}장 · ${stage.title}`, run: { kind: "world", run: createCampaignRun(crypto.randomUUID(), stage) } };
     }
-    if (id === 0 && slot.run.kind === "legacy") slot.onboarding = createOnboardingProgress(slot.run.save.state.id);
     if (persist(key, slot, false)) { setSelected(key); }
   }
   function jumpToSegment(segmentId: string) {
@@ -97,7 +96,7 @@ export default function QaShell() {
   const header = <aside className="qa-banner" aria-label="로컬 QA 모드"><strong>LOCAL QA</strong><span>모든 구현 장 바로 입장 · 일반 진행과 별도 저장 · 실제 AI 호출</span><button onClick={back}>QA 장 선택</button>{selected === null ? <button onClick={() => open(0, false)}>프롤로그</button> : <button onClick={() => open(Number(selected), true)}>새 QA 시작</button>}<a href="/">일반 플레이로 돌아가기</a></aside>;
   let content;
   if (current?.run.kind === "legacy") {
-    content = <App key={current.run.save.state.id} bridge={{ initial: current.run.save,
+    content = <App key={current.run.save.state.id} bridge={{ initial: current.run.save, startWithStory: selected === "0",
       loadOnboarding: () => slotsRef.current[selected!]?.onboarding ?? null,
       saveOnboarding: async (progress) => persist(selected!, { ...slotsRef.current[selected!], onboarding: progress }, false) ? { ok: true, value: undefined } : { ok: false, error: { code: "write", message: "QA 도입 저장 실패" } },
       save: async (save) => persist(selected!, { ...slotsRef.current[selected!], run: { kind: "legacy", save } }) ? { ok: true, value: undefined } : { ok: false, error: { code: "write", message: "QA 저장 실패" } },

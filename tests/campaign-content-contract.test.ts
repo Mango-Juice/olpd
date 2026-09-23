@@ -7,12 +7,12 @@ import { createCampaignRun } from "../src/campaign/run";
 import { campaignAuthority } from "../src/campaign/authority";
 import { resolveProgramBindings } from "../src/campaign/bindings";
 import { propertyVisibility } from "../src/campaign/presentation";
-import { ONBOARDING_STAGES } from "../src/game/onboarding";
 import { ROOMS } from "../src/game/content";
 
 describe("implemented document content contract", () => {
-  it("ships 66 compact scenes with revised IDs and valid fresh saves", () => {
-    let total = ONBOARDING_STAGES.length + ROOMS.length;
+  it("ships 60 compact scenes with revised IDs and valid fresh saves", () => {
+    let total = ROOMS.length;
+    expect(STAGES[0]).toMatchObject({ segments: 6, coreSegments: 6, onboardingSegments: 0 });
     const authority = campaignAuthority(resolveStage);
     for (const summary of STAGES.slice(1)) {
       const stage = resolveStage(summary.id)!;
@@ -50,7 +50,7 @@ describe("implemented document content contract", () => {
         }
       }
     }
-    expect(total).toBe(66);
+    expect(total).toBe(60);
   });
   it("keeps the ending recipient private until the delivery presentation", () => {
     expect(propertyVisibility("recipient")).toBe("hidden");

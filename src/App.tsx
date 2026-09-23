@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isInterpretation } from "./game/interpretation";
 import { PrologueGuide } from "./components/PrologueGuide";
 import { DungeonCanvas } from "./components/DungeonCanvas";
-import { LegacyOnboarding } from "./components/LegacyOnboarding";
+import { LegacyOnboarding, StoryPrologue } from "./components/LegacyOnboarding";
 import { MemoryNotebook } from "./components/MemoryNotebook";
 import { PlayCommandComposer } from "./components/PlayCommandComposer";
 import {
@@ -40,10 +40,10 @@ import {
   CONFIG,
   DUNGEON_VERSION,
   OBSERVATIONS,
-  ROOMS,
   RULES_VERSION,
   TUTORIAL_ROOM,
 } from "./game/content";
+import { roomsForRun } from "./game/chapter-layout";
 import {
   abandon,
   addInstruction,
@@ -51,7 +51,7 @@ import {
   deleteInstruction,
   moveInstruction,
   placeInstruction,
-  newRun,
+  newChapterRun,
   practiceDeletion,
   retry,
   score,
@@ -70,7 +70,6 @@ import {
 import {
   ONBOARDING_STAGES,
   attachOnboardingHandoff,
-  createOnboardingProgress,
   loadOnboardingProgress,
   progressBelongsToRun,
   writeOnboardingProgress,
@@ -150,6 +149,7 @@ async function interpretOnboardingLine(
 
 export interface LegacyStorageBridge {
   initial: SaveData | null;
+  startWithStory?: boolean;
   save: (data: SaveData) => Promise<StorageResult<void>>;
   loadOnboarding?: () => OnboardingProgress | null;
   saveOnboarding?: (
@@ -169,9 +169,14 @@ export default function App({ bridge }: AppProps = {}) {
     bridge ? { data: bridge.initial, error: "" } : readBoot(),
   );
   const [state, setState] = useState<RunState>(
-    () => boot.data?.state ?? newRun(true),
+    () => boot.data?.state ?? newChapterRun(),
   );
   const stateRef = useRef(state);
+  const chapterRooms = roomsForRun(state);
+  const legacyLayout = state.layoutVersion !== 2;
+  const [showStory, setShowStory] = useState(
+    () => !boot.data || bridge?.startWithStory === true,
+  );
   const [onboardingProgress, setOnboardingProgress] =
     useState<OnboardingProgress | null>(() => {
       let stored: OnboardingProgress | null = null;
@@ -182,7 +187,7 @@ export default function App({ bridge }: AppProps = {}) {
       } catch {
         stored = null;
       }
-      if (!boot.data) return createOnboardingProgress(state.id);
+      if (!boot.data) return null;
       return progressBelongsToRun(stored, state.id) ? stored : null;
     });
   const onboardingActive =
@@ -284,7 +289,7 @@ export default function App({ bridge }: AppProps = {}) {
         !conflict,
       intensity: onboardingActive
         ? "intro"
-        : state.room >= ROOMS.length - 1
+        : state.room >= chapterRooms.length - 1
           ? "climax"
           : "main",
     });
@@ -293,6 +298,7 @@ export default function App({ bridge }: AppProps = {}) {
     onboardingActive,
     state.phase,
     state.room,
+    chapterRooms.length,
     paused,
     popup,
     showHistory,
@@ -617,6 +623,7 @@ export default function App({ bridge }: AppProps = {}) {
     }
     if (!boot.data && !(await commit(stateRef.current))) return;
     setStarted(true);
+    setShowStory(false);
     if (stateRef.current.phase === "running") await playNext();
     else presentCleared(stateRef.current);
   };
@@ -669,17 +676,20 @@ export default function App({ bridge }: AppProps = {}) {
       return;
     }
     try {
-      const next = newRun(true);
+      const next = newChapterRun();
       next.revision = stateRef.current.revision + 1;
-      const freshOnboarding = createOnboardingProgress(next.id);
-      if ((await persistOnboarding(freshOnboarding)) && (await commit(next))) {
+      if (await commit(next)) {
         cancelDraft();
         setDraft("");
         setAnimating(false);
         setPaused(false);
         setNotice("");
-        setOnboardingReady(true);
-        setStarted(true);
+        setOnboardingProgress(null);
+        setAwaitingNext(false);
+        setReviving(false);
+        setSceneMode("action");
+        setShowStory(true);
+        setStarted(false);
         setPopup(null);
       }
     } finally {
@@ -832,9 +842,13 @@ export default function App({ bridge }: AppProps = {}) {
     noMatchingInstruction || abandonedWithoutInstruction;
   const contactHint = started && !animating && !state.tutorial ? chapterOneContactHint(state, onboardingProgress) : null;
   const displayedRoom = animating && event ? event.room : state.room;
+  const stageNumber = Math.min(displayedRoom + 1, chapterRooms.length) +
+    (legacyLayout ? ONBOARDING_STAGES.length : 0);
+  const stageCount = chapterRooms.length +
+    (legacyLayout ? ONBOARDING_STAGES.length : 0);
   const room = state.tutorial
     ? TUTORIAL_ROOM
-    : ROOMS[Math.min(displayedRoom, ROOMS.length - 1)];
+    : chapterRooms[Math.min(displayedRoom, chapterRooms.length - 1)];
   const isRest =
     !animating && (state.phase === "ready" || state.phase === "dead");
   const canCompose = started && isRest && state.canWrite;
@@ -1040,7 +1054,11 @@ export default function App({ bridge }: AppProps = {}) {
           </>
         }
       />
-      <PlayIntro />
+      <PlayIntro
+        aside={legacyLayout && boot.data ? <>
+          이전 기록 이어가기<small>CHAPTER 1 · OLD SAVE</small>
+        </> : undefined}
+      />
       {conflict && (
         <div className="banner" role="alert">
           다른 탭에서 기록이 바뀌어 이 탭을 멈췄어요. 최신 기록을 불러오면
@@ -1073,12 +1091,20 @@ export default function App({ bridge }: AppProps = {}) {
         </div>
       )}
       {!started && state.tutorial && <PrologueGuide />}
+      {showStory && !started && !state.tutorial && !legacyLayout ? (
+        <StoryPrologue
+          onRead={() => void begin()}
+          onSkip={() => void begin()}
+          disabled={conflict}
+        />
+      ) : (
+      <>
       <PlayLayout>
         <section className="game-panel" aria-label="던전 플레이">
           <div
             className={`scene-frame ${OBSERVATIONS[event?.observation ?? observation.id].sidePath && sceneMode !== "entrance" ? "has-side-path" : ""}`}
           >
-            <PlaySceneHeading eyebrow={state.tutorial ? "PROLOGUE · 시작의 방" : `첫 번째 여정 · STAGE 1-${Math.min(displayedRoom + 5, 12)}`} title={room.name}>
+            <PlaySceneHeading eyebrow={state.tutorial ? "PROLOGUE · 시작의 방" : `첫 번째 여정 · STAGE 1-${stageNumber}`} title={room.name}>
               {state.tutorial ? (
                 <button
                   type="button"
@@ -1092,7 +1118,7 @@ export default function App({ bridge }: AppProps = {}) {
                 </button>
               ) : (
                 <span className="chapter-number">
-                  {Math.min(displayedRoom + 5, 12)} / 12
+                  {stageNumber} / {stageCount}
                 </span>
               )}
             </PlaySceneHeading>
@@ -1224,7 +1250,7 @@ export default function App({ bridge }: AppProps = {}) {
           )}
           {state.tutorial ? (
             <div className="journey" aria-label="튜토리얼">
-              {ROOMS.map((_, i) => (
+              {chapterRooms.map((_, i) => (
                 <span key={i} className={i === 0 ? "current" : ""} />
               ))}
             </div>
@@ -1232,21 +1258,26 @@ export default function App({ bridge }: AppProps = {}) {
             <PlayStageProgress
               chapter={1}
               stages={[
-                ...ONBOARDING_STAGES.map((stage) => ({
+                ...(legacyLayout ? ONBOARDING_STAGES : []).map((stage) => ({
                   id: `intro:${stage.id}`,
                   title: stage.title,
                 })),
-                ...ROOMS.map((chapterRoom, index) => ({
+                ...chapterRooms.map((chapterRoom, index) => ({
                   id: `main:${index}`,
                   title: chapterRoom.name,
                 })),
               ]}
-              currentId={`main:${Math.min(displayedRoom, ROOMS.length - 1)}`}
+              currentId={`main:${Math.min(displayedRoom, chapterRooms.length - 1)}`}
               completedIds={[
-                ...(onboardingProgress?.completedStageIds.map(
+                ...(legacyLayout ? onboardingProgress?.completedStageIds.map(
                   (id) => `intro:${id}`,
-                ) ?? []),
-                ...ROOMS.slice(0, displayedRoom).map(
+                ) ?? [] : []),
+                ...chapterRooms.slice(
+                  0,
+                  !animating && state.phase === "cleared"
+                    ? chapterRooms.length
+                    : displayedRoom,
+                ).map(
                   (_, index) => `main:${index}`,
                 ),
               ]}
@@ -1285,7 +1316,8 @@ export default function App({ bridge }: AppProps = {}) {
           )}
           {started &&
             isRest &&
-            !(state.tutorial && state.instructions.length === 0) && (
+            !(state.tutorial && state.instructions.length === 0) &&
+            !(state.layoutVersion === 2 && state.instructions.length === 0 && state.deaths === 0) && (
               <PlayLaunchControls
                 dead={state.phase === "dead"}
                 canWrite={state.canWrite}
@@ -1405,7 +1437,7 @@ export default function App({ bridge }: AppProps = {}) {
           onMove={changePriority}
           onPlace={placePriority}
         >
-          {onboardingProgress?.attempts.length ? (
+          {legacyLayout && onboardingProgress?.attempts.length ? (
             <details className="onboarding-history">
               <summary>
                 정식 도입 연습 기록 · {onboardingProgress.attempts.length}번
@@ -1433,7 +1465,7 @@ export default function App({ bridge }: AppProps = {}) {
                 ))}
               </ol>
             </details>
-          ) : boot.data && !state.tutorial ? (
+          ) : legacyLayout && boot.data && !state.tutorial ? (
             <details className="onboarding-history">
               <summary>이전 진행 이어가기 · 정식 도입 면제</summary>
               <p>
@@ -1444,6 +1476,8 @@ export default function App({ bridge }: AppProps = {}) {
           ) : null}
         </MemoryNotebook>
       </PlayLayout>
+      </>
+      )}
       <PlayFooter local={!bridge} onRestart={() => setPopup("new")} disabled={pending || conflict}
         onHistory={() => openChronicle(state.phase === "cleared")} />
       {showHistory && (

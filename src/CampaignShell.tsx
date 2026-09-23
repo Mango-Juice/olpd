@@ -12,7 +12,7 @@ import { createCampaignRun, type StageRun } from "./campaign/run";
 import { parseProgram } from "./campaign/validation";
 import { stageSummary } from "./campaign/catalog";
 import { loadOnboardingProgress, progressBelongsToRun, type OnboardingProgress } from "./game/onboarding";
-import { newRun, skipTutorial } from "./game/core";
+import { newChapterRun } from "./game/core";
 import { makeSave, type StorageResult } from "./game/storage";
 import { stageArchive } from "./game/archive";
 import { setAudioMuted } from "./game/audio";
@@ -128,7 +128,7 @@ export default function CampaignShell() {
       return;
     }
     if (id === 1) {
-      const fresh = makeSave(skipTutorial(newRun(true)), { writer, settings, tutorialCompleted: true });
+      const fresh = makeSave(newChapterRun(), { writer, settings, tutorialCompleted: true });
       if ((await save({ kind: "legacy", save: fresh })).ok) setRoute({ kind: "legacy", initial: fresh, key: fresh.state.id });
     } else {
       const stage = resolveStage(id);

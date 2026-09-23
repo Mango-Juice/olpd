@@ -6,7 +6,7 @@ export interface CampaignStageSummary extends StageSummary {
   onboardingSegments: number;
 }
 export const STAGES: readonly CampaignStageSummary[] = [
-  { id: 1, slug: "memory-dungeon", title: "기억의 던전", subtitle: "한 줄의 기억으로 걷는 길", segments: 12, coreSegments: 8, onboardingSegments: 4 },
+  { id: 1, slug: "memory-dungeon", title: "기억의 던전", subtitle: "한 줄의 기억으로 걷는 길", segments: 6, coreSegments: 6, onboardingSegments: 0 },
   { id: 2, slug: "rain-corridor", title: "비에 잠긴 회랑", subtitle: "물건과 물길을 이어서", segments: 6, coreSegments: 6, onboardingSegments: 0 },
   { id: 3, slug: "clockwork-kitchen", title: "태엽 부엌", subtitle: "기다림에도 순서가 있어", segments: 6, coreSegments: 6, onboardingSegments: 0 },
   { id: 4, slug: "wind-forge", title: "바람 대장간", subtitle: "힘을 옮기고 결과를 남겨", segments: 6, coreSegments: 6, onboardingSegments: 0 },

@@ -2,12 +2,24 @@ import { chromium, expect } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
 import { setTimeout as wait } from "node:timers/promises";
 import { RULES_VERSION } from "../src/game/content";
+import { newRun } from "../src/game/core";
+import { makeSave, STORAGE_KEY } from "../src/game/storage";
+import { createOnboardingProgress, ONBOARDING_STORAGE_KEY } from "../src/game/onboarding";
 
 const browser = await chromium.launch();
 const page = await browser.newPage({
   viewport: { width: 1440, height: 1000 },
   reducedMotion: "reduce",
 });
+// Compatibility-only: resume an existing v1 onboarding save, never create one in the current UI.
+const oldRun = newRun(true);
+await page.addInitScript(({ save, onboarding, saveKey, onboardingKey }) => {
+  if (!sessionStorage.getItem("seeded-old-onboarding")) {
+    localStorage.setItem(saveKey, JSON.stringify(save));
+    localStorage.setItem(onboardingKey, JSON.stringify(onboarding));
+    sessionStorage.setItem("seeded-old-onboarding", "true");
+  }
+}, { save: makeSave(oldRun, { writer: "old-onboarding-fixture" }), onboarding: createOnboardingProgress(oldRun.id), saveKey: STORAGE_KEY, onboardingKey: ONBOARDING_STORAGE_KEY });
 const errors: string[] = [];
 page.on("pageerror", (error) => errors.push(error.message));
 

@@ -1,7 +1,8 @@
 import { onboardingContactHint } from "../game/hints/chapter-one";
 import { PlayContactHint } from "./PlayContactHint";
 import { useEffect, useRef, useState } from "react";
-import { ACTION_LABELS, CONFIG, ROOMS } from "../game/content";
+import { ACTION_LABELS, CONFIG } from "../game/content";
+import { LEGACY_ROOMS } from "../game/chapter-layout";
 import {
   ONBOARDING_STAGES,
   attemptOnboarding,
@@ -56,8 +57,48 @@ const STAGE_PROGRESS = [
     id: `intro:${stage.id}`,
     title: stage.title,
   })),
-  ...ROOMS.map((room, index) => ({ id: `main:${index}`, title: room.name })),
+  ...LEGACY_ROOMS.map((room, index) => ({ id: `main:${index}`, title: room.name })),
 ];
+
+export function StoryPrologue({
+  onRead,
+  onSkip,
+  disabled,
+}: {
+  onRead: () => void;
+  onSkip: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <section className="legacy-story" aria-labelledby="chapter-story-title">
+      <div className="legacy-story-scene" aria-hidden="true">
+        <span className="legacy-story-moon">◔</span>
+        <StoryHeroCanvas />
+        <span className="legacy-story-door" />
+      </div>
+      <div className="legacy-story-copy">
+        <span className="eyebrow">PROLOGUE · 오래된 편지</span>
+        <h2 id="chapter-story-title">한 줄이 작은 용사의 길이 됩니다.</h2>
+        <p>
+          달빛이 닿지 않는 던전 깊은 곳, 용사는 오래된 편지를 품고 문 앞에
+          섰습니다. 당신이 남긴 한 줄만이 다음 걸음을 알려 줍니다.
+        </p>
+        <p>
+          앞에 펼쳐진 여섯 장면을 지나며 용사가 기억할 지침을 써 주세요.
+          넘어져도 메모는 남고, 다음 출발에 다시 적용됩니다.
+        </p>
+        <div className="action-row">
+          <button type="button" className="primary" disabled={disabled} onClick={onRead}>
+            첫 문을 향해 <span>→</span>
+          </button>
+          <button type="button" className="subtle" disabled={disabled} onClick={onSkip}>
+            이야기 SKIP
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function wait(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));

@@ -12,7 +12,7 @@ import {
 } from "../src/campaign/repository";
 import type { RunCompletionAuthority } from "../src/campaign/progress";
 import type { StageId } from "../src/campaign/types";
-import { ROOMS } from "../src/game/content";
+import { LEGACY_ROOMS as ROOMS } from "../src/game/chapter-layout";
 import { addInstruction, newRun } from "../src/game/core";
 import {
   STORAGE_KEY,

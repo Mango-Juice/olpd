@@ -21,14 +21,14 @@ try {
         load("/src/campaign/repository.ts"),
         load("/src/campaign/authority.ts"),
         load("/src/game/core.ts"),
-        load("/src/game/content.ts"),
+        load("/src/game/chapter-layout.ts"),
         load("/src/game/storage.ts"),
         load("/src/game/archive.ts"),
       ]);
     const { CampaignRepository, CAMPAIGN_DATABASE } = repositoryModule;
     const { campaignAuthority } = authorityModule;
     const { newRun } = coreModule;
-    const { ROOMS } = contentModule;
+    const { LEGACY_ROOMS: ROOMS } = contentModule;
     const { makeSave, STORAGE_KEY } = storageModule;
     const { archiveStage, listStageArchives } = archiveModule;
 

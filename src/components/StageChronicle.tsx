@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { listStageArchives, type StageArchive } from "../game/archive";
 import { playSound } from "../game/audio";
-import { ACTION_LABELS, OBSERVATIONS, ROOMS } from "../game/content";
+import { ACTION_LABELS, OBSERVATIONS } from "../game/content";
+import { roomsForRun } from "../game/chapter-layout";
 import { getRunHistory } from "../game/history";
 import type { ExecutionEvent, Settings } from "../game/types";
 import Chronicle, {
@@ -181,6 +182,7 @@ export default function StageChronicle({
 function StageChronicleDetail({ record, settings }: { record: StageArchive; settings: Settings }) {
   const model = useMemo(() => buildStageChronicleModel(record), [record]);
   const finalEventId = record.save.state.lastEvent?.id;
+  const rooms = roomsForRun(record.save.state);
 
   return (
     <Chronicle
@@ -195,7 +197,7 @@ function StageChronicleDetail({ record, settings }: { record: StageArchive; sett
           phase={replay.payload.id === finalEventId ? "cleared" : "running"}
           paused={paused}
           reducedMotion={reducedMotion}
-          roomName={ROOMS[replay.payload.room]?.name}
+          roomName={rooms[replay.payload.room]?.name}
           onPlaybackEnd={onPlaybackEnd}
           onSound={(cue) => playSound(cue, settings.muted)}
         />

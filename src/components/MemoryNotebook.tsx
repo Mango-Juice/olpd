@@ -202,6 +202,13 @@ export function MemoryNotebook({
         }}
       >
         <p className="memory-priority">상황이 맞으면 위쪽 메모부터 ↓</p>
+        {!tutorial && (
+          <p className="paper-note">
+            {entries.length < 2
+              ? "쓴 한 줄은 죽어도 남고, 조건이 맞을 때마다 따라요."
+              : "위에서 처음 맞는 한 줄을 따라요. 손잡이나 ··· 메뉴로 순서를 바꿔 보세요."}
+          </p>
+        )}
         <span className="sr-only" role="status">
           {priorityNotice}
         </span>
@@ -375,7 +382,8 @@ export function MemoryNotebook({
           </div>
         </div>
         <p className="paper-note">
-          지우개를 다 쓰면, 한 줄을 지울 때 +{deletionPenalty}데스.
+          넘어진 뒤 메모를 지울 수 있어요. 먼저 지우개를 쓰고, 다 쓰면 한 줄을
+          지울 때 +{deletionPenalty}데스.
         </p>
         {children}
       </PlayNotebook>

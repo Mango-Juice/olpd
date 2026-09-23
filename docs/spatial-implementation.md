@@ -38,4 +38,4 @@
 
 ## 발견 힌트
 
-서사 프롤로그는 물리 발견 힌트와 별개이며 건너뛸 수 있다. 온보딩 네 단계와 1장의 여덟 방(화면 1-1~1-12), 2~10장의 발견 힌트 선택은 공용 `src/game/hints/discovery.ts`를 사용한다. 2~10장의 접촉·낙하·typed 상호작용 실패 문구는 `src/campaign/contact-hints.ts`와 `src/campaign/hints/`에 있다. 현재 장의 모든 여섯 장면 이벤트 이력을 검색해 아직 배우지 않은 가장 최근 발견 하나를 선택한다. 실제 접촉과 접근 실패, 장면 낙하 관측을 구분하며, 낙하를 오브젝트 접촉으로 꾸며내지 않는다. 장면별 검토는 [초반 힌트](stage-design/hint-review-early.md), [후반 힌트](stage-design/hint-review-late.md), [프롤로그·1장 힌트](stage-design/hint-review-first.md)를 참고한다.
+서사 프롤로그는 물리 발견 힌트와 별개이며 건너뛸 수 있다. 새 1장은 여섯 장면(1-1~1-6)이고 기존 진행 저장은 이전 네 단계 도입과 여덟 방을 유지한다. 1장과 2~10장의 발견 힌트 선택은 공용 `src/game/hints/discovery.ts`를 사용한다. 2~10장의 접촉·낙하·typed 상호작용 실패 문구는 `src/campaign/contact-hints.ts`와 `src/campaign/hints/`에 있다. 현재 장의 모든 여섯 장면 이벤트 이력을 검색해 아직 배우지 않은 가장 최근 발견 하나를 선택한다. 실제 접촉과 접근 실패, 장면 낙하 관측을 구분하며, 낙하를 오브젝트 접촉으로 꾸며내지 않는다. 장면별 검토는 [초반 힌트](stage-design/hint-review-early.md), [후반 힌트](stage-design/hint-review-late.md), [이전 1장 힌트 기록](stage-design/hint-review-first.md)을 참고한다.

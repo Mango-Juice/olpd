@@ -3,10 +3,10 @@ import {
   DUNGEON_VERSION,
   GAME_VERSION,
   OBSERVATIONS,
-  ROOMS,
   RULES_VERSION,
   TUTORIAL_ROOM,
 } from "./content";
+import { roomsForRun } from "./chapter-layout";
 import type {
   Action,
   ExecutionEvent,
@@ -305,6 +305,9 @@ function validState(value: unknown): value is RunState {
     return false;
   if (typeof value.tutorial !== "boolean" || !isInteger(value.tutorialStep))
     return false;
+  if (value.layoutVersion !== undefined && value.layoutVersion !== 1 && value.layoutVersion !== 2)
+    return false;
+  if (value.tutorial && value.layoutVersion === 2) return false;
   if (
     !Array.isArray(value.instructions) ||
     !value.instructions.every(validInstruction)
@@ -352,7 +355,9 @@ function validState(value: unknown): value is RunState {
     return false;
   if (value.canWrite && value.phase !== "ready" && value.phase !== "dead")
     return false;
-  const rooms = value.tutorial ? [TUTORIAL_ROOM] : ROOMS;
+  const rooms = value.tutorial
+    ? [TUTORIAL_ROOM]
+    : roomsForRun({ layoutVersion: value.layoutVersion as RunState["layoutVersion"] });
   if (
     events.some((event) => {
       const point = rooms[event.room]?.points[event.point];
@@ -378,17 +383,17 @@ function validState(value: unknown): value is RunState {
       return false;
     if (value.phase === "cleared") return false;
   } else {
-    if (value.room >= ROOMS.length) return false;
-    const roomLength = ROOMS[value.room]?.points.length ?? 0;
+    if (value.room >= rooms.length) return false;
+    const roomLength = rooms[value.room]?.points.length ?? 0;
     if (value.point > roomLength) return false;
     if (
       value.point === roomLength &&
-      (value.phase !== "cleared" || value.room !== ROOMS.length - 1)
+      (value.phase !== "cleared" || value.room !== rooms.length - 1)
     )
       return false;
     if (
       value.phase === "cleared" &&
-      (value.room !== ROOMS.length - 1 || value.point !== roomLength)
+      (value.room !== rooms.length - 1 || value.point !== roomLength)
     )
       return false;
     if (value.phase === "practice") return false;

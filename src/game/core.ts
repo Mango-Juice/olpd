@@ -1,7 +1,7 @@
+import { roomsForRun } from "./chapter-layout";
 import {
   CONFIG,
   OBSERVATIONS,
-  ROOMS,
   RULES_VERSION,
   TUTORIAL_ROOM,
 } from "./content";
@@ -67,7 +67,7 @@ function recordTransition(
 function pointsFor(state: RunState): ObservationId[] {
   return state.tutorial
     ? TUTORIAL_ROOM.points
-    : (ROOMS[state.room]?.points ?? ["clear"]);
+    : (roomsForRun(state)[state.room]?.points ?? ["clear"]);
 }
 
 function observationAt(state: RunState): ObservationId {
@@ -192,12 +192,13 @@ function hasSameAppliesTo(
   );
 }
 
-/** Creates a fresh tutorial or main run. A standalone main run begins without a writing chance. */
+/** Compatibility factory for pre-v2 tutorial/main journeys; new players use newChapterRun. */
 export function newRun(tutorial: boolean): RunState {
   return {
     id: createId(RUN_PREFIX),
     phase: "ready",
     tutorial,
+    layoutVersion: 1,
     tutorialStep: 0,
     instructions: [],
     room: 0,
@@ -217,6 +218,11 @@ export function newRun(tutorial: boolean): RunState {
       entries: [],
     },
   };
+}
+
+/** One notebook from the first step through all six rooms; no separate practice handoff. */
+export function newChapterRun(): RunState {
+  return { ...newRun(false), layoutVersion: 2, canWrite: true };
 }
 
 export function currentObservation(state: RunState): Observation {
@@ -436,7 +442,7 @@ export function step(state: RunState): RunState {
       phase = "practice";
       point = roomPoints.length;
       tutorialStep = 5;
-    } else if (room >= ROOMS.length - 1) {
+    } else if (room >= roomsForRun(state).length - 1) {
       phase = "cleared";
       point = roomPoints.length;
     } else {

@@ -78,6 +78,8 @@ export type Phase =
   "title" | "ready" | "running" | "dead" | "blocked" | "practice" | "cleared";
 export interface RunState {
   id: string;
+  /** Missing or 1 means the original eight-room chapter; 2 means the integrated six-room chapter. */
+  layoutVersion?: 1 | 2;
   phase: Phase;
   tutorial: boolean;
   tutorialStep: number;

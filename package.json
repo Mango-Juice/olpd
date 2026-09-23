@@ -21,11 +21,12 @@
     "test:guards": "tsx scripts/check-guards.ts",
     "eval:campaign": "tsx --env-file=.env.local scripts/evaluate-campaign-live.ts",
     "test:campaign:scenes": "tsx scripts/browser-campaign-scenes.ts",
-    "test:onboarding": "tsx scripts/browser-legacy-onboarding.ts",
+    "test:onboarding": "tsx scripts/browser-chapter-one.ts",
     "test:campaign:shared": "tsx scripts/browser-shared-campaign.ts",
     "test:campaign:recovery": "tsx scripts/browser-campaign-recovery.ts",
     "eval:campaign:smoke": "tsx --env-file=.env.local scripts/evaluate-shared-live.ts",
-    "test:canvas": "tsx scripts/browser-canvas-pause.ts"
+    "test:canvas": "tsx scripts/browser-canvas-pause.ts",
+    "test:onboarding:legacy": "tsx scripts/browser-legacy-onboarding.ts"
   },
   "dependencies": {
     "@fontsource-variable/noto-sans-kr": "^5.3.0",
