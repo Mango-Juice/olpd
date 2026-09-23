@@ -305,9 +305,9 @@ function validState(value: unknown): value is RunState {
     return false;
   if (typeof value.tutorial !== "boolean" || !isInteger(value.tutorialStep))
     return false;
-  if (value.layoutVersion !== undefined && value.layoutVersion !== 1 && value.layoutVersion !== 2)
+  if (value.layoutVersion !== undefined && value.layoutVersion !== 1 && value.layoutVersion !== 2 && value.layoutVersion !== 3)
     return false;
-  if (value.tutorial && value.layoutVersion === 2) return false;
+  if (value.tutorial && (value.layoutVersion === 2 || value.layoutVersion === 3)) return false;
   if (
     !Array.isArray(value.instructions) ||
     !value.instructions.every(validInstruction)

@@ -34,7 +34,7 @@ describe("chapter one layout compatibility", () => {
 
   it("validates integrated saves against their own six-room route", () => {
     expect(ROOMS).toHaveLength(6);
-    const state = { ...newRun(false), layoutVersion: 2 as const, room: 5, point: ROOMS[5].points.length, phase: "cleared" as const };
+    const state = { ...newRun(false), layoutVersion: 3 as const, room: 5, point: ROOMS[5].points.length, phase: "cleared" as const };
     const save = makeSave(state, { writer: "new-tab" });
     expect(roomsForRun(state)).toBe(ROOMS);
     expect(read(save)).toEqual({ ok: true, value: save });
@@ -42,7 +42,7 @@ describe("chapter one layout compatibility", () => {
 
   it("rejects unknown layouts and integrated tutorial saves", () => {
     const baseline = makeSave(newRun(false), { writer: "tab" });
-    const unknown = read({ ...baseline, state: { ...baseline.state, layoutVersion: 3 } } as unknown as SaveData);
+    const unknown = read({ ...baseline, state: { ...baseline.state, layoutVersion: 4 } } as unknown as SaveData);
     const tutorial = read(makeSave({ ...newRun(true), layoutVersion: 2 }, { writer: "tab" }));
     expect(unknown.ok).toBe(false);
     expect(tutorial.ok).toBe(false);

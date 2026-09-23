@@ -14,10 +14,10 @@ const finishLife = (run: RunState) => {
 describe("six connected Chapter 1 scenes", () => {
   it("learns within one persistent notebook, then clears the short finale", () => {
     let run = newChapterRun();
-    expect(run).toMatchObject({ layoutVersion: 2, tutorial: false, canWrite: true, erasers: 2 });
+    expect(run).toMatchObject({ layoutVersion: 3, tutorial: false, canWrite: true, erasers: 2 });
     expect(run.instructions).toEqual([]);
     expect(ROOMS.map(room => room.points)).toEqual([
-      ["clear"], ["pit"], ["lowCeiling"], ["floorSpikes"], ["pitCeilingPath"], ["bridge", "spikesCeilingPath"],
+      ["clear"], ["pit"], ["lowCeiling"], ["floorSpikes"], ["pitCeilingPath"], ["bridge"],
     ]);
     run = write(run, "advance", Object.keys(OBSERVATIONS) as ObservationId[]);
     const firstId = run.instructions[0].id;
@@ -31,7 +31,7 @@ describe("six connected Chapter 1 scenes", () => {
     expect(run).toMatchObject({ phase: "dead", room: 4, deaths: 3 });
     run = write(run, "detour", ["pitCeilingPath", "spikesCeilingPath"]);
     run = finishLife(startRun(retry(run)));
-    expect(run).toMatchObject({ phase: "cleared", room: 5, point: 2, deaths: 3, erasers: 2, penaltyDeaths: 0 });
+    expect(run).toMatchObject({ phase: "cleared", room: 5, point: 1, deaths: 3, erasers: 2, penaltyDeaths: 0 });
     expect(run.instructions[0].id).toBe(firstId);
     expect(run.instructions).toHaveLength(4);
     expect(new Set(run.events.filter(e => e.outcome === "safe").map(e => e.room)).size).toBe(6);

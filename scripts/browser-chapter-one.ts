@@ -75,7 +75,7 @@ try {
     await expect.poll(async () => (await run()).phase, { timeout: 30000 }).toBe(i === 3 ? "cleared" : "dead");
   }
   const final = await run();
-  expect(final).toMatchObject({ layoutVersion: 2, tutorial: false, room: 5, point: 2, deaths: 3, erasers: 2 });
+  expect(final).toMatchObject({ layoutVersion: 3, tutorial: false, room: 5, point: 1, deaths: 3, erasers: 2 });
   expect(final.instructions[0].id).toBe(originalId);
   expect(final.instructions).toHaveLength(4);
   const chapter2 = page.locator(".roadmap-stop").filter({ has: page.getByRole("heading", { name: "비에 잠긴 회랑", exact: true }) });
@@ -84,12 +84,12 @@ try {
   await page.locator(".roadmap-stop").filter({ has: page.getByRole("heading", { name: "기억의 던전", exact: true }) }).getByRole("button", { name: /새 모험 시작/ }).click();
   // A completed chapter creates a new six-scene run, preserving its archive.
   await page.getByRole("button", { name: /모험 이어하기/ }).click();
-  expect((await run()).layoutVersion).toBe(2);
+  expect((await run()).layoutVersion).toBe(3);
   expect((await run()).instructions).toHaveLength(0);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: "artifacts/chapter-six/mobile.png", fullPage: true });
   expect(errors).toEqual([]);
-  await writeFile("artifacts/chapter-six/report.json", JSON.stringify({ calls, paidCalls: 0, errors, final, checks: ["story SKIP", "six scenes", "Enter/IME/error", "persistent notebook", "reload", "clear unlocks chapter2", "replay uses v2", "mobile overflow"] }, null, 2));
+  await writeFile("artifacts/chapter-six/report.json", JSON.stringify({ calls, paidCalls: 0, errors, final, checks: ["story SKIP", "six scenes", "Enter/IME/error", "persistent notebook", "reload", "clear unlocks chapter2", "replay uses v3", "mobile overflow"] }, null, 2));
   console.log("PASS six-scene Chapter 1 through chapter2 unlock; persistent notebook, reload, Enter/IME/error, mobile; 0 paid calls");
 } finally { await browser.close(); }

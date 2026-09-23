@@ -92,7 +92,7 @@ export const ROOMS: Room[] = [
   { name: "고개를 낮추면", subtitle: "머리 위도 살펴봐", points: ["lowCeiling"] },
   { name: "발밑의 반짝임", subtitle: "다른 모습에도 통하는 기억", points: ["floorSpikes"] },
   { name: "다른 길의 발견", subtitle: "정면이 막혀도 길은 있어", points: ["pitCeilingPath"] },
-  { name: "빛이 드는 곳", subtitle: "두 문턱 너머, 함께 쓴 기억", points: ["bridge", "spikesCeilingPath"] },
+  { name: "빛이 드는 곳", subtitle: "마지막 문턱 너머, 함께 쓴 기억", points: ["bridge"] },
 ];
 export const TUTORIAL_ROOM: Room = {
   name: "작은 시작",

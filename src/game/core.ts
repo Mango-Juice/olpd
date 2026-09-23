@@ -1,4 +1,4 @@
-import { roomsForRun } from "./chapter-layout";
+import { roomsForRun, isRetiredChapterTail } from "./chapter-layout";
 import {
   CONFIG,
   OBSERVATIONS,
@@ -222,7 +222,18 @@ export function newRun(tutorial: boolean): RunState {
 
 /** One notebook from the first step through all six rooms; no separate practice handoff. */
 export function newChapterRun(): RunState {
-  return { ...newRun(false), layoutVersion: 2, canWrite: true };
+  return { ...newRun(false), layoutVersion: 3, canWrite: true };
+}
+
+/**
+ * A v2 player who already crossed the final bridge has met the corrected goal.
+ * Preserve all recorded actions/costs; finish without replaying or inventing an action.
+ * This is an explicit commit by the UI, never a mutation during save validation.
+ */
+export function finishRetiredChapterTail(state: RunState): RunState {
+  if (!isRetiredChapterTail(state) || state.phase === "cleared") return state;
+  if (!state.events.some(event => event.room === 5 && event.point === 0 && event.outcome === "safe")) return state;
+  return bump(state, { phase: "cleared", point: roomsForRun(state)[5].points.length, canWrite: false });
 }
 
 export function currentObservation(state: RunState): Observation {
@@ -363,6 +374,8 @@ export function startRun(state: RunState): RunState {
 /** Commits exactly one judgment. Animation code may present lastEvent after this transition. */
 export function step(state: RunState): RunState {
   if (state.phase !== "running") return state;
+  const completedTail = finishRetiredChapterTail(state);
+  if (completedTail !== state) return completedTail;
 
   const observationId = observationAt(state);
   const observation = OBSERVATIONS[observationId];
@@ -437,7 +450,7 @@ export function step(state: RunState): RunState {
   let phase: RunState["phase"] = "running";
   let tutorialStep = state.tutorialStep;
 
-  if (point >= roomPoints.length) {
+  if (point >= roomPoints.length || isRetiredChapterTail({ ...state, point })) {
     if (state.tutorial) {
       phase = "practice";
       point = roomPoints.length;

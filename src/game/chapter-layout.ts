@@ -17,7 +17,23 @@ export const LEGACY_ROOMS: readonly Room[] = [
   },
 ];
 
-/** Saves without a layout marker were created with the original eight-room route. */
+/** Retained only to validate/replay events written before the final-room correction. */
+export const INTEGRATED_V2_ROOMS: readonly Room[] = [
+  { name: "한 걸음의 약속", subtitle: "열린 문까지, 네가 남긴 한 줄로", points: ["clear"] },
+  { name: "끊긴 바닥", subtitle: "기억은 남고, 눈앞의 길은 달라져", points: ["pit"] },
+  { name: "고개를 낮추면", subtitle: "머리 위도 살펴봐", points: ["lowCeiling"] },
+  { name: "발밑의 반짝임", subtitle: "다른 모습에도 통하는 기억", points: ["floorSpikes"] },
+  { name: "다른 길의 발견", subtitle: "정면이 막혀도 길은 있어", points: ["pitCeilingPath"] },
+  { name: "빛이 드는 곳", subtitle: "두 문턱 너머, 함께 쓴 기억", points: ["bridge", "spikesCeilingPath"] },
+];
+
+/** Stored event coordinates are interpreted with the layout that originally wrote them. */
 export function roomsForRun(state: Pick<RunState, "layoutVersion">): readonly Room[] {
-  return state.layoutVersion === 2 ? ROOMS : LEGACY_ROOMS;
+  if (state.layoutVersion === 3) return ROOMS;
+  return state.layoutVersion === 2 ? INTEGRATED_V2_ROOMS : LEGACY_ROOMS;
+}
+
+/** v2 saves keep their history coordinates, but no longer execute the removed final tail. */
+export function isRetiredChapterTail(state: Pick<RunState, "layoutVersion" | "tutorial" | "room" | "point">): boolean {
+  return !state.tutorial && state.layoutVersion === 2 && state.room === 5 && state.point === 1;
 }

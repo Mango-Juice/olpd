@@ -52,6 +52,7 @@ import {
   moveInstruction,
   placeInstruction,
   newChapterRun,
+  finishRetiredChapterTail,
   practiceDeletion,
   retry,
   score,
@@ -173,7 +174,7 @@ export default function App({ bridge }: AppProps = {}) {
   );
   const stateRef = useRef(state);
   const chapterRooms = roomsForRun(state);
-  const legacyLayout = state.layoutVersion !== 2;
+  const legacyLayout = state.layoutVersion === undefined || state.layoutVersion === 1;
   const [showStory, setShowStory] = useState(
     () => !boot.data || bridge?.startWithStory === true,
   );
@@ -524,11 +525,12 @@ export default function App({ bridge }: AppProps = {}) {
     const next = step(current);
     if (await commit(next)) {
       setAnimating(next.events.length > current.events.length);
+      if (next.phase === "cleared" && next.events.length === current.events.length) presentCleared(next);
       return true;
     }
     setAnimating(false);
     return false;
-  }, [commit]);
+  }, [commit, presentCleared]);
   const onPlaybackEnd = useCallback(async () => {
     const current = stateRef.current;
     if (current.phase === "running") {
@@ -621,6 +623,8 @@ export default function App({ bridge }: AppProps = {}) {
       setPopup("storage");
       return;
     }
+    const completedTail = finishRetiredChapterTail(stateRef.current);
+    if (completedTail !== stateRef.current && !(await commit(completedTail))) return;
     if (!boot.data && !(await commit(stateRef.current))) return;
     setStarted(true);
     setShowStory(false);
@@ -1317,7 +1321,7 @@ export default function App({ bridge }: AppProps = {}) {
           {started &&
             isRest &&
             !(state.tutorial && state.instructions.length === 0) &&
-            !(state.layoutVersion === 2 && state.instructions.length === 0 && state.deaths === 0) && (
+            !(!legacyLayout && state.instructions.length === 0 && state.deaths === 0) && (
               <PlayLaunchControls
                 dead={state.phase === "dead"}
                 canWrite={state.canWrite}
