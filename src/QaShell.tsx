@@ -19,7 +19,7 @@ import type { StageId } from "./campaign/types";
 import "./QaShell.css";
 
 // Keep the previous sandbox untouched; redesigned scenes have independent records.
-const KEY = "one-line-per-death:qa:shared-v1";
+const KEY = "one-line-per-death:qa:spatial-v1";
 const qaStage = resolveStage;
 const authority = campaignAuthority(qaStage);
 const initialSettings: Settings = { muted: true, reducedMotion: true };
@@ -36,7 +36,7 @@ function load(): Record<string, Slot> {
       if (!run && value.run?.kind === "world") {
         const candidate = parseStageRun(value.run.run);
         const stage = candidate && resolveStage(candidate.stageId);
-        if (candidate && stage && [candidate.world.segmentId, candidate.checkpoint.segmentId]
+        if (candidate && stage && candidate.contentRevision === stage.contentRevision && [candidate.world.segmentId, candidate.checkpoint.segmentId]
           .every((id) => stage.segments.some((segment) => segment.id === id))) {
           run = { kind: "world", run: candidate };
         }
@@ -89,7 +89,7 @@ export default function QaShell() {
     const segment = stage && allStageSegments(stage).find((item) => item.id === segmentId);
     if (!stage || !segment) return;
     const world = segment.enter(null);
-    const fresh = createStageRun(crypto.randomUUID(), world);
+    const fresh = createStageRun(crypto.randomUUID(), world, stage.contentRevision);
     fresh.clearedSegments = stage.segments.slice(0, stage.segments.indexOf(segment)).map((item) => item.id);
     persist(selected, { ...current, run: { kind: "world", run: fresh } });
   }

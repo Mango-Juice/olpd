@@ -9,7 +9,7 @@ import {
   QUIET_LATE_REPRESENTATIVE_PROGRAMS,
   QUIET_TOWER_STAGE,
   QUIET_WARDEN_STAGE,
-} from "../src/campaign/quiet/late";
+} from "./fixtures/quiet-worlds/late";
 import { QUIET_LATE_LIVE_REGRESSION_CASES } from "./fixtures/quiet-late-intents";
 import type { PhysicalAction, ProgramNode, WorldState } from "../src/campaign/types";
 

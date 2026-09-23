@@ -1,7 +1,7 @@
-import { executePhysicalAction } from "../physics";
-import type { CampaignStageDefinition, SegmentDefinition } from "../level";
-import type { ActionResult } from "../program";
-import type { InstructionProgram, PhysicalAction, Predicate, ProgramNode, WorldState } from "../types";
+import { executePhysicalAction } from "../../../src/campaign/physics";
+import type { CampaignStageDefinition, SegmentDefinition } from "../../../src/campaign/level";
+import type { ActionResult } from "../../../src/campaign/program";
+import type { InstructionProgram, PhysicalAction, Predicate, ProgramNode, WorldState } from "../../../src/campaign/types";
 import {
   blocked,
   clarification,
@@ -14,7 +14,7 @@ import {
   resolved,
   tick,
 } from "./late-helpers";
-import { authoredDefaultWalk } from "./public-kinds";
+import { authoredDefaultWalk } from "./default-walk";
 
 const act = (actor: "hero" | "keeper", verb: PhysicalAction["verb"], target: string, extra: Partial<PhysicalAction> = {}): PhysicalAction => ({ kind: "action", actor, verb, target, ...extra });
 const seq = (...children: ProgramNode[]): ProgramNode => ({ kind: "sequence", children });

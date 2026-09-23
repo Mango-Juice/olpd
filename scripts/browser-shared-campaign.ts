@@ -3,12 +3,12 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolveStage } from '../src/campaign/registry';
 import { stageDynamics } from '../src/campaign/level';
 import { acknowledgePresentation, advanceStage, abandonStage, createCampaignRun, departStage, retryStage, writeStageProgram, type StageRun } from '../src/campaign/run';
-import { QUIET_EARLY_INTENT_CASES, quietEarlyProgram } from '../src/campaign/quiet/early';
+import { SPATIAL_INTENT_CASES, spatialFixtureProgram } from '../tests/fixtures/spatial-intents';
 import type { InstructionProgram } from '../src/campaign/types';
 
 // UI contract checks use explicit interpreter fixtures, never a claim of live model accuracy.
 const base = process.env.APP_URL ?? 'http://localhost:5173';
-const key = 'one-line-per-death:qa:shared-v1';
+const key = 'one-line-per-death:qa:spatial-v1';
 const out = 'artifacts/shared-campaign';
 await mkdir(out, { recursive: true });
 const stage = resolveStage(2)!;
@@ -50,8 +50,8 @@ try {
   await page.route('**/api/qa/campaign-interpret', async (route) => {
     fixtureCalls++;
     const request = route.request().postDataJSON();
-    const entry = QUIET_EARLY_INTENT_CASES.find((item) => item.segmentId === request.world.segmentId)!;
-    const program = { ...quietEarlyProgram(entry), id: `browser-note-${fixtureCalls}`, text: request.text };
+    const entry = SPATIAL_INTENT_CASES.find((item) => item.segmentId === request.world.segmentId)!;
+    const program = { ...spatialFixtureProgram(entry), id: `browser-note-${fixtureCalls}`, text: request.text };
     await route.fulfill({ json: { program } });
   });
   await install(page, createCampaignRun('shared-flow-browser-fixture', stage));
@@ -69,7 +69,13 @@ try {
   await expect.poll(async () => {
     const run = await browserState(page); return !run.presentation && ['blocked', 'failed'].includes(run.phase);
   }, { timeout: 18000 }).toBe(true);
-  if ((await browserState(page)).phase === 'blocked') await page.getByRole('button', { name: '포기하고 부활하기 · +1데스', exact: true }).click();
+  if ((await browserState(page)).phase === 'blocked') {
+    const abandonStarted = Date.now();
+    await page.getByRole('button', { name: '포기하고 부활하기 · +1데스', exact: true }).click();
+    await expect(page.getByText('입구에서 다시 준비할게.', { exact: true })).toBeVisible();
+    await expect(page.locator('#campaign-instruction')).toBeVisible({ timeout: 2200 });
+    expect(Date.now() - abandonStarted).toBeLessThan(2200);
+  }
   await expect(page.locator('#campaign-instruction')).toBeVisible({ timeout: 12000 });
   expect((await browserState(page)).notebook.instructions).toHaveLength(1);
   await page.locator('#campaign-instruction').fill('상자를 창문 아래로 밀고 창문으로 올라가 줘');

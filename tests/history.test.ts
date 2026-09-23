@@ -51,7 +51,7 @@ function interpretation(
 }
 
 describe("run history", () => {
-  it("records notebook edits, action results, death, and the next-life revival", () => {
+  it("records notebook edits, action results, an explicit abandonment, and revival", () => {
     let state: RunState = { ...newRun(false), canWrite: true };
     state = addInstruction(
       state,
@@ -70,6 +70,8 @@ describe("run history", () => {
     state = step(startRun(state));
     expect(state.phase).toBe("running");
     state = step(state);
+    expect(state.phase).toBe("blocked");
+    state = abandon(state);
     expect(state.phase).toBe("dead");
     state = deleteInstruction(state, duckId);
     state = addInstruction(
@@ -86,7 +88,7 @@ describe("run history", () => {
       "write",
       "reorder",
       "action",
-      "action",
+      "abandon",
       "delete",
       "write",
       "revive",
@@ -95,7 +97,7 @@ describe("run history", () => {
       1, 1, 1, 1, 1, 2, 2, 2,
     ]);
     expect(history.entries.map((entry) => entry.revision)).toEqual([
-      1, 2, 3, 5, 6, 7, 8, 9,
+      1, 2, 3, 5, 7, 8, 9, 10,
     ]);
     expect(history.entries[2]).toMatchObject({
       kind: "reorder",
@@ -152,6 +154,7 @@ describe("run history", () => {
       interpretation("advance", ["clear"]),
     );
     tutorial = step(step(startRun(tutorial)));
+    tutorial = abandon(tutorial);
     tutorial = addInstruction(
       tutorial,
       "구덩이가 있으면 뛰어",
@@ -178,7 +181,12 @@ describe("run history", () => {
   });
 
   it("loads old saves, reconstructs only actions, and keeps later history incomplete", () => {
-    let current = step(startRun(newRun(false)));
+    let current = addInstruction(
+      { ...newRun(false), canWrite: true },
+      "구덩이도 그냥 걸어",
+      interpretation("advance", ["pit"]),
+    );
+    current = step(startRun(current));
     current = step(startRun(retry(current)));
     const { history: _history, ...withoutHistory } = current;
     const legacyState: RunState = withoutHistory;
@@ -208,7 +216,7 @@ describe("run history", () => {
     const continued = addInstruction(
       loaded.value.state,
       "구덩이는 뛰어넘어",
-      interpretation("jump", ["pit"]),
+      interpretation("jump", ["pit", "bridge"]),
     );
     expect(continued.history?.complete).toBe(false);
     expect(continued.history?.entries.at(-1)).toMatchObject({
@@ -219,7 +227,11 @@ describe("run history", () => {
 
   it("rejects invalid optional history references without replacing saved bytes", () => {
     const storage = new MemoryStorage();
-    const state = step(startRun(newRun(false)));
+    const state = step(startRun(addInstruction(
+      { ...newRun(false), canWrite: true },
+      "구덩이도 그냥 걸어",
+      interpretation("advance", ["pit"]),
+    )));
     const original = makeSave(state, { writer: "tab-a", savedAt: 1 });
     expect(writeSave(original, { storage, expected: null }).ok).toBe(true);
     const originalBytes = storage.getItem(STORAGE_KEY);

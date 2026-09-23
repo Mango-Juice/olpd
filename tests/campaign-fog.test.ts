@@ -339,16 +339,23 @@ describe("stage dynamics retry boundary", () => {
     expect(retry.facts.some((fact) => fact.attempt === 1 && fact.property === "connectedTo")).toBe(true);
   });
 
-  it("opts into idle movement only for a unique permanently clear path", () => {
+  it("keeps an opened path stationary until a written move names its exit", () => {
     const dynamics = stageDynamics(FOG_STAGE);
 
     const valve = segment("08-1");
     const opened = run(valve, [action("move", "08-1-valve-bank"), action("pull", "08-1-square-valve")]);
     expect(valve.idleAction?.(opened)).toEqual(action("move", "08-1-exit"));
-    let valveRun = departStage(createStageRun("fog-idle-valve", opened));
-    valveRun = advanceStage(acknowledgePresentation(valveRun), dynamics);
+    const stopped = advanceStage(departStage(createStageRun("fog-stationary-valve", opened)), dynamics);
+    expect(stopped.phase).toBe("blocked");
+    expect(stopped.world).toEqual(opened);
+    expect(stopped.notebook.deaths).toBe(0);
+
+    let valveRun = createStageRun("fog-explicit-valve", opened);
+    valveRun = { ...valveRun, notebook: writeProgram(valveRun.notebook, providerProgram("cross-valve", "08-1", action("move", "08-1-exit"))) };
+    valveRun = advanceStage(departStage(valveRun), dynamics);
     expect(valveRun.clearedSegments).toContain("08-1");
     expect(valveRun.world.segmentId).toBe("08-2");
+    expect(valveRun.events.find((event) => event.actor === "hero")).toMatchObject({ instructionId: "cross-valve", target: "08-1-exit" });
 
     const water = segment("08-2");
     const routed = run(water, [

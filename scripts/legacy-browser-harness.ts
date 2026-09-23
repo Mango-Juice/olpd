@@ -1,7 +1,7 @@
 import type { Page } from "@playwright/test";
 
-const productionEntry = '"/src/CampaignShell.tsx"';
-const legacyEntry = '"/src/App.tsx"';
+const productionEntry = /from\s+["']\/src\/CampaignShell\.tsx(?:\?[^"']*)?["']/;
+const legacyEntry = 'from "/src/App.tsx"';
 
 /**
  * Keep Chapter 1 browser regressions on the original standalone App while the
@@ -10,7 +10,7 @@ const legacyEntry = '"/src/App.tsx"';
  * import is redirected for this page.
  */
 export async function installLegacyBrowserHarness(page: Page): Promise<void> {
-  await page.route("**/src/main.tsx", async (route) => {
+  await page.route("**/src/main.tsx*", async (route) => {
     const response = await route.fetch();
     const source = await response.text();
     const body = source.replace(productionEntry, legacyEntry);

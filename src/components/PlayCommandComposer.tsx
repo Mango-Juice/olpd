@@ -39,10 +39,12 @@ export function PlayCommandComposer({ id, value, onChange, onSubmit, onCancel, p
       }} />
     <div className="compose-bottom">
       <span className="count">{count} / {maxLength}</span>
-      <button type="submit" className="primary" disabled={pending || disabled || !value.trim() || count > maxLength}>
-        {pending ? <><span className="pulse" />읽고 있어요…</> : <>기억하고 출발 <span aria-hidden="true">↗</span></>}
-      </button>
-      {pending ? <button type="button" className="subtle" onClick={onCancel}>취소</button> : null}
+      <div className="compose-actions">
+        <span className="compose-cancel">{pending ? <button type="button" className="subtle" onClick={onCancel}>취소</button> : null}</span>
+        <button type="submit" className="primary" disabled={pending || disabled || !value.trim() || count > maxLength}>
+          {pending ? <><span className="pulse" />읽고 있어요…</> : <>기억하고 출발 <span aria-hidden="true">↗</span></>}
+        </button>
+      </div>
     </div>
     <p className="helper" id={`${id}-help`}>Enter ↵ 한 번이면 읽고 바로 출발해요.</p>
     {error ? <p className="error" id={`${id}-error`} role="alert">{error}</p> : null}

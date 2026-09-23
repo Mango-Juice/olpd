@@ -1,8 +1,6 @@
 import type { CampaignStageDefinition } from './level';
 import type { StageId } from './types';
-import { QUIET_RAIN_STAGE, QUIET_KITCHEN_STAGE, QUIET_FORGE_STAGE } from './quiet/early';
-import { QUIET_GARDEN_STAGE, QUIET_STOREHOUSE_STAGE, QUIET_THEATRE_STAGE } from './quiet/middle';
-import { QUIET_FOG_STAGE, QUIET_TOWER_STAGE, QUIET_WARDEN_STAGE } from './quiet/late';
+import { SPATIAL_STAGES } from './spatial/catalog';
 
 const CHAPTER_PURPOSE: Partial<Record<StageId, string>> = {
   2: '편지를 젖지 않게 지키며 회랑을 건너야 해요.',
@@ -15,11 +13,9 @@ const CHAPTER_PURPOSE: Partial<Record<StageId, string>> = {
   9: '등지기와 함께 종탑 위로 올라가요.',
   10: '문지기를 구하고, 함께 편지를 전하러 가요.',
 };
-const DEFINITIONS: Partial<Record<StageId, CampaignStageDefinition>> = Object.fromEntries([
-  QUIET_RAIN_STAGE, QUIET_KITCHEN_STAGE, QUIET_FORGE_STAGE,
-  QUIET_GARDEN_STAGE, QUIET_STOREHOUSE_STAGE, QUIET_THEATRE_STAGE,
-  QUIET_FOG_STAGE, QUIET_TOWER_STAGE, QUIET_WARDEN_STAGE,
-].map((stage) => [stage.id, { ...stage, objective: CHAPTER_PURPOSE[stage.id] }]));
+const DEFINITIONS: Partial<Record<StageId, CampaignStageDefinition>> = Object.fromEntries(
+  SPATIAL_STAGES.map((stage) => [stage.id, { ...stage, objective: CHAPTER_PURPOSE[stage.id] ?? stage.objective }]),
+);
 
 /** Access is governed by verified completion; old worlds are recovery records, not live scenes. */
 export function resolveStage(id: StageId): CampaignStageDefinition | null {

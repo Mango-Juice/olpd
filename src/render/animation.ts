@@ -1,6 +1,8 @@
 import type { Action, ExecutionEvent } from "../game/types";
 import type { StagePresentation } from "../campaign/run";
 import type { Verb } from "../campaign/types";
+import type { SpatialMotion } from "../campaign/spatial/types";
+import { projectSpatialPoint } from "./spatial-geometry";
 
 export type HeroPose =
   | "idle"
@@ -53,11 +55,30 @@ export const EXIT_X = 836;
 export const eventDuration = (event: ExecutionEvent) =>
   event.repeated ? 1400 : 4200;
 
+/** Player abandonment has no simulated action to replay before the farewell. */
+export const isAbandonPresentation = (presentation: StagePresentation) =>
+  presentation.outcome === "death" && presentation.events.length === 0;
+
 export const campaignPresentationDuration = (
   presentation: StagePresentation,
   reducedMotion = false,
 ) => {
+  if (isAbandonPresentation(presentation)) return reducedMotion ? 350 : 650;
   if (presentation.outcome === "revive") return reducedMotion ? 1050 : 1650;
+  const traces = presentation.events.flatMap((event) => event.motion ? [event.motion] : []);
+  if (traces.length) {
+    const distance = (trace: SpatialMotion) => trace.points.slice(1).reduce((sum, point, index) => {
+      const previous = trace.points[index];
+      return sum + Math.hypot(point.x - previous.x, point.y - previous.y, (point.z ?? 0) - (previous.z ?? 0));
+    }, 0);
+    const base = Math.max(...traces.map((trace) => trace.kind === "jump"
+      ? 650 : trace.kind === "interact" ? Math.min(1000, Math.max(700, distance(trace) * 400))
+        : Math.max(250, distance(trace) * 400)));
+    const outcomeDuration = presentation.outcome === "death" || presentation.outcome === "blocked"
+      ? Math.min(2000, Math.max(1400, base + 700))
+      : presentation.outcome === "cleared" ? Math.max(1200, base) : base;
+    return Math.round(outcomeDuration * (presentation.repeated ? 1 / 3 : 1) * (reducedMotion ? .65 : 1));
+  }
   return presentation.repeated ? 1400 : 4200;
 };
 
@@ -125,6 +146,10 @@ export function campaignSoundCuesBetween(
   const cues: SoundCue[] = [];
   if (presentation.outcome === "revive") {
     if (crossed(fromProgress, toProgress, 0.02)) cues.push("revive");
+    return cues;
+  }
+  if (isAbandonPresentation(presentation)) {
+    if (crossed(fromProgress, toProgress, 0.02)) cues.push("death");
     return cues;
   }
   const verb = campaignPresentationVerb(presentation);
@@ -506,6 +531,15 @@ const directMovementVerb = (verb: Verb | null) =>
 export function campaignHeroFrame(motion: CampaignHeroMotion): HeroFrame {
   const p = clamp(motion.progress);
   const { presentation, from, to } = motion;
+  if (presentation.outcome === "blocked" && presentation.events.every((event) => event.actor === null)) {
+    return { ...idleHeroFrame(0), x: from.x, y: from.y, rotation: from.rotation };
+  }
+  if (isAbandonPresentation(presentation)) {
+    const fade = smooth(p);
+    return { x: from.x, y: from.y + fade * 4, pose: "death", phase: p,
+      facing: 1, opacity: 1 - fade, scale: 1 - fade * .25,
+      rotation: from.rotation, dust: 0, shadow: 1 - fade };
+  }
   if (presentation.outcome === "revive") {
     const frame = reviveHeroFrame(p);
     return {
@@ -614,4 +648,78 @@ export function campaignHeroFrame(motion: CampaignHeroMotion): HeroFrame {
       ? { contact: { ...motion.contact, amount: contactAmount } }
       : {}),
   };
+}
+
+/** Samples the simulation's swept path, including its actual jump arc and depth lane. */
+export function spatialMotionPoint(motion: SpatialMotion, progress: number) {
+  const points = motion.points;
+  if (!points.length) return null;
+  const end = points[points.length - 1];
+  const target = Math.max(0, Math.min(1, progress)) * end.t;
+  const nextIndex = points.findIndex((point) => point.t >= target);
+  if (nextIndex <= 0) return points[0];
+  const next = points[nextIndex];
+  const previous = points[nextIndex - 1];
+  const span = next.t - previous.t;
+  const weight = span > 0 ? (target - previous.t) / span : 0;
+  return { x: previous.x + (next.x - previous.x) * weight,
+    y: previous.y + (next.y - previous.y) * weight,
+    z: (previous.z ?? 0) + ((next.z ?? 0) - (previous.z ?? 0)) * weight,
+    t: target };
+}
+
+export interface SpatialCampaignMotion extends CampaignHeroMotion {
+  trace: SpatialMotion;
+}
+
+/** New spatial scenes reuse the Chapter 1 hero art with cause-specific contact timing. */
+export function spatialCampaignHeroFrame(motion: SpatialCampaignMotion): HeroFrame {
+  const { presentation, trace } = motion;
+  const p = clamp(motion.progress);
+  if (presentation.outcome === "revive" || !trace.points.length) return campaignHeroFrame(motion);
+  const travel = clamp((p - .08) / .64);
+  const sampled = spatialMotionPoint(trace, travel)!;
+  const projected = projectSpatialPoint(sampled);
+  const first = trace.points[0];
+  const last = trace.points[trace.points.length - 1];
+  const facing: 1 | -1 = last.x < first.x ? -1 : 1;
+  const moving = Math.hypot(last.x - first.x, last.y - first.y, (last.z ?? 0) - (first.z ?? 0)) > .01;
+  const pathDistance = trace.points.slice(1).reduce((sum, point, index) => {
+    const previous = trace.points[index];
+    return sum + Math.hypot(point.x - previous.x, point.y - previous.y, (point.z ?? 0) - (previous.z ?? 0));
+  }, 0);
+  const verb = motion.verb === undefined ? campaignPresentationVerb(presentation) : motion.verb;
+  const contact = trace.contact && p >= .68
+    ? projectSpatialPoint({ ...trace.contact, z: last.z }) : null;
+  const contactAmount = contact ? Math.sin(clamp((p - .68) / .3) * Math.PI) : 0;
+  const cause = trace.kind;
+  let pose: HeroPose = p < .08 ? "idle" : moving && travel < .98
+    ? trace.kind === "jump" || verb === "jump" ? "jump" : "walk"
+    : campaignPose(verb, false);
+  let x = projected.x, y = projected.y, opacity = 1, rotation = motion.to.rotation;
+  let scale = 1;
+  if (presentation.outcome === "blocked" && p >= .76) {
+    const recoil = smooth((p - .76) / .24);
+    x -= facing * recoil * 18;
+    pose = recoil > .75 ? "idle" : "push";
+  } else if (presentation.outcome === "death" && p >= .76) {
+    const fatal = smooth((p - .76) / .24);
+    pose = "death";
+    opacity = 1 - fatal;
+    scale = 1 - fatal * .38;
+    if (cause === "fall") y += fatal * 74;
+    else if (cause === "wind") x += facing * fatal * 52;
+    else if (cause === "water") y += fatal * 34;
+    else if (cause === "crush") scale *= 1 - fatal * .28;
+    else if (cause === "steam" || cause === "heat") x -= facing * fatal * 20;
+    else if (cause === "spikes") y -= fatal * 10;
+    else x -= facing * fatal * 14;
+  } else if (presentation.outcome === "cleared" && p >= .88) {
+    pose = "joy";
+  }
+  return { x, y, pose, phase: travel * (pose === "walk" ? pathDistance * 3 : 1), facing,
+    opacity, scale, rotation, dust: moving && pose === "walk" ? .35 : 0,
+    shadow: pose === "jump" ? .45 : 1,
+    ...(pose === "death" ? { fatalKind: cause === "fall" ? "fall" as const : cause === "spikes" ? "spikes" as const : "bonk" as const } : {}),
+    ...(contact && contactAmount > .01 ? { contact: { ...contact, amount: contactAmount } } : {}) };
 }

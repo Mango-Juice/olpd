@@ -6,6 +6,7 @@ import { DEEPSEEK_CAMPAIGN_TIMEOUT_MS, interpretCampaignWithDeepSeek } from "../
 import { interpretCampaign } from "../server/campaign-service";
 import { RAIN_INTRO, RAIN_STAGE } from "./fixtures/campaign-worlds/rain";
 import { RAIN_REACH } from "./fixtures/campaign-worlds/rain-late";
+import { SPATIAL_EARLY_STAGES } from "../src/campaign/spatial/early";
 import { resetRateLimitsForTests } from "../server/rate-limit";
 
 const action = { kind: "action", actor: "hero", verb: "board", target: "rain-cork" };
@@ -42,6 +43,31 @@ describe("DeepSeek campaign boundary", () => {
     const invented = { ...general, bindings: { "rain-cork": { kind: "public-kind", value: "invented" } } };
     await expect(interpretCampaignWithDeepSeek("상자가 있으면 옆으로 밀어", world, { fetchImpl: fake(invented) }))
       .rejects.toMatchObject({ code: "uncertain" });
+  });
+  it("accepts a visible-box jump without inventing a property, including a reusable binding", async () => {
+    const world = SPATIAL_EARLY_STAGES[0].segments[0].enter(null);
+    const box = "02-v2-1-box";
+    const body = { kind: "if", condition: { kind: "visible", entity: box }, then: { kind: "action", actor: "hero", verb: "jump", target: box } };
+    const binding = { [box]: { kind: "public-kind", value: world.entities[box].publicKind } };
+    const fetchImpl = fake({ ...envelope(body), scope: { mode: "stage" }, bindings: binding });
+    const result = await interpretCampaignWithDeepSeek("짐상자가 보이면 점프해", world, { fetchImpl });
+    expect(result.program.body).toEqual(body);
+    expect(result.program.bindings).toEqual(binding);
+    const request = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body));
+    expect(JSON.parse(request.messages[1].content).world.visible).toContain(box);
+    expect(request.messages[0].content).toContain('"kind":"visible"');
+  });
+  it("still rejects invented property predicates and invalid visible predicate shapes", async () => {
+    const world = SPATIAL_EARLY_STAGES[0].segments[0].enter(null);
+    const box = "02-v2-1-box";
+    const then = { kind: "action", actor: "hero", verb: "jump", target: box };
+    for (const condition of [
+      { kind: "property", entity: box, property: "visible", comparison: "eq", value: true, source: "visible" },
+      { kind: "visible", entity: box, property: "visible" },
+    ]) {
+      await expect(interpretCampaignWithDeepSeek("짐상자가 보이면 점프해", world, { fetchImpl: fake(envelope({ kind: "if", condition, then })) }))
+        .rejects.toHaveProperty("status");
+    }
   });
   it("keeps hidden live state, stale facts, and credentials out of trace while preserving public context", async () => {
     const world = RAIN_INTRO.enter(null);

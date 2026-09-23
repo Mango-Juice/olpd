@@ -1,9 +1,10 @@
-import { elapsedTicks, makeEntity, makeHero, makeWorld, type CampaignStageDefinition, type SceneComposition, type SegmentDefinition } from "../level";
-import { resolveActionReferences } from "../conditions";
-import { executePhysicalAction } from "../physics";
-import type { ActionExecutor, ActionResult } from "../program";
-import type { Entity, InstructionProgram, PhysicalAction, ProgramNode, Scalar, WorldState } from "../types";
-import { authoredDefaultWalk, authoredPublicKind } from "./public-kinds";
+import { elapsedTicks, makeEntity, makeHero, makeWorld, type CampaignStageDefinition, type SceneComposition, type SegmentDefinition } from "../../../src/campaign/level";
+import { resolveActionReferences } from "../../../src/campaign/conditions";
+import { executePhysicalAction } from "../../../src/campaign/physics";
+import type { ActionExecutor, ActionResult } from "../../../src/campaign/program";
+import type { Entity, InstructionProgram, PhysicalAction, ProgramNode, Scalar, WorldState } from "../../../src/campaign/types";
+import { authoredPublicKind } from "../../../src/campaign/public-kinds";
+import { authoredDefaultWalk } from "./default-walk";
 
 type EarlyStageId = 2 | 3 | 4;
 

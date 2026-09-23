@@ -1,7 +1,7 @@
-import { executePhysicalAction } from "../physics";
-import type { ActionResult } from "../program";
-import type { CampaignStageDefinition, SegmentDefinition } from "../level";
-import type { Entity, PhysicalAction, WorldState } from "../types";
+import { executePhysicalAction } from "../../../src/campaign/physics";
+import type { ActionResult } from "../../../src/campaign/program";
+import type { CampaignStageDefinition, SegmentDefinition } from "../../../src/campaign/level";
+import type { Entity, PhysicalAction, WorldState } from "../../../src/campaign/types";
 import {
   atEntity,
   crossesX,
@@ -20,7 +20,7 @@ import {
   resolvedAction,
   takeQuietItem,
 } from "./middle-helpers";
-import { authoredDefaultWalk } from "./public-kinds";
+import { authoredDefaultWalk } from "./default-walk";
 
 const hints = ["눈앞의 사물과 길이 전부다.", "움직인 몸과 물건은 그 자리에 남는다.", "보이는 상태가 다음 행동을 결정한다."] as const;
 

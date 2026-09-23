@@ -19,7 +19,7 @@ describe("implemented document content contract", () => {
       expect(stage, summary.title).not.toBeNull();
       expect(stage.segments).toHaveLength(summary.coreSegments);
       expect(stage.onboarding ?? []).toHaveLength(summary.onboardingSegments);
-      expect(stage.contentRevision).toBe("shared-v1");
+      expect(stage.contentRevision).toBe("spatial-v1");
       const scenes = allStageSegments(stage);
       total += scenes.length;
       expect(scenes).toHaveLength(summary.segments);
@@ -32,13 +32,14 @@ describe("implemented document content contract", () => {
         const initial = scene.enter(null);
         const objects = initial.visible.filter((id) => initial.entities[id]?.properties.equipment !== true);
         expect(objects.length, scene.id).toBeLessThanOrEqual(4);
-        expect(scene.scene?.floors.length, scene.id).toBeGreaterThan(0);
+        expect(scene.scene?.spatial?.surfaces.length, scene.id).toBeGreaterThan(0);
         expect(scene.goal.length, scene.id).toBeLessThanOrEqual(65);
         for (const id of objects) {
           const object = initial.entities[id];
           expect(object.location.x, `${scene.id}/${id}`).toBeGreaterThanOrEqual(0);
           expect(object.location.x, `${scene.id}/${id}`).toBeLessThanOrEqual(10);
-          expect(object.location.y, `${scene.id}/${id}`).toBeGreaterThanOrEqual(0);
+          // Water, pits and descending stairs are authored below the baseline floor.
+          expect(object.location.y, `${scene.id}/${id}`).toBeGreaterThanOrEqual(-1);
           expect(object.location.y, `${scene.id}/${id}`).toBeLessThanOrEqual(4);
         }
         for (const entity of Object.values(initial.entities)) {

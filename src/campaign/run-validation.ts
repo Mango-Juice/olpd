@@ -10,7 +10,29 @@ function integer(value: unknown): value is number { return typeof value === "num
 function finite(value: unknown): value is number { return typeof value === "number" && Number.isFinite(value); }
 function scalar(value: unknown): boolean { return typeof value === "string" || typeof value === "boolean" || finite(value); }
 function names(value: unknown): value is string[] { return Array.isArray(value) && value.every(name) && new Set(value).size === value.length; }
-function location(value: unknown): boolean { return record(value) && name(value.region) && finite(value.x) && finite(value.y); }
+function location(value: unknown): boolean { return record(value) && name(value.region) && finite(value.x) && finite(value.y) && (value.z === undefined || finite(value.z)); }
+const MAX_MOTION_COORDINATE = 1_000_000;
+function motionCoordinate(value: unknown): value is number {
+  return finite(value) && Math.abs(value) <= MAX_MOTION_COORDINATE;
+}
+function validMotion(value: unknown): boolean {
+  if (!record(value) || (value.actor !== "hero" && value.actor !== "keeper")
+    || !["walk", "jump", "interact", "solid", "spikes", "steam", "heat", "crush", "water", "wind", "fall"].includes(String(value.kind))
+    || (value.target !== undefined && !name(value.target))
+    || (value.issue !== undefined && value.issue !== "out-of-reach" && value.issue !== "needs-partner")
+    || !Array.isArray(value.points) || value.points.length < 1 || value.points.length > 512
+    || (value.contact !== undefined && (!record(value.contact) || !motionCoordinate(value.contact.x) || !motionCoordinate(value.contact.y)
+      || (value.contact.entity !== undefined && !name(value.contact.entity))
+      || (value.contact.surface !== undefined && value.contact.surface !== "ceiling")))) return false;
+  let previousTime = 0;
+  for (const point of value.points) {
+    if (!record(point) || !motionCoordinate(point.x) || !motionCoordinate(point.y)
+      || (point.z !== undefined && !motionCoordinate(point.z))
+      || !finite(point.t) || point.t < previousTime || point.t > 1) return false;
+    previousTime = point.t;
+  }
+  return true;
+}
 function cursor(value: unknown, depth = 0): boolean {
   return depth < 64 && record(value) && Array.isArray(value.path) && value.path.every(integer) && ["pending", "running", "done", "blocked"].includes(String(value.status)) && integer(value.index) && (value.branch === null || value.branch === "then" || value.branch === "otherwise") && (value.reason === null || typeof value.reason === "string") && (value.resolvedAction === undefined || (parsePhysicalAction(value.resolvedAction) !== null && !Object.hasOwn(value.resolvedAction as object, "references"))) && Array.isArray(value.children) && value.children.length <= 4096 && value.children.every((child) => cursor(child, depth + 1));
 }
@@ -69,6 +91,7 @@ function world(value: unknown): boolean {
   for (const [id, actor] of Object.entries(actors)) {
     if (Object.hasOwn(entities, id)) return false;
     if (!record(actor) || !["hero", "keeper"].includes(id) || actor.id !== id || !location(actor.location) || !names(actor.carrying) || !names(actor.capabilities) || !(actor.holding === null || name(actor.holding)) || !(actor.riding === null || name(actor.riding))) return false;
+    if (actor.route !== undefined && (!record(actor.route) || !name(actor.route.target) || !Object.hasOwn(entities, actor.route.target) || !integer(actor.route.next) || actor.route.next > 512)) return false;
     for (const target of [...actor.carrying, actor.holding, actor.riding]) if (target !== null && !Object.hasOwn(entities, String(target))) return false;
     for (const carried of actor.carrying) if ((entities[carried] as Record<string, unknown>).parent !== id) return false;
     for (const [entityId, item] of Object.entries(entities)) if ((item as Record<string, unknown>).parent === id && !actor.carrying.includes(entityId)) return false;
@@ -79,6 +102,7 @@ function world(value: unknown): boolean {
 }
 function validWorldEvent(event: unknown, maxAttempt: number): boolean {
   return record(event) && name(event.id) && integer(event.tick) && integer(event.attempt) && event.attempt >= 1 && event.attempt <= maxAttempt
+    && (event.motion === undefined || validMotion(event.motion))
     && (event.instructionId === null || name(event.instructionId))
     && (event.actor === null || event.actor === "hero" || event.actor === "keeper")
     && (event.target === null || name(event.target))
@@ -100,9 +124,9 @@ function validPresentation(value: unknown, stageId: number): value is StagePrese
   return true;
 }
 
-/** Rejects damaged shared-v1 snapshots before constructing a runtime. */
+/** Rejects damaged supported snapshots before constructing a runtime. */
 export function parseStageRun(value: unknown): StageRun | null {
-  if (!record(value) || value.version !== 3 || value.contentRevision !== "shared-v1"
+  if (!record(value) || value.version !== 3 || (value.contentRevision !== "shared-v1" && value.contentRevision !== "spatial-v1")
     || !Array.isArray(value.waitingStates) || !value.waitingStates.every((item) => typeof item === "string")
     || !name(value.id) || !isStageId(value.stageId) || value.stageId === 1 || !integer(value.revision)
     || !(value.statusReason === null || typeof value.statusReason === "string")

@@ -9,6 +9,14 @@ function world(): WorldState {
   ] };
 }
 describe("attempt-scoped observation logic", () => {
+  it("checks whether an entity is visible without reading a property or remembered fact", () => {
+    const state = world();
+    const visible: Predicate = { kind: "visible", entity: "signal" };
+    expect(evaluateCondition(state, visible)).toBe(false);
+    expect(evaluateCondition(state, { kind: "not", predicate: visible })).toBe(true);
+    state.visible.push("signal");
+    expect(evaluateCondition(state, visible)).toBe(true);
+  });
   it("does not reuse knowledge from a rewound attempt", () => {
     expect(evaluateCondition(world(), condition)).toBe("unknown");
     expect(evaluateCondition(world(), { kind: "not", predicate: condition })).toBe("unknown");

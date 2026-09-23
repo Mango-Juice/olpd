@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { stageDynamics, type SegmentDefinition } from "../src/campaign/level";
-import { acknowledgePresentation, advanceStage, createStageRun, departStage } from "../src/campaign/run";
+import { acknowledgePresentation, advanceStage, createStageRun, departStage, writeStageProgram } from "../src/campaign/run";
 import { FORGE_STAGE } from "./fixtures/campaign-worlds/forge";
 import { GARDEN_STAGE } from "./fixtures/campaign-worlds/garden";
 import { KITCHEN_STAGE } from "./fixtures/campaign-worlds/kitchen";
@@ -30,8 +30,8 @@ function step(definition: SegmentDefinition, state: WorldState, physical: Physic
   return environment.world;
 }
 
-describe("authored safe walking for core chapters 2-7", () => {
-  it("opts in only after interaction choices and excludes rafts, periodic hazards, and two-actor exits", () => {
+describe("historical route metadata and explicit movement in core chapters 2-7", () => {
+  it("records deterministic exits only after interaction choices and excludes rafts, periodic hazards, and two-actor exits", () => {
     expect(RAIN_STAGE.segments.filter((item) => item.idleAction).map((item) => item.id)).toEqual([]);
     expect(KITCHEN_STAGE.segments.filter((item) => item.idleAction).map((item) => item.id)).toEqual(["03-3"]);
     expect(FORGE_STAGE.segments.filter((item) => item.idleAction).map((item) => item.id)).toEqual(["04-1", "04-2", "04-3", "04-4"]);
@@ -75,21 +75,30 @@ describe("authored safe walking for core chapters 2-7", () => {
     expect(definition.complete(definition.execute!(state, idle!).world)).toBe(true);
   });
 
-  it("crosses the already-stabilized 04-4 rooms through persisted idle movement boundaries", () => {
+  it("requires an explicit move across the already-stabilized 04-4 bridge", () => {
     const definition = segment(FORGE_STAGE, "04-4");
     const world = definition.enter(null);
     world.entities["04-4-pin"].properties.released = true;
     world.entities["04-4-bridge"].properties.extended = true;
     world.entities["04-4-bridge"].properties.stability = "wind-lowered";
     world.entities["04-4-bridge"].properties.safeToCross = true;
-    let run = departStage(createStageRun("forge-idle-bridge", world));
+    const stationary = advanceStage(departStage(createStageRun("forge-stationary-bridge", world)), stageDynamics(FORGE_STAGE));
+    expect(stationary.phase).toBe("blocked");
+    expect(stationary.world).toEqual(world);
+    expect(stationary.notebook.deaths).toBe(0);
+
+    let run = createStageRun("forge-explicit-bridge", world);
+    run = writeStageProgram(run, { version: 2, id: "cross-bridge", text: "안전해진 다리를 건너 출구로 가", model: "fixture", scope: { stageId: 4, region: "04-4" }, guard: false, body: action("move", "04-4-exit") });
+    run = departStage(run);
     for (let boundary = 0; boundary < 8 && run.world.segmentId === "04-4"; boundary += 1) {
       run = advanceStage(acknowledgePresentation(run), stageDynamics(FORGE_STAGE));
     }
     expect(run.clearedSegments).toContain("04-4");
     expect(run.world.segmentId).toBe("04-5");
     expect(run.notebook.deaths).toBe(0);
-    expect(run.events.filter((event) => event.segmentId === "04-4" && event.actor === "hero").every((event) => event.instructionId === null)).toBe(true);
+    const moves = run.events.filter((event) => event.segmentId === "04-4" && event.actor === "hero");
+    expect(moves.length).toBeGreaterThan(1);
+    expect(moves.every((event) => event.instructionId === "cross-bridge" && event.target === "04-4-exit" && event.outcome === "safe")).toBe(true);
   });
 
   it("waits for a real garden support and both storehouse gates before walking", () => {

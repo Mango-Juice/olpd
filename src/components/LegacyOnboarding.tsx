@@ -1,3 +1,5 @@
+import { onboardingContactHint } from "../game/hints/chapter-one";
+import { PlayContactHint } from "./PlayContactHint";
 import { useEffect, useRef, useState } from "react";
 import { ACTION_LABELS, CONFIG, ROOMS } from "../game/content";
 import {
@@ -558,6 +560,7 @@ export function LegacyOnboarding({
                 <span className="caption-action">
                   {ACTION_LABELS[presentation.action]}
                 </span>
+                <PlayContactHint text={!executing && presentation.applied && !presentation.succeeded ? onboardingContactHint(progress) : null} />
               </div>
             )}
             <div className="scene-foot">

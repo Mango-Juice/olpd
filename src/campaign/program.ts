@@ -1,5 +1,6 @@
 import { evaluateCondition, resolveActionReferences } from "./conditions";
 import type { PhysicalAction, Predicate, ProgramNode, WorldState } from "./types";
+import type { SpatialMotion } from "./spatial/types";
 
 /** Cursor is persisted with the world; waiting never restarts an earlier action. */
 export interface ProgramCursor {
@@ -14,6 +15,8 @@ export interface ProgramCursor {
 }
 export interface ActionResult {
   world: WorldState;
+  /** Recorded physical path and contact, replayed without another simulation or AI call. */
+  motion?: SpatialMotion;
   /** Progress keeps the same atomic action active across deterministic movement ticks. */
   outcome: "done" | "progress" | "blocked" | "clarification" | "failure";
   reason: string;

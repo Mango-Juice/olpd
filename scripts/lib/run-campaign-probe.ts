@@ -9,7 +9,7 @@ export function runSceneProgram(stage: CampaignStageDefinition, scene: SegmentDe
   let run = departStage(writeStageProgram(createCampaignRun(`probe-${scene.id}`, isolated), program));
   const dynamics = stageDynamics(isolated);
   let steps = 0;
-  while (steps < 80 && (run.phase === 'running' || run.phase === 'waiting')) {
+  while (steps < 512 && (run.phase === 'running' || run.phase === 'waiting')) {
     run = advanceStage(acknowledgePresentation(run), dynamics);
     steps++;
   }

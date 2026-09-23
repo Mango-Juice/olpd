@@ -41,7 +41,7 @@ function unlocked(writer: string) {
   return state;
 }
 
-describe("shared-v1 content migration", () => {
+describe("spatial-v1 content migration", () => {
   const authority = campaignAuthority(() => null);
 
   it("preserves a quiet-v1 active run as raw recovery and starts the chapter fresh", async () => {
@@ -72,7 +72,7 @@ describe("shared-v1 content migration", () => {
       reference: { stageId: 2, runId: "old-active" },
       payload,
     }));
-    expect(store.current).toMatchObject({ version: 3 });
+    expect(store.current).toMatchObject({ version: 4 });
   });
 
   it("keeps completed unlock evidence while moving the old archive bytes to recovery", async () => {

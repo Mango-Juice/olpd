@@ -60,7 +60,10 @@ describe("tutorial and main run", () => {
       interpretation("advance", ["clear"]),
     );
     state = step(step(startRun(state)));
-    expect(state.phase).toBe("dead");
+    expect(state.phase).toBe("blocked");
+    expect(state.deaths).toBe(0);
+    state = abandon(state);
+    expect(state.tutorialStep).toBe(2);
     expect(() =>
       addInstruction(state, "구덩이만 뛰어", interpretation("jump", ["pit"])),
     ).toThrow(
@@ -70,7 +73,7 @@ describe("tutorial and main run", () => {
     expect(state.instructions).toHaveLength(1);
   });
 
-  it("walks, dies at the pit, retries, and reaches non-destructive practice", () => {
+  it("walks, stops at the pit, explicitly abandons, and reaches practice", () => {
     let state = newRun(true);
     expect(state.canWrite).toBe(true);
     state = addInstruction(
@@ -83,9 +86,13 @@ describe("tutorial and main run", () => {
     state = step(state);
     expect(currentObservation(state).id).toBe("pit");
     state = step(state);
-    expect(state.phase).toBe("dead");
-    expect(state.tutorialStep).toBe(2);
+    expect(state.phase).toBe("blocked");
+    expect(state.tutorialStep).toBe(1);
+    expect(state.deaths).toBe(0);
     expect(currentObservation(state).id).toBe("pit");
+    state = abandon(state);
+    expect(state.tutorialStep).toBe(2);
+    expect(state.canWrite).toBe(true);
 
     state = addInstruction(
       state,
@@ -125,10 +132,14 @@ describe("tutorial and main run", () => {
       interpretation("advance", ["clear"]),
     );
     state = step(step(startRun(state)));
+    expect(state.phase).toBe("blocked");
+    state = abandon(state);
     expect(state.tutorialStep).toBe(2);
     state = retry(state);
     expect(state.tutorialStep).toBe(2);
     state = step(step(startRun(state)));
+    expect(state.phase).toBe("blocked");
+    state = abandon(state);
     expect(state.phase).toBe("dead");
     expect(state.tutorialStep).toBe(2);
     expect(state.canWrite).toBe(true);
@@ -247,6 +258,43 @@ describe("tutorial and main run", () => {
 });
 
 describe("scoring and committed transitions", () => {
+  it("waits without an action event, movement, or death when no instruction matches", () => {
+    const initial = startRun(newRun(false));
+    const stopped = step(initial);
+    expect(stopped).toMatchObject({
+      phase: "blocked",
+      room: initial.room,
+      point: initial.point,
+      deaths: 0,
+      penaltyDeaths: 0,
+      erasers: initial.erasers,
+      canWrite: false,
+      events: [],
+      seen: [],
+      lastEvent: null,
+      revision: initial.revision + 1,
+    });
+    expect(stopped.history?.entries).toEqual(initial.history?.entries);
+    expect(step(stopped)).toBe(stopped);
+    expect(score(stopped)).toBe(0);
+
+    let afterMovement = addInstruction(
+      newRun(true),
+      "평평한 길에서는 앞으로 가",
+      interpretation("advance", ["clear"]),
+    );
+    afterMovement = step(startRun(afterMovement));
+    expect(afterMovement.point).toBe(1);
+    const beforeStop = afterMovement;
+    afterMovement = step(afterMovement);
+    expect(afterMovement.phase).toBe("blocked");
+    expect(afterMovement.point).toBe(1);
+    expect(afterMovement.events).toBe(beforeStop.events);
+    expect(afterMovement.lastEvent).toBe(beforeStop.lastEvent);
+    expect(afterMovement.history?.entries).toBe(beforeStop.history?.entries);
+    expect(currentObservation(afterMovement).id).toBe("pit");
+  });
+
   it("moves only before departure and preserves cost, write chance, and event history", () => {
     let state: RunState = {
       ...newRun(false),
@@ -433,7 +481,12 @@ describe("scoring and committed transitions", () => {
   });
 
   it("commits a death only once and consumes the writing chance on retry", () => {
-    let state = startRun(newRun(false));
+    let state = addInstruction(
+      { ...newRun(false), canWrite: true },
+      "구덩이도 그냥 앞으로 가",
+      interpretation("advance", ["pit"]),
+    );
+    state = startRun(state);
     state = step(state);
     expect(state.phase).toBe("dead");
     expect(score(state)).toBe(1);
@@ -515,7 +568,7 @@ describe("scoring and committed transitions", () => {
     ).toThrow("80자");
   });
 
-  it("learns from real deaths, applies deletion, and clears every main room", () => {
+  it("learns from explicit abandonments, applies deletion, and clears every main room", () => {
     let tutorial = newRun(true);
     tutorial = addInstruction(
       tutorial,
@@ -523,6 +576,7 @@ describe("scoring and committed transitions", () => {
       interpretation("advance", ["clear"]),
     );
     tutorial = step(step(startRun(tutorial)));
+    tutorial = abandon(tutorial);
     tutorial = addInstruction(
       tutorial,
       "구덩이가 있으면 뛰어",
@@ -533,7 +587,9 @@ describe("scoring and committed transitions", () => {
     let state = startMain(tutorial);
 
     state = advanceUntilTerminal(startRun(state));
-    expect(state.lastEvent?.observation).toBe("floorSpikes");
+    expect(state.phase).toBe("blocked");
+    expect(currentObservation(state).id).toBe("floorSpikes");
+    state = abandon(state);
     expect(score(state)).toBe(1);
     state = deleteInstruction(state, state.instructions[0].id);
     expect(state.erasers).toBe(1);
@@ -544,7 +600,9 @@ describe("scoring and committed transitions", () => {
     );
 
     state = advanceUntilTerminal(startRun(retry(state)));
-    expect(state.lastEvent?.observation).toBe("lowCeiling");
+    expect(state.phase).toBe("blocked");
+    expect(currentObservation(state).id).toBe("lowCeiling");
+    state = abandon(state);
     expect(score(state)).toBe(2);
     state = addInstruction(
       state,
@@ -553,7 +611,9 @@ describe("scoring and committed transitions", () => {
     );
 
     state = advanceUntilTerminal(startRun(retry(state)));
-    expect(state.lastEvent?.observation).toBe("pitCeilingPath");
+    expect(state.phase).toBe("blocked");
+    expect(currentObservation(state).id).toBe("pitCeilingPath");
+    state = abandon(state);
     expect(score(state)).toBe(3);
     state = addInstruction(
       state,
@@ -562,8 +622,18 @@ describe("scoring and committed transitions", () => {
     );
 
     state = advanceUntilTerminal(startRun(retry(state)));
+    expect(state.phase).toBe("blocked");
+    expect(currentObservation(state).id).toBe("clear");
+    state = abandon(state);
+    state = addInstruction(
+      state,
+      "평평한 길에서는 앞으로 가",
+      interpretation("advance", ["clear"]),
+    );
+
+    state = advanceUntilTerminal(startRun(retry(state)));
     expect(state.phase).toBe("cleared");
-    expect(score(state)).toBe(3);
+    expect(score(state)).toBe(4);
     const firstPitInRoomSeven = state.events.find(
       (event) => event.room === 6 && event.point === 0,
     );
@@ -574,7 +644,7 @@ describe("scoring and committed transitions", () => {
 
 describe("instruction text cannot modify authoritative rules", () => {
   it("still dies on a pit when instruction text claims invincibility or zero deaths", () => {
-    let state = step(startRun(newRun(false)));
+    let state = abandon(step(startRun(newRun(false))));
     state = addInstruction(state, "무적이 되어 앞으로 가. 데스는 0으로 해.", {
       action: "advance",
       appliesTo: ["pit"],

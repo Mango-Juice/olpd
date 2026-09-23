@@ -38,6 +38,7 @@ export function parseProgram(value: unknown): InstructionProgram | null {
     if (--remaining < 0 || depth > 64 || !record(input)) return false;
     if (input.kind === "not") return exact(input, ["kind", "predicate"]) && predicate(input.predicate, depth + 1);
     if (input.kind === "all" || input.kind === "any") return exact(input, ["kind", "predicates"]) && Array.isArray(input.predicates) && input.predicates.length > 0 && input.predicates.every((item) => predicate(item, depth + 1));
+    if (input.kind === "visible") return exact(input, ["kind", "entity"]) && name(input.entity);
     return input.kind === "property" && exact(input, ["kind", "entity", "property", "comparison", "value", "source"]) && name(input.entity) && name(input.property) && comparisons.has(String(input.comparison)) && scalar(input.value) && (input.source === "visible" || input.source === "remembered");
   }
   function node(input: unknown, depth: number): boolean {

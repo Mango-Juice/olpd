@@ -77,7 +77,7 @@ function canonicalId(program: InstructionProgram, id: string | undefined): strin
 }
 
 function canonicalPredicate(program: InstructionProgram, predicate: NonNullable<InstructionProgram["condition"]>): unknown {
-  if (predicate.kind === "property") return { ...predicate, entity: canonicalId(program, predicate.entity) };
+  if (predicate.kind === "property" || predicate.kind === "visible") return { ...predicate, entity: canonicalId(program, predicate.entity) };
   if (predicate.kind === "not") return { kind: "not", predicate: canonicalPredicate(program, predicate.predicate) };
   return {
     kind: predicate.kind,
@@ -110,7 +110,7 @@ function selectorSignature(program: InstructionProgram): string[] {
     if (canonical) ids.add(canonical);
   };
   const predicate = (value: NonNullable<InstructionProgram["condition"]>) => {
-    if (value.kind === "property") add(value.entity);
+    if (value.kind === "property" || value.kind === "visible") add(value.entity);
     else if (value.kind === "not") predicate(value.predicate);
     else value.predicates.forEach(predicate);
   };

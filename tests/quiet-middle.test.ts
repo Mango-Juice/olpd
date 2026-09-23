@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { CampaignStageDefinition, SegmentDefinition } from "../src/campaign/level";
 import { createCursor, stepProgram, type ProgramCursor } from "../src/campaign/program";
 import type { PhysicalAction, ProgramNode, WorldState } from "../src/campaign/types";
-import { QUIET_GARDEN_STAGE, QUIET_STOREHOUSE_STAGE, QUIET_THEATRE_STAGE } from "../src/campaign/quiet/middle";
+import { QUIET_GARDEN_STAGE, QUIET_STOREHOUSE_STAGE, QUIET_THEATRE_STAGE } from "./fixtures/quiet-worlds/middle";
 import { QUIET_MIDDLE_INTENT_CASES, type QuietMiddleIntentCase } from "./fixtures/quiet-middle-intents";
 
 const action = (

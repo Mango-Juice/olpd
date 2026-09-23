@@ -2,11 +2,13 @@ import type { ActionExecutor } from "./program";
 import { executePhysicalAction } from "./physics";
 import type { EnvironmentStep, StageDynamics } from "./run";
 import type { Actor, Entity, PhysicalAction, StageId, WorldState } from "./types";
+import type { SpatialBody, SpatialSurface } from "./spatial/types";
 
 /** Authored, bounded stage composition. Coordinates are world units, never UI data. */
 export interface SceneComposition {
   floors: readonly { from: number; to: number; y: number }[];
   ceiling?: boolean;
+  spatial?: { bodies: SpatialBody[]; surfaces: SpatialSurface[]; ceiling?: number };
 }
 
 export interface SegmentDefinition {
@@ -19,7 +21,7 @@ export interface SegmentDefinition {
   /** Entry must preserve physical state when later rooms depend on it. */
   enter: (previous: WorldState | null) => WorldState;
   execute?: ActionExecutor;
-  /** Authored forward movement after every applicable instruction has yielded. */
+  /** Historical fixture metadata only; the runtime never dispatches this action. */
   idleAction?: (world: WorldState) => PhysicalAction | null;
   advance: (world: WorldState) => EnvironmentStep;
   complete: (world: WorldState) => boolean;
@@ -28,7 +30,7 @@ export interface CampaignStageDefinition {
   id: Exclude<StageId, 1>;
   title: string;
   /** Required by registered campaign content; omitted only by legacy test stages. */
-  contentRevision?: "shared-v1";
+  contentRevision?: "shared-v1" | "spatial-v1";
   /** The chapter's purpose, never a list of steps or hidden completion rules. */
   objective?: string;
   segments: readonly SegmentDefinition[];
@@ -49,7 +51,6 @@ export function stageDynamics(stage: CampaignStageDefinition): StageDynamics {
   }
   return {
     execute: (world, action) => (segment(world).execute ?? executePhysicalAction)(world, action),
-    idleAction: (world) => segment(world).idleAction?.(world) ?? null,
     advance: (world) => segment(world).advance(world),
     segmentComplete: (world) => segment(world).complete(world),
     nextSegment: (world) => {

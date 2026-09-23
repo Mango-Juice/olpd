@@ -45,7 +45,7 @@
 
 ## 로컬 QA 경로
 
-개발 서버에서 `http://localhost:5173/?qa=1`로 연 로컬 QA는 같은 요청 계약을 `POST /api/qa/campaign-interpret`로 보낸다. 이 라우트는 서버에 loopback으로 접속한 요청만 허용하며, 실제 API를 사용한다. 프런트엔드의 QA 저장은 `one-line-per-death:qa:shared-v1` localStorage 슬롯에 따로 보관되며 일반 캠페인 IndexedDB 기록과 분리된다. 운영 배포에는 이 QA 라우트가 없다.
+개발 서버에서 `http://localhost:5173/?qa=1`로 연 로컬 QA는 같은 요청 계약을 `POST /api/qa/campaign-interpret`로 보낸다. 이 라우트는 서버에 loopback으로 접속한 요청만 허용하며, 실제 API를 사용한다. 프런트엔드의 QA 저장은 `one-line-per-death:qa:spatial-v1` localStorage 슬롯에 따로 보관되며 일반 캠페인 IndexedDB 기록과 분리된다. 운영 배포에는 이 QA 라우트가 없다.
 
 ## 오류 응답
 
@@ -66,3 +66,7 @@
 ## 제한 운영 경계
 
 서버 측 IP별 분당 30회 제한은 단일 Node 프로세스/서버리스 인스턴스에 적용된다. 여러 인스턴스에 걸친 전역 제한이 아니다. 배포 환경의 Vercel WAF는 `/api/interpret` 경로를 별도 제한한다. 운영 상태와 공개 URL은 [검증 기록](verification.md)에서 날짜별로 확인한다. 로컬 검사나 과거 배포 기록만으로 현재 배포 상태를 주장하지 않는다.
+
+### 보임 조건
+
+후속 장 프로그램의 `Predicate`는 `{ "kind": "visible", "entity": "물체 ID" }`를 지원한다. 현재 화면에 있는지는 물체의 임의 속성이 아니라 실행 시 `world.visible`로 평가한다. “보이면 점프해”는 이 조건을 가진 `if`와 실제 점프 행동으로 해석하며, 성공 여부는 공간 실행기가 판정한다. 재사용 메모에서는 보임 조건의 대상도 행동 대상과 함께 다시 연결한다.

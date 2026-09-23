@@ -126,9 +126,9 @@ function signature(
   room: number,
   observation: ObservationId,
   action: Action,
-  instructionId: string | null,
+  instructionId: string,
 ): string {
-  return `${room}:${observation}:${action}:${instructionId ?? "default"}`;
+  return `${room}:${observation}:${action}:${instructionId}`;
 }
 
 function assertValidInterpretation(interpretation: Interpretation): void {
@@ -221,8 +221,9 @@ export function newRun(tutorial: boolean): RunState {
 
 export function currentObservation(state: RunState): Observation {
   if (
-    (state.phase === "dead" || state.phase === "blocked") &&
-    state.lastEvent
+    state.lastEvent &&
+    ((state.phase === "dead" && state.lastEvent.outcome !== "safe") ||
+      (state.phase === "blocked" && state.lastEvent.outcome === "blocked"))
   ) {
     return OBSERVATIONS[state.lastEvent.observation];
   }
@@ -360,13 +361,16 @@ export function step(state: RunState): RunState {
   const observationId = observationAt(state);
   const observation = OBSERVATIONS[observationId];
   const instruction = applicableInstruction(state, observationId);
-  const action = instruction?.interpretation.action ?? "advance";
+  // No matching instruction means the hero waits here. Nothing was executed,
+  // so there is no action event, learned signature, movement, or death.
+  if (!instruction) return bump(state, { phase: "blocked", canWrite: false });
+  const action = instruction.interpretation.action;
   const outcome = outcomeFor(observation, action);
   const eventSignature = signature(
     state.room,
     observationId,
     action,
-    instruction?.id ?? null,
+    instruction.id,
   );
   const event: ExecutionEvent = {
     id: `${state.id}-event-${state.events.length + 1}`,
@@ -374,8 +378,8 @@ export function step(state: RunState): RunState {
     point: state.point,
     observation: observationId,
     action,
-    instructionId: instruction?.id ?? null,
-    instructionText: instruction?.text ?? null,
+    instructionId: instruction.id,
+    instructionText: instruction.text,
     outcome,
     reason: reasonFor(observation, action, outcome),
     repeated: state.seen.includes(eventSignature),
@@ -522,6 +526,10 @@ export function abandon(state: RunState): RunState {
       phase: "dead",
       deaths: state.deaths + 1,
       canWrite: grantMemoryWrite(state).canWrite,
+      tutorialStep:
+        state.tutorial && state.tutorialStep === 1
+          ? 2
+          : state.tutorialStep,
     },
     (revision) => ({
       kind: "abandon",

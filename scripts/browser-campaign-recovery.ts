@@ -1,7 +1,7 @@
 import { chromium, expect } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { createCampaignState } from '../src/campaign/progress';
-import { QUIET_RAIN_STAGE } from '../src/campaign/quiet/early';
+import { QUIET_RAIN_STAGE } from '../tests/fixtures/quiet-worlds/early';
 const state = createCampaignState('historical-browser');
 state.stages[0] = { stageId: 1, status: 'completed', activeRun: null, completion: { run: { stageId: 1, runId: 'old-one' }, completedAt: 1234, source: 'legacy' } };
 // Frozen v2 shape: building it with createStageRun would silently make a v3 fixture.
@@ -49,9 +49,9 @@ try {
     const record = await new Promise<any>((resolve, reject) => { const request = db.transaction('campaign').objectStore('campaign').get('root'); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); });
     db.close(); return record;
   });
-  expect(root.version).toBe(3);
+  expect(root.version).toBe(4);
   expect(root.recoveries[0].payload).toEqual(payload);
-  expect(root.activeRuns[0].payload.run.contentRevision).toBe('shared-v1');
+  expect(root.activeRuns[0].payload.run.contentRevision).toBe('spatial-v1');
   expect(root.activeRuns[0].payload.run.world.segmentId).toBe('02-v2-1');
   expect(root.state.stages[0].completion.completedAt).toBe(1234);
   expect(calls).toBe(0);

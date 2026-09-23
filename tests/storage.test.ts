@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  abandon,
   addInstruction,
   moveInstruction,
   newRun,
+  retry,
   startRun,
   step,
 } from "../src/game/core";
@@ -116,7 +118,11 @@ describe("save validation and preservation", () => {
 
   it("validates current interpretation versions, bounds, event coordinates, and last event content", () => {
     const storage = new MemoryStorage();
-    let state = step(startRun(newRun(false)));
+    let state = step(startRun(addInstruction(
+      { ...newRun(false), canWrite: true },
+      "구덩이도 그냥 걸어",
+      { ...jumpInterpretation, action: "advance" },
+    )));
     const save = makeSave(state, { writer: "tab-a", savedAt: 1 });
     const corruptions = [
       { ...save, state: { ...state, erasers: 3 } },
@@ -179,6 +185,59 @@ describe("save validation and preservation", () => {
     expect(result.ok).toBe(false);
     if (result.ok === false) expect(result.error.code).toBe("semantic");
   });
+
+  it("saves an uneventful stop and its explicit abandonment without accepting a forged stop", () => {
+    const storage = new MemoryStorage();
+    let state = addInstruction(newRun(true), "앞으로 전진해", {
+      ...jumpInterpretation,
+      action: "advance",
+      appliesTo: ["clear"],
+    });
+    state = step(step(startRun(state)));
+    expect(state.phase).toBe("blocked");
+    expect(state.events).toHaveLength(1);
+    expect(state.lastEvent?.outcome).toBe("safe");
+    const stopped = makeSave(state, { writer: "tab-a", savedAt: 1 });
+    expect(writeSave(stopped, { storage, expected: null }).ok).toBe(true);
+    expect(loadSave(storage)).toEqual({ ok: true, value: stopped });
+
+    const forgedMatch = makeSave({
+      ...state,
+      instructions: state.instructions.map((instruction) => ({
+        ...instruction,
+        interpretation: {
+          ...instruction.interpretation,
+          appliesTo: ["clear", "pit"],
+        },
+      })),
+    }, { writer: "tab-a", savedAt: 2 });
+    expect(writeSave(forgedMatch, { storage }).ok).toBe(false);
+
+    state = abandon(state);
+    state = addInstruction(state, "구덩이에서는 뛰어", {
+      ...jumpInterpretation,
+      appliesTo: ["pit", "bridge"],
+    });
+    const abandoned = makeSave(state, { writer: "tab-a", savedAt: 3 });
+    expect(writeSave(abandoned, { storage }).ok).toBe(true);
+    expect(loadSave(storage)).toEqual({ ok: true, value: abandoned });
+
+    const forgedAbandon = makeSave({
+      ...state,
+      history: {
+        ...state.history!,
+        entries: state.history!.entries.filter((entry) => entry.kind !== "abandon"),
+      },
+    }, { writer: "tab-a", savedAt: 4 });
+    expect(writeSave(forgedAbandon, { storage }).ok).toBe(false);
+
+    const revived = retry(state);
+    const forgedAfterRevive = makeSave(
+      { ...revived, phase: "dead" },
+      { writer: "tab-a", savedAt: 5 },
+    );
+    expect(writeSave(forgedAfterRevive, { storage }).ok).toBe(false);
+  });
 });
 
 describe("optimistic concurrency", () => {
@@ -214,7 +273,11 @@ describe("optimistic concurrency", () => {
 
   it("reloads already charged state without charging deletion costs again", () => {
     const storage = new MemoryStorage();
-    const died = step(startRun(newRun(false)));
+    const died = step(startRun(addInstruction(
+      { ...newRun(false), canWrite: true },
+      "구덩이도 그냥 걸어",
+      { ...jumpInterpretation, action: "advance" },
+    )));
     const state = { ...died, penaltyDeaths: 3, revision: 4 };
     const save = makeSave(state, { writer: "tab-a", savedAt: 1 });
     expect(writeSave(save, { storage, expected: null }).ok).toBe(true);

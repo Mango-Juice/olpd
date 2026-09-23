@@ -15,6 +15,9 @@ import type { Settings } from "../game/types";
 import { usePlayCommand } from "../hooks/usePlayCommand";
 import { useMobileKeyboardLayout } from "../hooks/useMobileKeyboardLayout";
 import { CampaignCanvas } from "./CampaignCanvas";
+import { firstContactHint } from "../campaign/contact-hints";
+import { PlayContactHint } from "./PlayContactHint";
+import { isAbandonPresentation } from "../render/animation";
 import { CampaignChronicle } from "./CampaignChronicle";
 import { MemoryNotebook } from "./MemoryNotebook";
 import Modal from "./Modal";
@@ -176,7 +179,9 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
     shareInstructions ? [...run.notebook.instructions].reverse().map((note, i) => `${i + 1}. ${note.text}`).join("\n") : "",
     typeof window === "undefined" ? "" : `${window.location.origin}${window.location.pathname}`,
   ].filter(Boolean).join("\n\n");
-  const activeId = presentation?.events.find((event) => event.instructionId)?.instructionId ?? run.events.at(-1)?.instructionId ?? undefined;
+  const shownPresentation = presentation ?? settledPresentation;
+  const abandoned = !!shownPresentation && isAbandonPresentation(shownPresentation);
+  const activeId = abandoned ? undefined : shownPresentation?.events.find((event) => event.instructionId)?.instructionId;
   if (!segment) return <p role="alert">현재 구간을 찾지 못했어요. 저장 원본은 그대로 남아 있어요.</p>;
   const canReorder = resting && !saving && !command.pending && !failedSave;
   const completedIds = animating && presentation?.completedSegmentId
@@ -200,11 +205,11 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
             selectedEntityId={selected} onSelectEntity={setSelected} />
           {(animating || run.phase === "failed" || run.phase === "blocked") && <PlaySceneCaption
             returning={presentation?.outcome === "revive"} accident={!animating && run.phase === "failed"} animating={animating}
-            kicker={presentation?.outcome === "revive" ? "다시, 던전 입구에서" : !animating ? "방금 무슨 일이 있었냐면…" : activeId ? "기억한 말" : "메모가 없을 때는"}
-            memory={presentation?.outcome === "revive" ? "몸은 다시 태어나도, 메모는 꼭 챙겨 갈게." : `“${run.notebook.instructions.find((note) => note.id === activeId)?.text ?? "아무 말이 없으면 앞으로 걸어."}”`}
-            action={presentation?.outcome === "revive" ? "처음부터 다시 걸어가요" : !animating ? run.statusReason : VERB_LABELS[presentation?.events.find((event) => event.verb)?.verb ?? "move"] ?? "상황을 보고 행동하기"} />}
+            kicker={presentation?.outcome === "revive" ? "다시, 던전 입구에서" : !animating ? "방금 무슨 일이 있었냐면…" : abandoned ? "다시 준비하기" : activeId ? "기억한 말" : run.phase === "blocked" ? "지시를 기다리는 중" : "주변의 변화"}
+            memory={abandoned ? "입구에서 다시 준비할게." : presentation?.outcome === "revive" ? "몸은 다시 태어나도, 메모는 꼭 챙겨 갈게." : activeId ? `“${run.notebook.instructions.find((note) => note.id === activeId)?.text ?? "남겨 둔 지시"}”` : run.phase === "blocked" ? "지금 할 행동을 알려주세요." : "주변이 움직이고 있어요."}
+            action={abandoned ? "남긴 메모를 챙기고 있어요" : presentation?.outcome === "revive" ? "처음부터 다시 걸어가요" : !animating ? run.statusReason : VERB_LABELS[presentation?.events.find((event) => event.verb)?.verb ?? ""] ?? "상황을 지켜보기"}><PlayContactHint text={firstContactHint(run, stage)} /></PlaySceneCaption>}
           <p className="campaign-goal">{segment.goal}</p>
-          <PlaySceneFooter status={command.pending ? "용사가 한 줄을 읽고 있어요" : paused || hidden ? "잠시 쉬어가는 중"
+          <PlaySceneFooter label={stage.title} status={command.pending ? "용사가 한 줄을 읽고 있어요" : paused || hidden ? "잠시 쉬어가는 중"
             : animating && presentation?.repeated ? "기억하는 길 · 3배속" : run.phase === "failed" ? "넘어진 자리에도 기억은 남아"
               : run.phase === "cleared" ? "던전 탈출 성공 · 모든 한 줄의 기억" : "천천히, 한 걸음씩"}
             playing={animating || run.phase === "running" || run.phase === "waiting"} paused={paused || awaitingNext}
@@ -219,7 +224,7 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
           label="이번 생에서 남길 한 줄" placeholder="이럴 때는, 이렇게 해줘…" />
           <PlayHints hints={segment.hints} resetKey={`${run.id}:${segment.id}`} /></>}
         {resting && <PlayLaunchControls dead={run.phase === "failed"} canWrite={run.notebook.canWrite} disabled={saving || command.pending || !!failedSave} onLaunch={() => { void launch(); }} />}
-        {!animating && run.phase === "blocked" && <button type="button" className="primary wide" disabled={saving || !!failedSave} onClick={() => { void commit(abandonStage(live.current)); }}>포기하고 부활하기 · +1데스</button>}
+        {!animating && run.phase === "blocked" && <button type="button" className="primary wide" disabled={saving || !!failedSave} onClick={() => { setPaused(false); setAwaitingNext(false); void commit(abandonStage(live.current)); }}>포기하고 부활하기 · +1데스</button>}
         {!animating && run.phase === "cleared" && <PlayClearPanel deaths={run.notebook.deaths} penaltyDeaths={run.notebook.penaltyDeaths} best={best}
           onChronicle={openChronicle} onShare={() => { setNotice(""); setPopup("share"); }} onNew={() => setPopup("new")}>
           {stage.id === 10 ? <button className="secondary" onClick={() => setPopup("ending")}>편지를 펼치기</button> : null}

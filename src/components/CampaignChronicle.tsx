@@ -12,8 +12,6 @@ import Chronicle, {
 } from "./Chronicle";
 import Modal from "./Modal";
 
-const defaultInstruction = "아무 말이 없으면 앞으로 걸어.";
-
 export function buildCampaignChronicleModel(
   run: StageRun,
   stage: CampaignStageDefinition,
@@ -49,7 +47,9 @@ export function buildCampaignChronicleModel(
         const order = segmentIndex.get(segmentId);
         const title = `${order === undefined ? "지난" : `${order + 1}번째`} 장면 · ${segmentTitle.get(segmentId) ?? "이름 없는 길"}`;
         const instructionId = events.find((event) => event.instructionId)?.instructionId;
-        const quote = instructionId ? instructionText.get(instructionId) ?? defaultInstruction : defaultInstruction;
+        const quote = instructionId ? instructionText.get(instructionId) ?? "기록에 남은 지시"
+          : events.some((event) => event.actor && event.verb === "move") ? "이전 기록의 자동 이동"
+            : presentation.outcome === "blocked" ? "지시 없이 멈춤" : "장면의 변화";
         const description = events.map((event) => event.reason).join(" ");
         return [{
           id: presentation.id,

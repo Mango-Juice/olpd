@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { runSceneProgram } from '../scripts/lib/run-campaign-probe';
-import { QUIET_RAIN_STAGE, QUIET_EARLY_INTENT_CASES, quietEarlyProgram } from '../src/campaign/quiet/early';
+import { QUIET_RAIN_STAGE, QUIET_EARLY_INTENT_CASES, quietEarlyProgram } from './fixtures/quiet-worlds/early';
 import { parseStageRun } from '../src/campaign/run-validation';
 
 it('live evaluator advances every presentation boundary and preserves valid notebook history without AI', () => {

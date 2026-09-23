@@ -1,9 +1,10 @@
 /** Serializable campaign contracts. World simulation never depends on wall-clock time. */
+import type { SpatialMotion } from "./spatial/types";
 export type StageId = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type EntityId = string;
 export type Scalar = string | number | boolean;
 export type Truth = true | false | "unknown";
-export interface Location { region: string; x: number; y: number }
+export interface Location { region: string; x: number; y: number; z?: number }
 export interface Entity {
   id: EntityId;
   name: string;
@@ -29,6 +30,8 @@ export interface Actor {
   carrying: EntityId[];
   riding: EntityId | null;
   capabilities: string[];
+  /** Persisted traversal cursor for an explicitly selected physical path. */
+  route?: { target: EntityId; next: number };
 }
 export interface Fact {
   entity: EntityId;
@@ -38,6 +41,7 @@ export interface Fact {
   tick: number;
 }
 export type Predicate =
+  | { kind: "visible"; entity: EntityId }
   | { kind: "property"; entity: EntityId; property: string; comparison: "eq" | "lt" | "lte" | "gt" | "gte"; value: Scalar; source: "visible" | "remembered" }
   | { kind: "all" | "any"; predicates: Predicate[] }
   | { kind: "not"; predicate: Predicate };
@@ -97,6 +101,7 @@ export interface InstructionProgram {
   body: ProgramNode;
 }
 export interface WorldEvent {
+  motion?: SpatialMotion;
   /** Optional presentation metadata; older saves omit it. Never drives physics. */
   verb?: Verb;
   id: string;

@@ -17,7 +17,7 @@ function boundId(bindings: InstructionProgram["bindings"], resolved: ReadonlyMap
 function bindPredicate(predicate: Predicate, bindings: InstructionProgram["bindings"], resolved: ReadonlyMap<string, string>): Predicate {
   if (predicate.kind === "not") return { ...predicate, predicate: bindPredicate(predicate.predicate, bindings, resolved) };
   if (predicate.kind === "all" || predicate.kind === "any") return { ...predicate, predicates: predicate.predicates.map((item) => bindPredicate(item, bindings, resolved)) };
-  if (predicate.kind === "property") return { ...predicate, entity: boundId(bindings, resolved, predicate.entity) };
+  if (predicate.kind === "property" || predicate.kind === "visible") return { ...predicate, entity: boundId(bindings, resolved, predicate.entity) };
   return predicate;
 }
 

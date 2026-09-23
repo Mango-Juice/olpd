@@ -48,6 +48,7 @@ function compare(left: Scalar, right: Scalar, comparison: Extract<Predicate, { k
 /** Three-valued logic: NOT(unobserved) must never grant knowledge of the opposite. */
 export function evaluateCondition(world: WorldState, predicate: Predicate): Truth {
   switch (predicate.kind) {
+    case "visible": return world.visible.includes(predicate.entity);
     case "not": {
       const result = evaluateCondition(world, predicate.predicate);
       return result === "unknown" ? result : !result;

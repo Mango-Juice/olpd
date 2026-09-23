@@ -16,7 +16,7 @@ import type { CampaignStageDefinition } from "./level";
 
 export interface StageRun {
   version: 3;
-  contentRevision: "shared-v1";
+  contentRevision: "shared-v1" | "spatial-v1";
   id: string;
   stageId: StageId;
   revision: number;
@@ -62,11 +62,11 @@ export interface StagePresentation {
   nextSegmentId?: string;
 }
 
-export function createStageRun(id: string, initial: WorldState): StageRun {
+export function createStageRun(id: string, initial: WorldState, contentRevision: StageRun['contentRevision'] = "shared-v1"): StageRun {
   if (initial.stageId === 1) throw new Error("1장은 기존 실행기를 사용해요.");
   return {
     version: 3,
-    contentRevision: "shared-v1",
+    contentRevision,
     id,
     stageId: initial.stageId,
     revision: 0,
@@ -90,7 +90,7 @@ export function createCampaignRun(id: string, stage: CampaignStageDefinition): S
   const first = stage.segments[0];
   if (!first) throw new Error("시작할 구간이 없어요.");
   const initial = first.enter(null);
-  return createStageRun(id, initial);
+  return createStageRun(id, initial, stage.contentRevision ?? "shared-v1");
 }
 export function departStage(run: StageRun): StageRun {
   if (run.phase !== "bookmark") return run;
@@ -241,6 +241,8 @@ export function abandonStage(run: StageRun): StageRun {
   };
 }
 export interface EnvironmentStep {
+  /** Phase of periodic mechanisms, needed to distinguish a pause from a full repeated cycle. */
+  waitKey?: string;
   world: WorldState;
   events: WorldEvent[];
   failure?: string;
@@ -256,52 +258,6 @@ export interface StageDynamics {
   nextSegment: (world: WorldState) => WorldState | null;
   /** Optional narrative seal marker; never changes the entrance respawn point. */
   sealAfter: (segmentId: string) => number | null;
-  /** Authored default forward movement; physical hazards still apply. */
-  idleAction?: (world: WorldState) => PhysicalAction | null;
-}
-function validIdleMove(world: WorldState, action: PhysicalAction): boolean {
-  return action.kind === "action" && action.actor === "hero" && action.verb === "move"
-    && action.destination === undefined && action.instrument === undefined && action.amount === undefined && action.references === undefined
-    && Object.keys(action).every((key) => key === "kind" || key === "actor" || key === "verb" || key === "target")
-    && Object.hasOwn(world.entities, action.target) && world.visible.includes(action.target);
-}
-function stopUnsafeIdle(run: StageRun, execution: ExecutionState, reason: string, action?: PhysicalAction): StageRun {
-  const revision = run.revision + 1;
-  const event: WorldEvent = {
-    segmentId: run.world.segmentId,
-    id: `${run.id}:${revision}:idle-stop`,
-    tick: run.world.tick,
-    attempt: run.world.attempt,
-    instructionId: null,
-    actor: action?.actor === "hero" ? "hero" : null,
-    target: action?.target ?? null,
-    outcome: "blocked",
-    reason,
-    changes: [],
-  };
-  const presentation: StagePresentation = {
-    id: `${run.id}:${revision}:presentation`,
-    before: structuredClone(run.world),
-    after: structuredClone(run.world),
-    events: [structuredClone(event)],
-    outcome: "blocked",
-    repeated: false,
-    life: run.notebook.deaths + 1,
-    attempt: run.world.attempt,
-  };
-  return {
-    ...run,
-    revision,
-    phase: "blocked",
-    statusReason: reason,
-    waitingStates: [],
-    execution,
-    events: [...run.events, event],
-    history: { ...run.history, entries: [...run.history.entries,
-      { kind: "action", revision, life: run.notebook.deaths + 1, eventIds: [event.id] }] },
-    presentation,
-    presentationHistory: [...run.presentationHistory, presentation],
-  };
 }
 export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
   if (run.phase !== "running" && run.phase !== "waiting") return run;
@@ -315,44 +271,20 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
     traces.push({ before, result });
     return result;
   });
-  // A non-matching conditional rule is dormant. It never freezes default movement;
-  // only an explicit wait/until node can keep the world in a waiting phase.
-  const waitingForRule = false;
+  // Only player-authored actions can move an actor. A dormant or exhausted
+  // notebook cannot manufacture a new walking command.
   let world = scheduled.step?.world ?? run.world;
   const events: WorldEvent[] = [];
   const instructionId = scheduled.instructionId;
-  let actions = scheduled.step?.actions ?? [];
+  const actions = scheduled.step?.actions ?? [];
   let stepOutcome = scheduled.step?.outcome;
   let stepReason = scheduled.reason;
-  let hasStep = scheduled.step !== null;
-  const mayAdvanceByDefault = scheduled.step === null && scheduled.execution.active === null
-    && scheduled.execution.suspended.length === 0;
-  if (mayAdvanceByDefault && dynamics.idleAction) {
-    let candidate: PhysicalAction | null;
-    try {
-      candidate = dynamics.idleAction(structuredClone(run.world));
-    } catch {
-      return stopUnsafeIdle(run, scheduled.execution, "기본 전진 경로를 확인하지 못해 원래 자리에서 멈췄어요.");
-    }
-    if (candidate && !validIdleMove(run.world, candidate)) {
-      return stopUnsafeIdle(run, scheduled.execution, "기본 전진은 용사의 눈앞에 보이는 열린 길 이동만 사용할 수 있어요. 원래 자리에서 멈췄어요.");
-    }
-    if (candidate) {
-      const before = structuredClone(run.world);
-      const result = dynamics.execute(structuredClone(run.world), candidate);
-      traces.push({ before, result });
-      world = result.world;
-      actions = [candidate];
-      stepOutcome = result.outcome;
-      stepReason = result.reason;
-      hasStep = true;
-    }
-  }
+  const hasStep = scheduled.step !== null;
   for (const [index, action] of actions.entries()) {
     const trace = traces[index];
     const signature = replaySignature(trace.before, action, instructionId);
     const repeated = run.events.some((event) => event.signature === signature && event.outcome === "safe");
-    events.push({ verb: action.verb, segmentId: trace.before.segmentId, signature, repeated, id: `${run.id}:${run.revision + 1}:${index}`, tick: world.tick, attempt: world.attempt, instructionId, actor: action.actor, target: action.target, outcome: trace.result.outcome === "done" || trace.result.outcome === "progress" ? action.verb === "observe" || action.verb === "remember" ? "observed" : "safe" : trace.result.outcome, reason: trace.result.reason, changes: worldChanges(trace.before, trace.result.world) });
+    events.push({ ...(trace.result.motion ? { motion: trace.result.motion } : {}), verb: action.verb, segmentId: trace.before.segmentId, signature, repeated, id: `${run.id}:${run.revision + 1}:${index}`, tick: world.tick, attempt: world.attempt, instructionId, actor: action.actor, target: action.target, outcome: trace.result.outcome === "done" || trace.result.outcome === "progress" ? action.verb === "observe" || action.verb === "remember" ? "observed" : "safe" : trace.result.outcome, reason: trace.result.reason, changes: worldChanges(trace.before, trace.result.world) });
   }
   if (scheduled.interrupted) events.unshift({ segmentId: world.segmentId, id: `${run.id}:${run.revision + 1}:interrupt`, tick: world.tick, attempt: world.attempt, instructionId: scheduled.interrupted, actor: null, target: null, outcome: "interrupted", reason: "더 높은 경계 지침을 먼저 실행하고 중단 지점을 보관했어요.", changes: [] });
   if (scheduled.step?.outcome === "clarification" && instructionId) {
@@ -362,13 +294,15 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
   }
   // A commanded ride keeps moving after the boarding action has finished.
   // This advances the environment only; it never invents a landing/action.
-  const autonomousRide = !hasStep && !waitingForRule
+  const autonomousRide = !hasStep
     && Object.values(world.actors).some((actor) => actor.riding !== null);
-  let phase: StageRun["phase"] = stepOutcome === "failure" ? "failed" : (!hasStep && !waitingForRule && !autonomousRide) || stepOutcome === "blocked" ? "blocked" : "running";
-  let statusReason = waitingForRule ? "메모의 조건이 바뀌기를 안전한 곳에서 기다리고 있어요." : stepReason;
-  if (phase === "running" && (actions.length > 0 || stepOutcome === "waiting" || waitingForRule || autonomousRide)) {
+  let waitKey: string | undefined;
+  let phase: StageRun["phase"] = stepOutcome === "failure" ? "failed" : (!hasStep && !autonomousRide) || stepOutcome === "blocked" ? "blocked" : "running";
+  let statusReason = stepReason;
+  if (phase === "running" && (actions.length > 0 || stepOutcome === "waiting" || autonomousRide)) {
     const beforeEnvironment = world;
     const environment = dynamics.advance(world);
+    waitKey = environment.waitKey;
     world = environment.world;
     events.push(...environment.events.map((event) => ({ ...event, segmentId: event.segmentId ?? world.segmentId })));
     const changes = worldChanges(beforeEnvironment, world);
@@ -380,12 +314,14 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
     }
     // A final transition (for example cooling finishes) must be observed once
     // before deciding that a now-stable mechanism cannot satisfy the wait.
-    else if (stepOutcome === "waiting" || waitingForRule || autonomousRide) phase = environment.canChange || changes.length > 0 ? "waiting" : "blocked";
+    else if (stepOutcome === "waiting" || autonomousRide) phase = environment.canChange || changes.length > 0 ? "waiting" : "blocked";
   }
   let waitingStates: string[] = [];
   if (phase === "waiting" && actions.length === 0) {
     const signature = JSON.stringify({
       segment: world.segmentId,
+      clock: waitKey,
+      execution: scheduled.execution,
       entities: Object.entries(world.entities).sort(([a], [b]) => a.localeCompare(b)).map(([id, entity]) => [id, entity.location, entity.parent, entity.properties]),
       actors: world.actors, visible: world.visible,
     });
@@ -433,7 +369,7 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
     ...(following ? { nextSegmentId: following.segmentId } : {}),
   };
   let notebook = phase === "failed" ? killNotebook(run.notebook) : run.notebook;
-  let execution = phase === "failed" || phase === "blocked" ? createExecution() : scheduled.execution;
+  let execution = phase === "failed" || phase === "blocked" || phase === "cleared" ? createExecution() : scheduled.execution;
   let nextWorld = world;
   let clearedSegments = run.clearedSegments;
   let seal = run.seal;
@@ -469,8 +405,8 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
         eventIds: events.map((event) => event.id),
       }],
     },
-    presentation,
-    presentationHistory: [...run.presentationHistory, presentation],
+    presentation: actions.length === 0 && (phase === "blocked" || (events.length === 0 && phase === "running")) ? null : presentation,
+    presentationHistory: events.length > 0 || completedSegmentId || phase === "waiting" ? [...run.presentationHistory, presentation] : run.presentationHistory,
   };
 }
 

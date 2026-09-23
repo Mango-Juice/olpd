@@ -2,9 +2,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { makeEntity, makeWorld, type CampaignStageDefinition } from "../src/campaign/level";
-import { QUIET_FORGE_STAGE, QUIET_KITCHEN_STAGE, QUIET_RAIN_STAGE } from "../src/campaign/quiet/early";
-import { QUIET_FOG_STAGE, QUIET_TOWER_STAGE, QUIET_WARDEN_STAGE } from "../src/campaign/quiet/late";
-import { QUIET_GARDEN_STAGE, QUIET_STOREHOUSE_STAGE, QUIET_THEATRE_STAGE } from "../src/campaign/quiet/middle";
+import { QUIET_FORGE_STAGE, QUIET_KITCHEN_STAGE, QUIET_RAIN_STAGE } from "./fixtures/quiet-worlds/early";
+import { QUIET_FOG_STAGE, QUIET_TOWER_STAGE, QUIET_WARDEN_STAGE } from "./fixtures/quiet-worlds/late";
+import { QUIET_GARDEN_STAGE, QUIET_STOREHOUSE_STAGE, QUIET_THEATRE_STAGE } from "./fixtures/quiet-worlds/middle";
 import { CampaignCanvas } from "../src/components/CampaignCanvas";
 import {
   CAMPAIGN_VIEW_HEIGHT,

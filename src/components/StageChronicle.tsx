@@ -24,7 +24,7 @@ export function buildStageChronicleModel(
         const event = events.get(entry.eventId);
         if (!event) return [];
         const title = `${event.room + 1}번째 문 · ${OBSERVATIONS[event.observation].label}`;
-        const quote = event.instructionText ?? "아무 말이 없으면 앞으로 걸어.";
+        const quote = event.instructionText ?? "이전 기록의 자동 이동";
         return [{
           id: event.id,
           kind: "action",

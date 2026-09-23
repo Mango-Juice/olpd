@@ -1,4 +1,4 @@
-import { QUIET_LATE_REPRESENTATIVE_PROGRAMS } from "../../src/campaign/quiet/late";
+import { QUIET_LATE_REPRESENTATIVE_PROGRAMS } from "./quiet-worlds/late";
 import type { ProgramNode, StageId } from "../../src/campaign/types";
 
 export interface QuietLateIntentCase {

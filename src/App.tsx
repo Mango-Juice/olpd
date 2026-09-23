@@ -1,3 +1,5 @@
+import { chapterOneContactHint } from "./game/hints/chapter-one";
+import { PlayContactHint } from "./components/PlayContactHint";
 import { postInterpretJson } from "./services/interpret-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isInterpretation } from "./game/interpretation";
@@ -125,8 +127,8 @@ function legacyHints(room: Room, observation: Observation): readonly string[] {
   }
   return [
     first,
-    "지금은 앞을 막는 장애물이 없어요. 용사는 말이 없어도 앞으로 걸어요.",
-    "새 행동을 덧붙이기 전에, 기본 전진으로 지나갈 수 있는지 먼저 확인해 보세요.",
+    "앞을 막는 장애물이 없어도, 이곳에 맞는 지침이 있어야 용사가 움직여요.",
+    "“평평한 길에서는 앞으로 가”처럼 상황과 행동을 한 줄로 이어 보세요.",
   ];
 }
 
@@ -509,7 +511,7 @@ export default function App({ bridge }: AppProps = {}) {
     }
     const next = step(current);
     if (await commit(next)) {
-      setAnimating(true);
+      setAnimating(next.events.length > current.events.length);
       return true;
     }
     setAnimating(false);
@@ -816,15 +818,13 @@ export default function App({ bridge }: AppProps = {}) {
   };
   const observation = currentObservation(state);
   const event = state.lastEvent;
-  const showDetourHint =
-    started &&
-    !animating &&
-    !state.tutorial &&
-    state.phase === "dead" &&
-    event?.outcome === "death" &&
-    OBSERVATIONS[event.observation].sidePath &&
-    state.events.find((record) => OBSERVATIONS[record.observation].sidePath)
-      ?.id === event.id;
+  const noMatchingInstruction =
+    state.phase === "blocked" && event?.outcome !== "blocked";
+  const abandonedWithoutInstruction =
+    state.phase === "dead" && (!event || event.outcome === "safe");
+  const stoppedWithoutInstruction =
+    noMatchingInstruction || abandonedWithoutInstruction;
+  const contactHint = started && !animating && !state.tutorial ? chapterOneContactHint(state, onboardingProgress) : null;
   const displayedRoom = animating && event ? event.room : state.room;
   const room = state.tutorial
     ? TUTORIAL_ROOM
@@ -835,7 +835,7 @@ export default function App({ bridge }: AppProps = {}) {
   const actualPhase = animating ? "running" : state.phase;
   const activeMemory =
     started && event
-      ? (event.instructionText ?? "아무 말이 없으면 앞으로 걸어.")
+      ? (event.instructionText ?? "이전 버전의 자동 전진")
       : null;
   const completedEvents =
     animating && !awaitingNext ? state.events.slice(0, -1) : state.events;
@@ -1088,8 +1088,9 @@ export default function App({ bridge }: AppProps = {}) {
             </PlaySceneHeading>
             <div className="canvas-holder">
               <DungeonCanvas
+                key={stoppedWithoutInstruction ? "waiting-for-instruction" : "playing-instruction"}
                 observation={observation}
-                event={started ? event : null}
+                event={started && !stoppedWithoutInstruction ? event : null}
                 phase={started ? state.phase : "title"}
                 paused={paused || hidden || conflict}
                 reducedMotion={settings.reducedMotion}
@@ -1106,15 +1107,11 @@ export default function App({ bridge }: AppProps = {}) {
               (animating ||
                 state.phase === "dead" ||
                 state.phase === "blocked") && (
-                <PlaySceneCaption returning={sceneMode === "entrance"} accident={!animating && state.phase === "dead"} animating={animating}
-                  kicker={sceneMode === "entrance" ? "다시, 던전 입구에서" : !animating ? "방금 무슨 일이 있었냐면…" : event?.instructionId ? `기억한 말 · ${OBSERVATIONS[event?.observation ?? observation.id].label}` : "메모가 없을 때는"}
-                  memory={sceneMode === "entrance" ? "몸은 다시 태어나도, 메모는 꼭 챙겨 갈게." : `“${activeMemory}”`}
-                  action={sceneMode === "entrance" ? "처음부터 다시 걸어가요" : !animating ? event?.reason : ACTION_LABELS[event?.action ?? "advance"]}>
-                  {showDetourHint && (
-                    <span className="route-hint">
-                      옆길로 <b>우회</b>해 볼까?
-                    </span>
-                  )}
+                <PlaySceneCaption returning={sceneMode === "entrance"} accident={!animating && state.phase === "dead" && !abandonedWithoutInstruction} animating={animating}
+                  kicker={stoppedWithoutInstruction ? abandonedWithoutInstruction ? "멈춘 자리에서 부활했어요" : "여기서 멈췄어요" : sceneMode === "entrance" ? "다시, 던전 입구에서" : !animating ? "방금 무슨 일이 있었냐면…" : `기억한 말 · ${OBSERVATIONS[event?.observation ?? observation.id].label}`}
+                  memory={stoppedWithoutInstruction ? "이곳에 맞는 지침이 없었어요." : sceneMode === "entrance" ? "몸은 다시 태어나도, 메모는 꼭 챙겨 갈게." : `“${activeMemory}”`}
+                  action={stoppedWithoutInstruction ? abandonedWithoutInstruction ? "새 지침을 쓰고 입구에서 다시 출발할 수 있어요." : "용사는 이동하지 않았어요. 포기하고 부활하면 다음 지침을 쓸 수 있어요." : sceneMode === "entrance" ? "처음부터 다시 걸어가요" : !animating ? event?.reason : event ? ACTION_LABELS[event.action] : null}>
+                  <PlayContactHint text={contactHint?.text ?? null} className={contactHint?.key === "combined-hazards" ? "route-hint" : undefined} />
                 </PlaySceneCaption>
               )}
             {!started && (
@@ -1145,7 +1142,9 @@ export default function App({ bridge }: AppProps = {}) {
                       : animating && event?.repeated
                         ? "기억하는 길 · 3배속"
                         : actualPhase === "dead"
-                          ? "넘어진 자리에도 기억은 남아"
+                          ? abandonedWithoutInstruction ? "새 지침을 쓸 수 있어요" : "넘어진 자리에도 기억은 남아"
+                          : noMatchingInstruction
+                            ? "맞는 지침을 기다리는 중"
                           : actualPhase === "cleared"
                             ? "던전 탈출 성공 · 모든 한 줄의 기억"
                             : "천천히, 한 걸음씩"
@@ -1334,7 +1333,7 @@ export default function App({ bridge }: AppProps = {}) {
                     </button>
                   </blockquote>
                   <p className="helper">
-                    기본 전진은 지침을 지워도 계속됩니다.
+                    지운 지침은 실제 메모장에서 사라져요. 맞는 지침이 없으면 용사는 멈춰요.
                   </p>
                 </>
               ) : (
@@ -1464,7 +1463,7 @@ export default function App({ bridge }: AppProps = {}) {
                     {state.tutorial ? "연습" : `${e.room + 1}번째 문`} ·{" "}
                     {OBSERVATIONS[e.observation].label}
                   </small>
-                  <blockquote>{e.instructionText ?? "기본 전진"}</blockquote>
+                  <blockquote>{e.instructionText ?? "이전 버전의 자동 전진"}</blockquote>
                   <p>
                     {ACTION_LABELS[e.action]} → {e.reason}
                   </p>

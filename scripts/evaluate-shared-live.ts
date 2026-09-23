@@ -7,8 +7,7 @@ import { resolveStage } from '../src/campaign/registry';
 import { createCampaignRun } from '../src/campaign/run';
 import { runSceneProgram } from './lib/run-campaign-probe';
 import { resolveProgramBindings } from '../src/campaign/bindings';
-import { QUIET_EARLY_INTENT_CASES } from '../src/campaign/quiet/early';
-import { QUIET_MIDDLE_INTENT_CASES } from '../tests/fixtures/quiet-middle-intents';
+import { SPATIAL_INTENT_CASES } from '../tests/fixtures/spatial-intents';
 import type { StageId } from '../src/campaign/types';
 process.env.AI_STRUCTURED_LOGS = 'false';
 const directory = `artifacts/shared-live/${new Date().toISOString().replaceAll(':', '-')}`;
@@ -22,8 +21,8 @@ if (!only || only === "jev") try {
 } catch (error) { results.push({ provider: 'jev', pass: false, error: error instanceof Error ? error.message : String(error) }); }
 const cases = [
   { stageId: 2 as StageId, segmentId: '02-v2-1', text: '상자가 보일 때마다 옆으로 밀어 줘', portable: true },
-  { ...QUIET_EARLY_INTENT_CASES.find((item) => item.segmentId === '03-v2-1')!, portable: false },
-  { ...QUIET_MIDDLE_INTENT_CASES.find((item) => item.segmentId === '07-v2-3')!, portable: false },
+  { ...SPATIAL_INTENT_CASES.find((item) => item.segmentId === '03-v2-1')!, portable: false },
+  { ...SPATIAL_INTENT_CASES.find((item) => item.segmentId === '07-v2-3')!, portable: false },
 ];
 for (const entry of cases.filter((item) => !only || item.segmentId === only)) {
   const stage = resolveStage(entry.stageId)!;

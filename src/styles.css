@@ -1148,7 +1148,28 @@ textarea {
   gap: 12px;
 }
 .compose-bottom {
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+}
+.compose-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.compose-cancel {
+  display: flex;
+  justify-content: center;
+  width: 40px;
+  flex: 0 0 40px;
+}
+.compose-actions > .primary {
+  width: clamp(140px, 40vw, 160px);
+  flex: 0 0 auto;
+  padding-inline: 12px;
+  gap: 12px;
+}
+.compose-bottom > .count {
+  white-space: nowrap;
 }
 /* Second edition: readable paper, guidance near the action, explicit memory priority. */
 .practice {
@@ -1786,5 +1807,26 @@ textarea {
   .chronicle-replay-head strong {
     font-size: 12px;
     line-height: 1.6;
+  }
+}
+
+.scene-caption .play-contact-hint {
+  display: block;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #52664b30;
+  color: #40573d;
+  font-size: 13px;
+  line-height: 1.6;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .scene-frame .scene-caption:has(.play-contact-hint) {
+    position: relative;
+    top: auto;
+    left: auto;
+    max-width: none;
+    margin: 10px 12px 16px;
   }
 }

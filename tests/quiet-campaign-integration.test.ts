@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { campaignAuthority } from "../src/campaign/authority";
 import { STAGES } from "../src/campaign/catalog";
 import { stageDynamics } from "../src/campaign/level";
-import { resolveStage } from "../src/campaign/registry";
+import { QUIET_RAIN_STAGE, QUIET_KITCHEN_STAGE, QUIET_FORGE_STAGE } from "./fixtures/quiet-worlds/early";
+import { QUIET_GARDEN_STAGE, QUIET_STOREHOUSE_STAGE, QUIET_THEATRE_STAGE } from "./fixtures/quiet-worlds/middle";
+import { QUIET_FOG_STAGE, QUIET_TOWER_STAGE, QUIET_WARDEN_STAGE } from "./fixtures/quiet-worlds/late";
 import {
   abandonStage,
   acknowledgePresentation,
@@ -13,12 +15,18 @@ import {
   writeStageProgram,
   type StageRun,
 } from "../src/campaign/run";
-import { QUIET_EARLY_INTENT_CASES } from "../src/campaign/quiet/early";
+import { QUIET_EARLY_INTENT_CASES } from "./fixtures/quiet-worlds/early";
 import type { InstructionProgram } from "../src/campaign/types";
 import { QUIET_LATE_INTENT_CASES } from "./fixtures/quiet-late-intents";
 import { QUIET_MIDDLE_INTENT_CASES } from "./fixtures/quiet-middle-intents";
 const probes = [...QUIET_EARLY_INTENT_CASES, ...QUIET_MIDDLE_INTENT_CASES, ...QUIET_LATE_INTENT_CASES];
-const authority = campaignAuthority(resolveStage);
+// Historical shared-v1 fixtures remain a regression check for the retired
+// content. Registered spatial-v1 scenes have their own integration tests.
+const quietStages = [QUIET_RAIN_STAGE, QUIET_KITCHEN_STAGE, QUIET_FORGE_STAGE,
+  QUIET_GARDEN_STAGE, QUIET_STOREHOUSE_STAGE, QUIET_THEATRE_STAGE,
+  QUIET_FOG_STAGE, QUIET_TOWER_STAGE, QUIET_WARDEN_STAGE];
+const resolveQuietStage = (id: number) => quietStages.find((stage) => stage.id === id) ?? null;
+const authority = campaignAuthority(resolveQuietStage);
 function restore(run: StageRun): StageRun {
   const parsed = authority.parse(JSON.parse(JSON.stringify({ kind: 'world', run })));
   expect(parsed, `serialized ${run.world.segmentId}, revision ${run.revision}, ${run.phase}`).not.toBeNull();
@@ -63,9 +71,9 @@ function acknowledgeAndRestore(run: StageRun): StageRun {
   return run.presentation ? authorize(acknowledgePresentation(run)) : run;
 }
 
-describe("shared campaign accumulated notebook replay", () => {
+describe("historical shared-v1 accumulated notebook replay", () => {
   it.each(STAGES.slice(1))("finishes chapter $id from one entrance notebook across serialized boundaries", (summary) => {
-    const stage = resolveStage(summary.id)!;
+    const stage = resolveQuietStage(summary.id)!;
     const programs = accumulatedPrograms(stage.id);
     let run = createCampaignRun(`integration-${stage.id}`, stage);
     run = {
@@ -93,7 +101,7 @@ describe("shared campaign accumulated notebook replay", () => {
   });
 
   it.each(STAGES.slice(1))("learns chapter $id one death-granted line at a time from the entrance", (summary) => {
-    const stage = resolveStage(summary.id)!;
+    const stage = resolveQuietStage(summary.id)!;
     const dynamics = stageDynamics(stage);
     let run = authorize(createCampaignRun(`learning-${stage.id}`, stage));
 

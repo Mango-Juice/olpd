@@ -30,7 +30,7 @@ export function campaignAuthority(
       const run = parseStageRun(raw.run);
       if (!run) return null;
       const stage = resolveStage(run.stageId);
-      if (!stage || stage.contentRevision !== "shared-v1" || run.contentRevision !== "shared-v1") return null;
+      if (!stage || stage.contentRevision !== run.contentRevision) return null;
       const allSegments = allStageSegments(stage);
       if (new Set(allSegments.map((segment) => segment.id)).size !== allSegments.length) return null;
       const ids = stage.segments.map((segment) => segment.id);

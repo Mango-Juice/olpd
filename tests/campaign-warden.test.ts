@@ -70,9 +70,20 @@ it.each([
 ] as const)("core %i completes %s through the real scheduler", (index, _label, plan) => { play(index, plan, undefined, true); });
 
 
-it("defaults to an already opened safe approach without choosing or actuating a seal solution", () => {
-  const run = play(1, seq(turnTo("pressure"), wait("10-2-pin", "removed", true), turnTo("vent")));
-  expect(run.events.some((event) => event.instructionId === null && event.target === "10-2-balcony" && event.actor === "hero")).toBe(true);
+it("requires a written move for an already opened safe approach", () => {
+  const prepared = seq(turnTo("pressure"), wait("10-2-pin", "removed", true), turnTo("vent"));
+  let short = createStageRun("warden-open-without-move", stage.segments[1].enter(null));
+  short = writeStageProgram(short, { version: 2, id: "prepare-balcony", text: "발코니로 통하는 길을 연다.", model: "fixture", scope: { stageId: 10, region: "10-2" }, guard: false, body: prepared });
+  short = departStage(short);
+  for (let i = 0; i < 100 && (short.phase === "running" || short.phase === "waiting"); i++) short = advanceStage(acknowledgePresentation(short), dynamics);
+  expect(short.phase).toBe("blocked");
+  expect(short.world.entities["10-2-pin"].properties.latchedOut).toBe(true);
+  expect(short.world.actors.hero.location.x).toBe(0);
+  expect(short.notebook.deaths).toBe(0);
+  expect(short.events.some((event) => event.actor === "hero" && event.target === "10-2-balcony")).toBe(false);
+
+  const run = play(1, seq(turnTo("pressure"), wait("10-2-pin", "removed", true), turnTo("vent"), action("move", "10-2-balcony")));
+  expect(run.events.some((event) => event.instructionId === "plan-1" && event.target === "10-2-balcony" && event.actor === "hero")).toBe(true);
   expect(run.notebook.instructions).toHaveLength(1);
   expect(run.notebook.deaths).toBe(0);
   const last = departStage(createStageRun("no-auto-role", stage.segments[5].enter(null)));

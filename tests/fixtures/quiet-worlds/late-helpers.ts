@@ -1,8 +1,8 @@
-import { resolveActionReferences } from "../conditions";
-import { makeEntity, makeHero, makeWorld } from "../level";
-import type { ActionResult } from "../program";
-import type { Actor, Entity, PhysicalAction, Scalar, StageId, WorldState } from "../types";
-import { authoredPublicKind } from "./public-kinds";
+import { resolveActionReferences } from "../../../src/campaign/conditions";
+import { makeEntity, makeHero, makeWorld } from "../../../src/campaign/level";
+import type { ActionResult } from "../../../src/campaign/program";
+import type { Actor, Entity, PhysicalAction, Scalar, StageId, WorldState } from "../../../src/campaign/types";
+import { authoredPublicKind } from "../../../src/campaign/public-kinds";
 
 export function quietEntity(
   id: string,

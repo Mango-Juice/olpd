@@ -60,4 +60,12 @@ describe("portable public entity bindings", () => {
       },
     });
   });
+  it("preserves an explicit visibility condition when a reusable rule rebinds", () => {
+    const old = portable();
+    old.text = "짐상자가 보이면 점프해";
+    old.body = { kind: "if", condition: { kind: "visible", entity: "old-box" }, then: { kind: "action", actor: "hero", verb: "jump", target: "old-box" } };
+    const box = { ...makeEntity("new-box", "짐상자", "02-next", 2), publicKind: "box" };
+    const result = resolveProgramBindings(makeWorld(2, "02-next", [box]), old);
+    expect(result).toMatchObject({ kind: "resolved", program: { body: { kind: "if", condition: { kind: "visible", entity: "new-box" }, then: { target: "new-box" } } } });
+  });
 });

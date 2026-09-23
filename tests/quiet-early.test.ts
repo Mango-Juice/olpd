@@ -11,7 +11,7 @@ import {
   QUIET_RAIN_STAGE,
   quietEarlyProgram,
   type QuietEarlyIntentCase,
-} from "../src/campaign/quiet/early";
+} from "./fixtures/quiet-worlds/early";
 import type { PhysicalAction, ProgramNode, WorldState } from "../src/campaign/types";
 
 const stages: readonly CampaignStageDefinition[] = [QUIET_RAIN_STAGE, QUIET_KITCHEN_STAGE, QUIET_FORGE_STAGE];

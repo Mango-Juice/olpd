@@ -244,3 +244,18 @@ describe("renderer animation contract", () => {
     expect(campaignActorVerb(parallel, "keeper")).toBe("hold");
   });
 });
+
+
+it("starts player abandonment immediately without replaying a nonexistent action", () => {
+  const world = makeWorld(2, "02-v2-1", [], makeHero("02-v2-1", 2));
+  const presentation: StagePresentation = { id: "run:4:abandon", before: world, after: world,
+    events: [], outcome: "death", repeated: false, life: 1, attempt: 1 };
+  expect(campaignPresentationDuration(presentation)).toBeLessThan(1000);
+  expect(campaignPresentationDuration(presentation, true)).toBeLessThan(500);
+  const frame = campaignHeroFrame({ presentation, progress: .1,
+    from: { x: 240, y: 400, rotation: 0 }, to: { x: 240, y: 400, rotation: 0 } });
+  expect(frame.pose).toBe("death");
+  expect(frame.opacity).toBeLessThan(1);
+  expect(campaignSoundCuesBetween(presentation, 0, .1)).toEqual(["death"]);
+  expect(campaignSoundCuesBetween(presentation, .1, 1)).toEqual([]);
+});

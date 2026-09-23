@@ -394,16 +394,52 @@ function validState(value: unknown): value is RunState {
     if (value.phase === "practice") return false;
   }
   if (
-    value.phase === "dead" &&
-    lastEvent?.outcome !== "death" &&
-    lastEvent?.outcome !== "blocked"
-  )
-    return false;
-  if (value.phase === "blocked" && lastEvent?.outcome !== "blocked")
-    return false;
-  if (
     value.history !== undefined &&
     !validHistory(value.history, value as unknown as RunState)
+  )
+    return false;
+  // A missing instruction stops the run without creating an action event.
+  // Earlier safe events may remain in lastEvent, but none may describe the
+  // current position, and a blocked save must still have no matching note.
+  const noActionAtCurrentPoint =
+    lastEvent === null ||
+    (lastEvent.outcome === "safe" &&
+      (lastEvent.room !== value.room || lastEvent.point !== value.point));
+  const currentPoint = rooms[value.room]?.points[value.point];
+  const hasMatchingInstruction =
+    currentPoint !== undefined &&
+    (value.instructions as Instruction[]).some((instruction) =>
+      instruction.interpretation.appliesTo.includes(currentPoint),
+    );
+  const blockedWithoutInstruction =
+    noActionAtCurrentPoint && !hasMatchingInstruction;
+  const historyEntries: unknown[] = isRecord(value.history) && Array.isArray(value.history.entries)
+    ? value.history.entries
+    : [];
+  let lastActionIndex = -1;
+  let lastAbandonIndex = -1;
+  let lastReviveIndex = -1;
+  for (let index = 0; index < historyEntries.length; index += 1) {
+    const entry = historyEntries[index];
+    if (!isRecord(entry)) continue;
+    if (entry.kind === "action") lastActionIndex = index;
+    if (entry.kind === "abandon") lastAbandonIndex = index;
+    if (entry.kind === "revive") lastReviveIndex = index;
+  }
+  const explicitlyAbandonedStop =
+    noActionAtCurrentPoint &&
+    lastAbandonIndex > Math.max(lastActionIndex, lastReviveIndex);
+  if (
+    value.phase === "dead" &&
+    lastEvent?.outcome !== "death" &&
+    lastEvent?.outcome !== "blocked" &&
+    !explicitlyAbandonedStop
+  )
+    return false;
+  if (
+    value.phase === "blocked" &&
+    lastEvent?.outcome !== "blocked" &&
+    !blockedWithoutInstruction
   )
     return false;
   return true;
