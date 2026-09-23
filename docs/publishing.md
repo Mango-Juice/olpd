@@ -5,10 +5,19 @@
 ## Git 및 배포 경계
 
 - .gitignore는 환경파일, 인증서/개인키, 의존성·빌드 결과, 배포 로컬 상태, 검증 산출물, 에디터/OS 파일, 루트의 게임 저장 내보내기를 제외한다. .env.example에는 빈 키와 공개 설정 기본값만 둔다.
-- .vercelignore는 같은 로컬 자료 외에 docs/tests/scripts/AGENTS.md도 업로드하지 않는다. Git에서는 코드·문서·검사·프로젝트 지침·잠금파일과 공개 아트를 추적한다.
+- .vercelignore는 같은 로컬 자료 외에 docs/tests/scripts/.github/README.md/AGENTS.md도 업로드하지 않는다. Git에서는 코드·문서·검사·프로젝트 지침·잠금파일과 공개 아트를 추적한다.
 - public/의 파일과 Vite 클라이언트 환경변수는 공개된다. 서버 키를 VITE_ 접두사로 옮기지 않는다. 소유 확인용 메타 토큰은 공개 HTML에 있어야 하는 값이며 API 비밀키가 아니다.
 - ignore 추가는 기존 Git 이력에서 파일을 지우지 않는다. 이번 점검에서는 당시 접근 가능한 23개 커밋 및 현재 추적 파일에서 로컬 .env.local의 3개 비밀값과 일치한 파일을 발견하지 못했다. 다른 과거 키나 연결할 원격 저장소의 별도 이력까지 검사한 것은 아니다.
-- 현재 원격 저장소는 연결되지 않았다. 사용자가 원격 URL을 정한 뒤 연결한다. 공개 전에 커밋 목록과 추적 파일을 확인하며 .env.local 등을 강제로 추가하지 않는다.
+- 원격 저장소는 `Mango-Juice/olpd`이며 기존 Vercel 프로젝트 `olpd`와 연결한다. 공개 전에 커밋 목록과 추적 파일을 확인하며 .env.local 등을 강제로 추가하지 않는다.
+
+## CI와 자동 배포
+
+- `.github/workflows/ci.yml`은 PR·`main` 변경에서 `npm ci`, `npm test`, `npm run build`를 실행한다. 공식 액션 릴리스의 커밋을 고정하고 Node.js는 프로젝트 지원 버전인 22를 유지한다. 배포 토큰과 운영 API 키는 사용하지 않는다.
+- Vercel 프로젝트 `olpd`와 `Mango-Juice/olpd`를 Git 연동한다. `main`은 운영 배포, 다른 브랜치와 PR은 Vercel 기본 Preview 배포를 사용한다. Jev·DeepSeek 키는 기존 Vercel 환경변수를 사용한다.
+- CI와 Vercel 배포는 각 서비스에서 병렬 실행한다. CI 통과를 병합 조건으로 강제하려면 GitHub의 `main` 보호 규칙에 `check` 검사를 필수로 지정한다.
+- `.vercelignore`는 배포 업로드에서 문서·검사·로컬 자료를 제외한다. GitHub Actions의 체크아웃·검사에는 적용되지 않는다.
+
+참고: [GitHub 워크플로 문법](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax), [Vercel GitHub 연동](https://vercel.com/docs/git/vercel-for-github).
 
 ## 검색과 링크 공유
 

@@ -32,3 +32,5 @@ docs/
 tests/
 scripts/
 AGENTS.md
+.github/
+README.md
