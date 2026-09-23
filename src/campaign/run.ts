@@ -1,3 +1,4 @@
+import { nextStagnation, STAGNATION_LIMIT, type StagnationState } from "./stagnation.js";
 import {
   createNotebook,
   deleteProgram,
@@ -22,6 +23,8 @@ export interface StageRun {
   revision: number;
   statusReason: string | null;
   waitingStates: string[];
+  /** Optional for saves written before stationary-action detection. */
+  stagnation?: StagnationState;
   phase: "bookmark" | "running" | "waiting" | "blocked" | "failed" | "cleared";
   world: WorldState;
   checkpoint: WorldState;
@@ -94,7 +97,7 @@ export function createCampaignRun(id: string, stage: CampaignStageDefinition): S
 }
 export function departStage(run: StageRun): StageRun {
   if (run.phase !== "bookmark") return run;
-  return { ...run, phase: "running", statusReason: null, waitingStates: [], revision: run.revision + 1, notebook: departNotebook(run.notebook) };
+  return { ...run, phase: "running", statusReason: null, waitingStates: [], stagnation: undefined, revision: run.revision + 1, notebook: departNotebook(run.notebook) };
 }
 
 function visibleIndex(run: StageRun, id: string): number {
@@ -354,7 +357,19 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
       changes: [],
     });
   }
-  const completedSegmentId = phase !== "failed" && dynamics.segmentComplete(world) ? world.segmentId : undefined;
+  const segmentComplete = phase !== "failed" && dynamics.segmentComplete(world);
+  let stagnation = phase === "running" && !segmentComplete
+    ? nextStagnation(run.stagnation, before, world, actions, instructionId, scheduled.execution, waitKey)
+    : undefined;
+  if (stagnation && stagnation.count >= STAGNATION_LIMIT) {
+    phase = "failed";
+    statusReason = "같은 자리에서 같은 행동만 반복하다 지쳤어요. 메모의 조건과 순서를 바꿔 다음 행동으로 이어 주세요.";
+    events.push({ segmentId: world.segmentId, id: `${run.id}:${run.revision + 1}:stagnation`,
+      tick: world.tick, attempt: world.attempt, instructionId, actor: actions[0]?.actor ?? null,
+      target: actions[0]?.target ?? null, outcome: "failure", reason: statusReason, changes: [] });
+    stagnation = undefined;
+  }
+  const completedSegmentId = segmentComplete ? world.segmentId : undefined;
   const following = completedSegmentId ? dynamics.nextSegment(world) : null;
   if (completedSegmentId && !following) phase = "cleared";
   const outcome: StagePresentation["outcome"] = phase === "failed"
@@ -397,6 +412,7 @@ export function advanceStage(run: StageRun, dynamics: StageDynamics): StageRun {
   return {
     ...run,
     waitingStates,
+    stagnation,
     revision,
     world: nextWorld,
     phase,
