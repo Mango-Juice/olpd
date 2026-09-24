@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from "react";
 /** Keep the scene, composer and launch button visible while the mobile keyboard is open. */
 export function useMobileKeyboardLayout(hasDraft: boolean): boolean {
   const [open, setOpen] = useState(false);
-  const fullHeight = useRef(window.innerHeight);
+  // Browser dimensions are sampled by update() in the effect, never during SSR.
+  const fullHeight = useRef(0);
   useEffect(() => {
     const viewport = window.visualViewport;
     const update = () => {

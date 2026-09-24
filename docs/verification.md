@@ -2,6 +2,8 @@
 
 ## 2026-09-24 — iOS 터치 제출과 키보드 닫힘 배치 보완
 
+- CI 후속 수정: 렌더 중 `window.innerHeight` 접근으로 Node 정적 렌더 테스트가 실패했다. ref 초기값을 0으로 두고 effect 안의 기존 update에서 브라우저 높이를 측정하도록 바꿨다. 전체 75개 파일·830개 테스트와 Chromium/WebKit `test:errors`를 다시 통과했다.
+
 - 기존 pointerdown 기본 동작 취소가 있는 상태에서 Playwright WebKit의 한 번 탭 제출 검사가 요청 0회로 실패했다. 공용 제출 버튼은 pointer/touch 기본 동작을 유지하고 mousedown의 포커스 이동만 막도록 수정했으며, 같은 검사가 통과했다. 9월 23일 pointerdown 방어는 이 변경으로 대체한다.
 - 키보드 축소 배치를 한 번 사용한 뒤 초안이 남아 있으면 blur·키보드 닫힘·해석 실패에도 배치를 유지한다. 초안 소비/삭제 후에는 일반 배치로 돌아간다. 1장과 후속 장에 같은 훅을 적용한다.
 - `npm run test:errors`, `BROWSER=webkit CHECK_LABEL=webkit npm run test:errors`: Chromium/WebKit에서 일반·조합 중 터치 1회당 요청 1회, IME Enter 무시, 키보드 닫힘 전후 문서 내 버튼 위치 유지와 화면 안 노출, 누름/뗌 사이 강제 blur 후 제출, 초안 삭제 후 배치 복원을 확인했다. 기존 오류·늦은 응답·저장 보존 검사도 통과했다.
