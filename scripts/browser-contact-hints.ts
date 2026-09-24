@@ -61,14 +61,10 @@ try {
  try {
   await page.route('**/api/interpret', route=>route.fulfill({json:{text:route.request().postDataJSON().text,action:'advance',appliesTo:['clear','pit'],uncertainty:0,model:'browser-fixture',rulesVersion:RULES_VERSION}}));
   await page.goto('http://localhost:5173/');await page.getByRole('button',{name:'이야기 SKIP',exact:true}).click();
-  const input=page.locator('#onboarding-instruction');
+  const input=page.locator('#instruction');
   await input.fill('앞으로 걸어');await input.press('Enter');
-  await expect(page.locator('.play-stage-progress-heading')).toContainText('1-2');
-  await expect(input).toHaveValue('');await input.fill('계속 걸어');await input.press('Enter');
-  await expect(page.locator('.play-contact-hint')).toContainText('뛰어넘을');
-  await input.fill('그대로 걸어');await input.press('Enter');
-  await expect(page.locator('.legacy-onboarding-result')).toContainText('쿠션');
-  await expect(page.locator('.play-contact-hint')).toHaveCount(0);
+  await expect(page.locator('.play-contact-hint')).toContainText('뛰어넘을', {timeout:20000});
+  await expect(page.locator('.chapter-learning-hint')).toContainText('구덩이가 있으면 뛰어');
  } finally {await context.close();}
- console.log('PASS actual crate vs ceiling hint, post-playback timing, once-per-discovery retry/reload, mobile, Chapter 1 onboarding, joint lifting and unreachable final latch; 0 paid calls');
+ console.log('PASS actual crate vs ceiling hint, post-playback timing, once-per-discovery retry/reload, mobile, Chapter 1 first gap, joint lifting and unreachable final latch; 0 paid calls');
 }finally{await browser.close();}

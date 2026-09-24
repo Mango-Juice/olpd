@@ -52,6 +52,8 @@ try {
   await page.getByRole("button", { name: "이야기 SKIP", exact: true }).click();
   await expect(page.locator(".play-stage-progress-heading")).toContainText("1-1 / 6개");
   const input = page.locator("#instruction");
+  await expect(page.locator(".chapter-learning-hint")).toContainText("앞으로 전진해");
+  await expect(input).toHaveAttribute("placeholder", "앞으로 전진해");
   await input.fill("오류 확인");
   await input.press("Enter");
   await expect(page.getByRole("alert")).toContainText("검사용 통신 오류");
@@ -66,6 +68,7 @@ try {
   await expect.poll(async () => phase(), { timeout: 20000 }).toBe("dead");
   await expect(input).toBeVisible({ timeout: 12000 });
   expect((await run()).room).toBe(1);
+  await expect(page.locator(".chapter-learning-hint")).toContainText("구덩이가 있으면 뛰어");
   const originalId = (await run()).instructions[0].id;
   await page.screenshot({ path: "artifacts/chapter-six/first-condition.png", fullPage: true });
   await page.reload();
@@ -77,6 +80,8 @@ try {
     await input.press("Enter");
     await expect.poll(async () => (await run()).instructions.length).toBe(i + 1);
     await expect.poll(async () => phase(), { timeout: 30000 }).toBe(i === 3 ? "cleared" : "dead");
+    if (i === 1) await expect(page.locator(".chapter-learning-hint")).toContainText("천장이 낮으면 숙여");
+    if (i === 2) await expect(page.locator(".chapter-learning-hint")).toHaveCount(0);
   }
   const final = await documentFor(page);
   expect(final.state.stages[0].bestScore).toBe(3);

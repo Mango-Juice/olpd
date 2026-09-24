@@ -29,6 +29,7 @@ interface MusicRuntime {
 }
 
 const SCHEDULE_AHEAD_SECONDS = 1.25;
+const MUSIC_GAIN_MULTIPLIER = 1.5;
 const desired: MusicPlaybackState = {
   stageId: MEMORY_DUNGEON_STAGE_ID,
   playing: false,
@@ -149,7 +150,7 @@ function syncMusic() {
   const gain = graph.context.createGain();
   const start = graph.context.currentTime + 0.04;
   gain.gain.setValueAtTime(0.0001, graph.context.currentTime);
-  gain.gain.exponentialRampToValueAtTime(track.gain, start + 0.5);
+  gain.gain.exponentialRampToValueAtTime(track.gain * MUSIC_GAIN_MULTIPLIER, start + 0.5);
   gain.connect(graph.destination);
   const current: MusicRuntime = {
     context: graph.context,

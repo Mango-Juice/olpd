@@ -13,9 +13,9 @@ try {
   await page.goto("http://localhost:5173/favicon.svg");
   await page.evaluate(async () => {
     const load = (path: string): Promise<Record<string, any>> => import(/* @vite-ignore */ path);
-    const [{ newRun }, { LEGACY_ROOMS: ROOMS }, { makeSave }] = await Promise.all([load("/src/game/core.ts"), load("/src/game/chapter-layout.ts"), load("/src/game/storage.ts")]);
+    const [{ newChapterRun }, { ROOMS }, { makeSave }] = await Promise.all([load("/src/game/core.ts"), load("/src/game/content.ts"), load("/src/game/storage.ts")]);
     const room = ROOMS.length - 1;
-    const state = { ...newRun(false), id: "storybook-fixture", phase: "cleared", room, point: ROOMS[room].points.length, revision: 41 };
+    const state = { ...newChapterRun(), id: "storybook-fixture", phase: "cleared", room, point: ROOMS[room].points.length, revision: 41 };
     localStorage.setItem("one-line-per-death:save", JSON.stringify(makeSave(state, { writer: "storybook-fixture", savedAt: 123456, tutorialCompleted: true, settings: { muted: true, reducedMotion: true } })));
   });
   await page.goto("http://localhost:5173/");

@@ -14,7 +14,8 @@ import type { RunCompletionAuthority } from "../src/campaign/progress";
 import { createCampaignState } from "../src/campaign/progress";
 import type { StageId } from "../src/campaign/types";
 import { LEGACY_ROOMS as ROOMS } from "../src/game/chapter-layout";
-import { addInstruction, newRun } from "../src/game/core";
+import { addInstruction, newChapterRun } from "../src/game/core";
+import { newRun } from "./fixtures/legacy-run";
 import {
   STORAGE_KEY,
   makeSave,
@@ -534,7 +535,7 @@ describe("campaign repository transactions", () => {
     expect(legacyStorage.getItem(STORAGE_KEY)).toBe(originalBytes);
   });
 
-  it("imports an ongoing replay and all completed archives idempotently", async () => {
+  it("drops a retired replay while importing completed summaries idempotently", async () => {
     const legacyStorage = new MemoryStorage();
     const current = makeLegacyFixture("legacy-replay", false, 30);
     expect(
@@ -563,11 +564,11 @@ describe("campaign repository transactions", () => {
     if (!migrated.ok) return;
     expect(migrated.value.state.stages[0]).toMatchObject({
       status: "completed",
-      activeRun: { runId: "legacy-replay", stageId: 1 },
+      activeRun: null,
       completion: { source: "legacy" },
     });
     expect(migrated.value.state.stages[1].status).toBe("unlocked");
-    expect(migrated.value.activeRuns[0]?.reference.runId).toBe("legacy-replay");
+    expect(migrated.value.activeRuns).toEqual([]);
     expect(migrated.value.state.stages[0].bestScore).toBe(0);
     expect(documentStore.current).not.toHaveProperty("archives");
 
@@ -578,7 +579,7 @@ describe("campaign repository transactions", () => {
     expect(archived).toEqual(originalArchives);
   });
 
-  it("preserves an ongoing tutorial as stage 1 active without unlocking stage 2", async () => {
+  it("drops an ongoing tutorial without unlocking stage 2", async () => {
     const legacyStorage = new MemoryStorage();
     const tutorialState = addInstruction(
       { ...newRun(true), id: "legacy-tutorial" },
@@ -608,7 +609,7 @@ describe("campaign repository transactions", () => {
     if (!result.ok) return;
     expect(result.value.state.stages[0]).toMatchObject({
       status: "unlocked",
-      activeRun: { runId: "legacy-tutorial", stageId: 1 },
+      activeRun: null,
       completion: null,
     });
     expect(result.value.state.stages[1].status).toBe("locked");
@@ -617,16 +618,7 @@ describe("campaign repository transactions", () => {
       reducedMotion: true,
     });
     expect(result.value.state.stages[0].bestScore).toBeNull();
-    expect(result.value.activeRuns[0]?.run).toMatchObject({
-      kind: "legacy",
-      save: {
-        state: {
-          tutorial: true,
-          tutorialStep: 1,
-          instructions: tutorialState.instructions,
-        },
-      },
-    });
+    expect(result.value.activeRuns).toEqual([]);
     expect(legacyStorage.getItem(STORAGE_KEY)).toBe(originalRaw);
   });
 
@@ -787,7 +779,7 @@ describe("campaign repository transactions", () => {
     expect(documentStore.current).toEqual(original);
   });
 
-  it("keeps a legacy active save's remembered best without inventing completion", async () => {
+  it("drops a retired active save without inventing completion", async () => {
     const legacyStorage = new MemoryStorage();
     const active = makeLegacyFixture("ongoing", false, 20);
     expect(writeSave({ ...active, best: 2 }, { storage: legacyStorage, expected: null }).ok).toBe(true);
@@ -799,6 +791,65 @@ describe("campaign repository transactions", () => {
     expect(migrated.ok).toBe(true);
     if (!migrated.ok) return;
     expect(migrated.value.state.stages[0]).toMatchObject({ status: "unlocked", completion: null, bestScore: null });
-    expect(migrated.value.activeRuns[0]?.run).toMatchObject({ kind: "legacy", save: { best: 2 } });
+    expect(migrated.value.activeRuns).toEqual([]);
+  });
+});
+
+
+describe("retired Chapter 1 cleanup", () => {
+  it.each([undefined, 1] as const)("removes layout %s active data only after a successful write", async (layoutVersion) => {
+    const store = new MemoryDocumentStore();
+    const repository = new CampaignRepository<CampaignStoredRun>(campaignAuthority(() => null), {
+      documentStore: store, legacyStorage: null, legacyArchiveReader: null,
+    });
+    const boot = await repository.loadOrCreate("tab");
+    if (!boot.ok) throw new Error("boot failed");
+    const previous: CampaignStoredRun = { kind: "legacy", save: makeSave({ ...newRun(false), layoutVersion }, { writer: "old" }) };
+    const saved = await repository.saveActiveRun(previous, { writer: "tab", expected: boot.value.state });
+    if (!saved.ok) throw new Error("save failed");
+    const untouched = structuredClone(store.current);
+    store.failNextWrite = true;
+    expect((await repository.loadOrCreate("new-tab")).ok).toBe(false);
+    expect(store.current).toEqual(untouched);
+    const cleaned = await repository.loadOrCreate("new-tab");
+    expect(cleaned.ok).toBe(true);
+    if (!cleaned.ok) return;
+    expect(cleaned.value.activeRuns).toEqual([]);
+    expect(cleaned.value.recoveries).toEqual([]);
+    expect(cleaned.value.state.stages[0].activeRun).toBeNull();
+    expect(JSON.stringify(store.current)).not.toContain(previous.save.state.id);
+    expect((await repository.loadOrCreate("reload")).ok).toBe(true);
+  });
+  it.each([2, 3] as const)("keeps layout %s main progress intact", async (layoutVersion) => {
+    const store = new MemoryDocumentStore();
+    const repository = new CampaignRepository<CampaignStoredRun>(campaignAuthority(() => null), {
+      documentStore: store, legacyStorage: null, legacyArchiveReader: null,
+    });
+    const boot = await repository.loadOrCreate("tab");
+    if (!boot.ok) throw new Error("boot failed");
+    const previous: CampaignStoredRun = { kind: "legacy", save: makeSave({ ...newChapterRun(), layoutVersion }, { writer: "tab" }) };
+    const saved = await repository.saveActiveRun(previous, { writer: "tab", expected: boot.value.state });
+    expect(saved.ok).toBe(true);
+    const loaded = await repository.loadOrCreate("reload");
+    expect(loaded.ok && loaded.value.activeRuns[0].run).toEqual(previous);
+  });
+  it("drops standalone tutorial and its onboarding record after successful storage", async () => {
+    const storage = new MemoryStorage() as MemoryStorage & { removeItem: (key: string) => void };
+    storage.removeItem = (key) => { storage.values.delete(key); };
+    const save = makeSave(newRun(true), { writer: "old" });
+    storage.setItem(STORAGE_KEY, JSON.stringify(save));
+    storage.setItem("one-line-per-death:legacy-onboarding:v1", "old learning");
+    const store = new MemoryDocumentStore();
+    const repository = new CampaignRepository<CampaignStoredRun>(campaignAuthority(() => null), {
+      documentStore: store, legacyStorage: storage, legacyArchiveReader: null,
+      migrateLegacyRun: (value) => ({ kind: "legacy", save: value }),
+    });
+    store.failNextWrite = true;
+    expect((await repository.loadOrCreate("tab")).ok).toBe(false);
+    expect(storage.getItem(STORAGE_KEY)).toBe(JSON.stringify(save));
+    const loaded = await repository.loadOrCreate("tab");
+    expect(loaded.ok && loaded.value.activeRuns).toEqual([]);
+    expect(storage.getItem(STORAGE_KEY)).toBeNull();
+    expect(storage.getItem("one-line-per-death:legacy-onboarding:v1")).toBeNull();
   });
 });

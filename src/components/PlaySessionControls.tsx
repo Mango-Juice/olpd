@@ -47,13 +47,13 @@ export function PlayLaunchControls({ dead, canWrite, disabled, onLaunch }: {
   </div>;
 }
 
-export function PlayDeathScore({ deaths, penaltyDeaths, best, tutorial = false }: {
-  deaths: number; penaltyDeaths: number; best?: number | null; tutorial?: boolean;
+export function PlayDeathScore({ deaths, penaltyDeaths, best }: {
+  deaths: number; penaltyDeaths: number; best?: number | null;
 }) {
   return <div className="record-line">
-    <span><strong className="score">{tutorial ? "—" : deaths + penaltyDeaths}</strong> 데스</span>
-    <span>사망·부활 <strong>{tutorial ? "연습" : deaths}</strong></span>
-    <span>삭제 패널티 <strong>{tutorial ? "없음" : penaltyDeaths}</strong></span>
+    <span><strong className="score">{deaths + penaltyDeaths}</strong> 데스</span>
+    <span>사망·부활 <strong>{deaths}</strong></span>
+    <span>삭제 패널티 <strong>{penaltyDeaths}</strong></span>
     {best != null && <span>최고 <strong>{best}</strong></span>}
   </div>;
 }

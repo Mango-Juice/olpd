@@ -1819,3 +1819,15 @@ textarea {
 .play-footer-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 16px; }
 .footer { flex-wrap: wrap; align-items: center; gap: 10px; }
 .play-footer-actions .subtle { min-height: 36px; }
+
+.chapter-learning-hint {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--mint, #a5d8be);
+  border-radius: 0 8px 8px 0;
+  background: rgba(165, 216, 190, 0.08);
+  color: var(--text, #ece9dd);
+  font-size: 0.875rem;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}

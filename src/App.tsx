@@ -1,12 +1,11 @@
 import { PlayFooter } from "./components/PlayFooter";
-import { chapterOneContactHint } from "./game/hints/chapter-one";
+import { chapterOneContactHint, chapterOneLearningHint } from "./game/hints/chapter-one";
 import { PlayContactHint } from "./components/PlayContactHint";
 import { postInterpretJson } from "./services/interpret-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isInterpretation } from "./game/interpretation";
-import { PrologueGuide } from "./components/PrologueGuide";
 import { DungeonCanvas } from "./components/DungeonCanvas";
-import { LegacyOnboarding, StoryPrologue } from "./components/LegacyOnboarding";
+import { StoryPrologue } from "./components/StoryPrologue";
 import { MemoryNotebook } from "./components/MemoryNotebook";
 import { PlayCommandComposer } from "./components/PlayCommandComposer";
 import {
@@ -39,7 +38,6 @@ import {
   DUNGEON_VERSION,
   OBSERVATIONS,
   RULES_VERSION,
-  TUTORIAL_ROOM,
 } from "./game/content";
 import { roomsForRun } from "./game/chapter-layout";
 import {
@@ -51,11 +49,8 @@ import {
   placeInstruction,
   newChapterRun,
   finishRetiredChapterTail,
-  practiceDeletion,
   retry,
   score,
-  skipTutorial,
-  startMain,
   startRun,
   step,
 } from "./game/core";
@@ -66,14 +61,6 @@ import {
   writeSave,
   type StorageResult,
 } from "./game/storage";
-import {
-  ONBOARDING_STAGES,
-  attachOnboardingHandoff,
-  loadOnboardingProgress,
-  progressBelongsToRun,
-  writeOnboardingProgress,
-  type OnboardingProgress,
-} from "./game/onboarding";
 import { playSound, setAudioMuted, unlockAudio } from "./game/audio";
 import { MEMORY_DUNGEON_STAGE_ID, setMusicPlayback } from "./game/music";
 import type {
@@ -94,6 +81,13 @@ const initialSettings: Settings = {
 };
 const readBoot = () => {
   const r = loadSave();
+  if (r.ok && r.value && (r.value.state.tutorial || !r.value.state.layoutVersion || r.value.state.layoutVersion === 1)) {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem("one-line-per-death:legacy-onboarding:v1");
+    } catch { /* Fresh play remains available if browser storage is unavailable. */ }
+    return { data: null, error: "" };
+  }
   return r.ok
     ? { data: r.value, error: "" }
     : {
@@ -102,7 +96,7 @@ const readBoot = () => {
       };
 };
 
-function legacyHints(room: Room, observation: Observation): readonly string[] {
+function chapterHints(room: Room, observation: Observation): readonly string[] {
   const first = `“${room.subtitle}” — 먼저 ${observation.label}의 모양과 안전한 길을 살펴보세요.`;
   if (observation.sidePath) {
     return [
@@ -132,7 +126,7 @@ function legacyHints(room: Room, observation: Observation): readonly string[] {
   ];
 }
 
-async function interpretOnboardingLine(
+async function interpretChapterLine(
   text: string,
   signal: AbortSignal,
 ): Promise<Interpretation> {
@@ -146,21 +140,17 @@ async function interpretOnboardingLine(
   return value;
 }
 
-export interface LegacyStorageBridge {
+export interface ChapterOneStorageBridge {
   initial: SaveData | null;
   startWithStory?: boolean;
   save: (data: SaveData) => Promise<StorageResult<void>>;
-  loadOnboarding?: () => OnboardingProgress | null;
-  saveOnboarding?: (
-    progress: OnboardingProgress,
-  ) => Promise<StorageResult<void>>;
   onRoadmap: () => void;
   onClearedPresentation: () => void;
   bestScore?: number | null;
 }
 
 export interface AppProps {
-  bridge?: LegacyStorageBridge;
+  bridge?: ChapterOneStorageBridge;
 }
 
 export default function App({ bridge }: AppProps = {}) {
@@ -172,30 +162,9 @@ export default function App({ bridge }: AppProps = {}) {
   );
   const stateRef = useRef(state);
   const chapterRooms = roomsForRun(state);
-  const legacyLayout = state.layoutVersion === undefined || state.layoutVersion === 1;
   const [showStory, setShowStory] = useState(
     () => !boot.data || bridge?.startWithStory === true,
   );
-  const [onboardingProgress, setOnboardingProgress] =
-    useState<OnboardingProgress | null>(() => {
-      let stored: OnboardingProgress | null = null;
-      try {
-        stored = bridge?.loadOnboarding
-          ? bridge.loadOnboarding()
-          : loadOnboardingProgress();
-      } catch {
-        stored = null;
-      }
-      if (!boot.data) return null;
-      return progressBelongsToRun(stored, state.id) ? stored : null;
-    });
-  const onboardingActive =
-    state.tutorial && onboardingProgress?.ownerRunId === state.id;
-  const [onboardingReady, setOnboardingReady] = useState(
-    () => !onboardingActive || boot.data !== null,
-  );
-  const [onboardingInitAttempt, setOnboardingInitAttempt] = useState(0);
-  const initializingOnboarding = useRef(false);
   const [started, setStarted] = useState(false);
   const [settings, setSettings] = useState<Settings>(
     boot.data?.settings ?? initialSettings,
@@ -203,7 +172,7 @@ export default function App({ bridge }: AppProps = {}) {
   const settingsRef = useRef(settings);
   const [best, setBest] = useState<number | null>(bridge?.bestScore ?? boot.data?.best ?? null);
   const bestRef = useRef(best);
-  const [tutorialCompleted, setTutorialCompleted] = useState(
+  const [tutorialCompleted] = useState(
     boot.data?.tutorialCompleted ?? false,
   );
   const completedRef = useRef(tutorialCompleted);
@@ -230,8 +199,6 @@ export default function App({ bridge }: AppProps = {}) {
   const [popup, setPopup] = useState<Popup>(null);
   const [shareInstructions, setShareInstructions] = useState(false);
   const [notice, setNotice] = useState("");
-  const practiceCount =
-    state.phase === "practice" ? Math.max(0, state.tutorialStep - 5) : 0;
   const [sharedEntry, setSharedEntry] = useState(
     () => new URLSearchParams(location.search).get("challenge") === "new",
   );
@@ -272,22 +239,19 @@ export default function App({ bridge }: AppProps = {}) {
     setMusicPlayback({
       stageId: MEMORY_DUNGEON_STAGE_ID,
       playing:
-        (started || onboardingActive) &&
+        started &&
         state.phase !== "cleared" &&
         !paused &&
         !popup &&
         !showHistory &&
         !hidden &&
         !conflict,
-      intensity: onboardingActive
-        ? "intro"
-        : state.room >= chapterRooms.length - 1
+      intensity: state.room >= chapterRooms.length - 1
           ? "climax"
           : "main",
     });
   }, [
     started,
-    onboardingActive,
     state.phase,
     state.room,
     chapterRooms.length,
@@ -366,66 +330,6 @@ export default function App({ bridge }: AppProps = {}) {
     },
     [persist],
   );
-  const persistOnboarding = useCallback(
-    async (next: OnboardingProgress) => {
-      let saved: StorageResult<void>;
-      try {
-        saved = bridge?.saveOnboarding
-          ? await bridge.saveOnboarding(next)
-          : writeOnboardingProgress(next);
-      } catch (cause) {
-        saved = {
-          ok: false,
-          error: {
-            code: "write",
-            message: "도입 기록을 저장하지 못했어요.",
-            cause,
-          },
-        };
-      }
-      if (!saved.ok) {
-        setStorageError(
-          "정식 도입 기록을 저장하지 못했어요. 현재 장면에서 다시 시도해 주세요.",
-        );
-        return false;
-      }
-      setOnboardingProgress(next);
-      setStorageError("");
-      return true;
-    },
-    [bridge],
-  );
-  useEffect(() => {
-    if (
-      !onboardingActive ||
-      onboardingReady ||
-      boot.data ||
-      !onboardingProgress ||
-      initializingOnboarding.current
-    ) {
-      return;
-    }
-    initializingOnboarding.current = true;
-    void (async () => {
-      try {
-        // The separate onboarding owner record must exist before the fresh
-        // legacy save, otherwise a reload could mistake it for an old save.
-        if (!(await persistOnboarding(onboardingProgress))) return;
-        if (!(await persist(stateRef.current))) return;
-        setOnboardingReady(true);
-      } finally {
-        initializingOnboarding.current = false;
-      }
-    })();
-  }, [
-    boot.data,
-    onboardingActive,
-    onboardingInitAttempt,
-    onboardingProgress,
-    onboardingReady,
-    persist,
-    persistOnboarding,
-  ]);
   const presentCleared = useCallback(
     (completed: RunState) => {
       if (
@@ -518,7 +422,7 @@ export default function App({ bridge }: AppProps = {}) {
     maxLength: CONFIG.maxInstructionLength,
     timeoutMs: CONFIG.requestTimeoutMs,
     blocked: !state.canWrite || conflict,
-    interpret: interpretOnboardingLine,
+    interpret: interpretChapterLine,
     execute: (value, text) => rememberAndGo(text, value),
     onStart: () => {
       unlockAudio();
@@ -618,7 +522,6 @@ export default function App({ bridge }: AppProps = {}) {
         setAnimating(false);
         setPaused(false);
         setNotice("");
-        setOnboardingProgress(null);
         setAwaitingNext(false);
         setReviving(false);
         setSceneMode("action");
@@ -626,87 +529,6 @@ export default function App({ bridge }: AppProps = {}) {
         setStarted(false);
         setPopup(null);
       }
-    } finally {
-      busy.current = false;
-    }
-  };
-  const enterMain = async () => {
-    if (busy.current || conflict) return;
-    busy.current = true;
-    const previous = completedRef.current;
-    try {
-      const next = startMain(stateRef.current);
-      completedRef.current = true;
-      if (await commit(next)) {
-        setTutorialCompleted(true);
-        setNotice("가르친 두 줄을 챙겼어요. 이제 진짜 모험을 시작해요.");
-      } else completedRef.current = previous;
-    } catch (cause) {
-      completedRef.current = previous;
-      setStorageError(
-        cause instanceof Error ? cause.message : "본편으로 이동하지 못했어요.",
-      );
-    } finally {
-      busy.current = false;
-    }
-  };
-  const completeFormalOnboarding = async (completed: OnboardingProgress) => {
-    if (busy.current || conflictRef.current) return;
-    busy.current = true;
-    const previous = completedRef.current;
-    try {
-      const next = skipTutorial(stateRef.current);
-      const handedOff = attachOnboardingHandoff(completed, next.id);
-      if (!(await persistOnboarding(handedOff))) return;
-      completedRef.current = true;
-      if (await commit(next)) {
-        setTutorialCompleted(true);
-        setStarted(true);
-        setPaused(false);
-        setNotice(
-          "네 번의 첫걸음을 마쳤어요. 빈 메모장과 지우개 두 개로 1-5를 시작해요.",
-        );
-      } else {
-        completedRef.current = previous;
-      }
-    } catch (cause) {
-      completedRef.current = previous;
-      setStorageError(
-        cause instanceof Error
-          ? cause.message
-          : "본편으로 이동하지 못했어요. 다시 시도해 주세요.",
-      );
-    } finally {
-      busy.current = false;
-    }
-  };
-  const skipPrologue = async () => {
-    if (busy.current || conflictRef.current || !stateRef.current.tutorial)
-      return;
-    busy.current = true;
-    const previous = completedRef.current;
-    cancelDraft();
-    try {
-      const next = skipTutorial(stateRef.current);
-      completedRef.current = true;
-      if (await commit(next)) {
-        setDraft("");
-        setAnimating(false);
-        setAwaitingNext(false);
-        setPaused(false);
-        setReviving(false);
-        setSceneMode("action");
-        setTutorialCompleted(true);
-        setStarted(true);
-        setNotice("프롤로그를 건너뛰었어요. 빈 메모장으로 첫 모험을 시작해요.");
-      } else completedRef.current = previous;
-    } catch (cause) {
-      completedRef.current = previous;
-      setStorageError(
-        cause instanceof Error
-          ? cause.message
-          : "프롤로그를 건너뛰지 못했어요.",
-      );
     } finally {
       busy.current = false;
     }
@@ -773,15 +595,12 @@ export default function App({ bridge }: AppProps = {}) {
     state.phase === "dead" && (!event || event.outcome === "safe");
   const stoppedWithoutInstruction =
     noMatchingInstruction || abandonedWithoutInstruction;
-  const contactHint = started && !animating && !state.tutorial ? chapterOneContactHint(state, onboardingProgress) : null;
+  const contactHint = started && !animating ? chapterOneContactHint(state) : null;
   const displayedRoom = animating && event ? event.room : state.room;
-  const stageNumber = Math.min(displayedRoom + 1, chapterRooms.length) +
-    (legacyLayout ? ONBOARDING_STAGES.length : 0);
-  const stageCount = chapterRooms.length +
-    (legacyLayout ? ONBOARDING_STAGES.length : 0);
-  const room = state.tutorial
-    ? TUTORIAL_ROOM
-    : chapterRooms[Math.min(displayedRoom, chapterRooms.length - 1)];
+  const learningHint = started ? chapterOneLearningHint(state, displayedRoom) : null;
+  const stageNumber = Math.min(displayedRoom + 1, chapterRooms.length);
+  const stageCount = chapterRooms.length;
+  const room = chapterRooms[Math.min(displayedRoom, chapterRooms.length - 1)];
   const isRest =
     !animating && (state.phase === "ready" || state.phase === "dead");
   const canCompose = started && isRest && state.canWrite;
@@ -838,124 +657,6 @@ export default function App({ bridge }: AppProps = {}) {
       );
     }
   };
-  if (onboardingActive && onboardingProgress) {
-    return (
-      <div
-        className={`shell ${keyboard ? "keyboard-open" : ""}`}
-        onPointerDown={() => unlockAudio()}
-      >
-        <PlayHeader
-          actions={
-            <>
-              {bridge && (
-                <button className="subtle" onClick={bridge.onRoadmap}>
-                  여정 지도
-                </button>
-              )}
-              <PlayUtilityActions
-                muted={settings.muted}
-                onHelp={() => setPopup("help")}
-                onToggleSound={() => {
-                  if (!onboardingReady || conflict) return;
-                  unlockAudio();
-                  void changeSettings({
-                    ...settings,
-                    muted: !settings.muted,
-                  });
-                }}
-                onSettings={() => setPopup("settings")}
-              />
-            </>
-          }
-        />
-        <PlayIntro
-          description="이야기를 지나, 네 가지 첫걸음을 몸으로 익혀요."
-          aside={
-            <>
-              기억의 던전 · 정식 도입
-              <small>CHAPTER 1 · STAGE 1–4</small>
-            </>
-          }
-        />
-        {conflict && (
-          <div className="banner" role="alert">
-            다른 창에서 기록이 바뀌었어요. 최신 기록을 불러온 뒤 이어가 주세요.
-          </div>
-        )}
-        {storageError && (
-          <div className="banner" role="alert">
-            {storageError}
-          </div>
-        )}
-        <LegacyOnboarding
-          key={onboardingProgress.ownerRunId}
-          progress={onboardingProgress}
-          settings={settings}
-          conflict={conflict}
-          ready={onboardingReady}
-          interpret={interpretOnboardingLine}
-          onProgressChange={persistOnboarding}
-          onComplete={completeFormalOnboarding}
-          onRetryInitialization={() =>
-            setOnboardingInitAttempt((attempt) => attempt + 1)
-          }
-        />
-        <PlayFooter local={!bridge} onRestart={() => setPopup("new")} disabled={!onboardingReady || conflict} />
-        {popup === "new" && <PlayRestartDialog firstChapter onRestart={() => void newChallenge()}
-          disabled={!onboardingReady || conflict} onClose={() => setPopup(null)} />}
-        {popup === "help" && (
-          <Modal title="네 번의 첫걸음" onClose={() => setPopup(null)}>
-            <p>
-              각 장면에서 보이는 목표와 상황을 한 줄로 적고 Enter를 누르면,
-              용사가 뜻을 읽어 바로 움직입니다.
-            </p>
-            <ul>
-              <li>입력한 한 줄은 저장된 뒤 같은 장면에서 곧바로 실행돼요.</li>
-              <li>실패해도 데스나 지우개를 쓰지 않고 같은 자리로 돌아와요.</li>
-              <li>
-                임시 한 줄은 연습 기록에만 남고 본편 메모로 복사되지 않아요.
-              </li>
-            </ul>
-            <button className="primary wide" onClick={() => setPopup(null)}>
-              알겠어요
-            </button>
-          </Modal>
-        )}
-        {popup === "settings" && (
-          <Modal title="작은 모험의 설정" onClose={() => setPopup(null)}>
-            <label>
-              <input
-                type="checkbox"
-                checked={settings.muted}
-                disabled={!onboardingReady || conflict}
-                onChange={(event) =>
-                  void changeSettings({
-                    ...settings,
-                    muted: event.target.checked,
-                  })
-                }
-              />
-              배경음악·효과음 끄기
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={settings.reducedMotion}
-                disabled={!onboardingReady || conflict}
-                onChange={(event) =>
-                  void changeSettings({
-                    ...settings,
-                    reducedMotion: event.target.checked,
-                  })
-                }
-              />
-              움직임과 장식 효과 줄이기
-            </label>
-          </Modal>
-        )}
-      </div>
-    );
-  }
   return (
     <div
       className={`shell ${keyboard ? "keyboard-open" : ""}`}
@@ -987,11 +688,7 @@ export default function App({ bridge }: AppProps = {}) {
           </>
         }
       />
-      <PlayIntro
-        aside={legacyLayout && boot.data ? <>
-          이전 기록 이어가기<small>CHAPTER 1 · OLD SAVE</small>
-        </> : undefined}
-      />
+      <PlayIntro />
       {conflict && (
         <div className="banner" role="alert">
           다른 탭에서 기록이 바뀌어 이 탭을 멈췄어요. 최신 기록을 불러오면
@@ -1009,8 +706,7 @@ export default function App({ bridge }: AppProps = {}) {
           </button>
         </div>
       )}
-      {!started && state.tutorial && <PrologueGuide />}
-      {showStory && !started && !state.tutorial && !legacyLayout ? (
+      {showStory && !started ? (
         <StoryPrologue
           onRead={() => void begin()}
           onSkip={() => void begin()}
@@ -1023,23 +719,8 @@ export default function App({ bridge }: AppProps = {}) {
           <div
             className={`scene-frame ${OBSERVATIONS[event?.observation ?? observation.id].sidePath && sceneMode !== "entrance" ? "has-side-path" : ""}`}
           >
-            <PlaySceneHeading eyebrow={state.tutorial ? "PROLOGUE · 시작의 방" : `첫 번째 여정 · STAGE 1-${stageNumber}`} title={room.name}>
-              {state.tutorial ? (
-                <button
-                  type="button"
-                  className="subtle"
-                  onClick={skipPrologue}
-                  disabled={conflict}
-                  aria-label="프롤로그 건너뛰기"
-                  style={{ pointerEvents: "auto" }}
-                >
-                  SKIP
-                </button>
-              ) : (
-                <span className="chapter-number">
-                  {stageNumber} / {stageCount}
-                </span>
-              )}
+            <PlaySceneHeading eyebrow={`첫 번째 여정 · STAGE 1-${stageNumber}`} title={room.name}>
+              <span className="chapter-number">{stageNumber} / {stageCount}</span>
             </PlaySceneHeading>
             <div className="canvas-holder">
               <DungeonCanvas
@@ -1106,7 +787,7 @@ export default function App({ bridge }: AppProps = {}) {
               }
               playing={started && (animating || state.phase === "running")}
               paused={paused}
-              label={state.tutorial ? "연습 기록" : "기억의 던전"}
+              label="기억의 던전"
               onTogglePause={async () => {
                 if (awaitingNext) {
                   if (await playNext()) {
@@ -1142,7 +823,7 @@ export default function App({ bridge }: AppProps = {}) {
               }}
             />
           )}
-          {!started && !state.tutorial && (
+          {!started && (
             <ol className="first-guide">
               <li>
                 <b>01</b>
@@ -1167,41 +848,13 @@ export default function App({ bridge }: AppProps = {}) {
               </li>
             </ol>
           )}
-          {state.tutorial ? (
-            <div className="journey" aria-label="튜토리얼">
-              {chapterRooms.map((_, i) => (
-                <span key={i} className={i === 0 ? "current" : ""} />
-              ))}
-            </div>
-          ) : (
-            <PlayStageProgress
-              chapter={1}
-              stages={[
-                ...(legacyLayout ? ONBOARDING_STAGES : []).map((stage) => ({
-                  id: `intro:${stage.id}`,
-                  title: stage.title,
-                })),
-                ...chapterRooms.map((chapterRoom, index) => ({
-                  id: `main:${index}`,
-                  title: chapterRoom.name,
-                })),
-              ]}
-              currentId={`main:${Math.min(displayedRoom, chapterRooms.length - 1)}`}
-              completedIds={[
-                ...(legacyLayout ? onboardingProgress?.completedStageIds.map(
-                  (id) => `intro:${id}`,
-                ) ?? [] : []),
-                ...chapterRooms.slice(
-                  0,
-                  !animating && state.phase === "cleared"
-                    ? chapterRooms.length
-                    : displayedRoom,
-                ).map(
-                  (_, index) => `main:${index}`,
-                ),
-              ]}
-            />
-          )}
+          <PlayStageProgress
+            chapter={1}
+            stages={chapterRooms.map((chapterRoom, index) => ({ id: `main:${index}`, title: chapterRoom.name }))}
+            currentId={`main:${Math.min(displayedRoom, chapterRooms.length - 1)}`}
+            completedIds={chapterRooms.slice(0, !animating && state.phase === "cleared" ? chapterRooms.length : displayedRoom).map((_, index) => `main:${index}`)}
+          />
+          {learningHint && <p className="chapter-learning-hint" role="note">{learningHint}</p>}
           {canCompose && (
             <>
               <PlayCommandComposer
@@ -1214,36 +867,24 @@ export default function App({ bridge }: AppProps = {}) {
                 error={error}
                 disabled={conflict}
                 maxLength={CONFIG.maxInstructionLength}
-                label={
-                  state.tutorial && state.instructions.length === 0
-                    ? "첫 번째 가르침"
-                    : "이번 생에서 남길 한 줄"
-                }
-                placeholder={
-                  state.tutorial && state.instructions.length === 0
-                    ? "앞으로 전진해"
-                    : state.tutorial
-                      ? "구덩이가 있으면 뛰어"
-                      : "이럴 때는, 이렇게 해줘…"
-                }
+                label="이번 생에서 남길 한 줄"
+                placeholder={state.instructions.length === 0 ? "앞으로 전진해" : "이럴 때는, 이렇게 해줘…"}
               />
               <PlayHints
-                hints={legacyHints(room, observation)}
-                resetKey={`${state.tutorial ? "prologue" : displayedRoom}:${observation.id}`}
+                hints={chapterHints(room, observation)}
+                resetKey={`${displayedRoom}:${observation.id}`}
               />
             </>
           )}
           {started &&
             isRest &&
-            !(state.tutorial && state.instructions.length === 0) &&
-            !(!legacyLayout && state.instructions.length === 0 && state.deaths === 0) && (
+            !(state.instructions.length === 0 && state.deaths === 0) && (
               <PlayLaunchControls
                 dead={state.phase === "dead"}
                 canWrite={state.canWrite}
                 disabled={
                   pending ||
-                  conflict ||
-                  (state.tutorial && state.instructions.length === 0)
+                  conflict
                 }
                 onLaunch={launch}
               />
@@ -1258,51 +899,6 @@ export default function App({ bridge }: AppProps = {}) {
             >
               부활하고 · +1데스
             </button>
-          )}
-          {started && !animating && state.phase === "practice" && (
-            <div className="composer">
-              <label>지우개 연습 · {Math.min(practiceCount + 1, 3)} / 3</label>
-              <p className="helper">
-                연습 지우개 {Math.max(0, 2 - practiceCount)}개 · 연습 비용{" "}
-                {practiceCount === 3 ? 3 : 0}데스
-              </p>
-              <p className="helper">
-                {practiceCount < 2
-                  ? "지우개가 있으면 한 줄당 하나를 사용해요."
-                  : practiceCount === 2
-                    ? "지우개가 없으면 한 줄당 3데스가 추가돼요. 새 작성 기회는 생기지 않아요."
-                    : "잘했어요. 연습 비용은 모두 사라지고, 실제로 쓴 두 줄만 가져가요."}
-              </p>
-              {practiceCount < 3 ? (
-                <>
-                  <blockquote className="practice">
-                    “
-                    {["언제나 뛰어", "항상 숙여", "샛길로만 가"][practiceCount]}
-                    ”
-                    <p>
-                      삭제 비용: {practiceCount < 2 ? "지우개 1개" : "3데스"} ·
-                      본편에는 영향 없음
-                    </p>
-                    <button
-                      className="secondary"
-                      onClick={async () => {
-                        if (await commit(practiceDeletion(stateRef.current)))
-                          playSound("erase", settings.muted);
-                      }}
-                    >
-                      이 연습 문장 지우기
-                    </button>
-                  </blockquote>
-                  <p className="helper">
-                    지운 지침은 실제 메모장에서 사라져요. 맞는 지침이 없으면 용사는 멈춰요.
-                  </p>
-                </>
-              ) : (
-                <button className="primary wide" onClick={enterMain}>
-                  두 줄을 챙겨, 본편으로 <span>→</span>
-                </button>
-              )}
-            </div>
           )}
           {started && !animating && state.phase === "cleared" && (
             <PlayClearPanel
@@ -1325,7 +921,6 @@ export default function App({ bridge }: AppProps = {}) {
             deaths={displayedDeaths}
             penaltyDeaths={state.penaltyDeaths}
             best={best}
-            tutorial={state.tutorial}
           />
         </section>
         <MemoryNotebook
@@ -1337,7 +932,6 @@ export default function App({ bridge }: AppProps = {}) {
           erasers={state.erasers}
           eraserCapacity={CONFIG.initialErasers}
           deletionPenalty={CONFIG.deletionPenalty}
-          tutorial={state.tutorial}
           activeId={started ? event?.instructionId : undefined}
           animating={animating}
           reviving={reviving}
@@ -1345,7 +939,6 @@ export default function App({ bridge }: AppProps = {}) {
             started &&
             state.phase === "dead" &&
             !animating &&
-            !state.tutorial &&
             !pending &&
             !conflict
           }
@@ -1354,45 +947,7 @@ export default function App({ bridge }: AppProps = {}) {
           onDelete={erase}
           onMove={changePriority}
           onPlace={placePriority}
-        >
-          {legacyLayout && onboardingProgress?.attempts.length ? (
-            <details className="onboarding-history">
-              <summary>
-                정식 도입 연습 기록 · {onboardingProgress.attempts.length}번
-              </summary>
-              <p>
-                아래 문장은 학습 기록이며, 본편에서 따르는 활성 메모와는
-                별개예요.
-              </p>
-              <ol>
-                {onboardingProgress.attempts.map((attempt) => (
-                  <li key={attempt.sequence}>
-                    <small>
-                      1-
-                      {ONBOARDING_STAGES.findIndex(
-                        (stage) => stage.id === attempt.stageId,
-                      ) + 1}
-                    </small>{" "}
-                    “{attempt.text}”
-                    <span>
-                      {attempt.applied
-                        ? `${ACTION_LABELS[attempt.action]} · ${attempt.succeeded ? "목표 도달" : "무료 복구"}`
-                        : "조건 불일치 · 실행 안 됨"}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </details>
-          ) : legacyLayout && boot.data && !state.tutorial ? (
-            <details className="onboarding-history">
-              <summary>이전 진행 이어가기 · 정식 도입 면제</summary>
-              <p>
-                기존 본편 기록을 그대로 이어가며, 플레이하지 않은 도입 완료
-                연혁은 만들지 않았어요.
-              </p>
-            </details>
-          ) : null}
-        </MemoryNotebook>
+        />
       </PlayLayout>
       </>
       )}
@@ -1410,7 +965,7 @@ export default function App({ bridge }: AppProps = {}) {
               .map((e) => (
                 <li key={e.id}>
                   <small>
-                    {state.tutorial ? "연습" : `${e.room + 1}번째 문`} ·{" "}
+                    {`${e.room + 1}번째 문`} ·{" "}
                     {OBSERVATIONS[e.observation].label}
                   </small>
                   <blockquote>{e.instructionText ?? "이전 버전의 자동 전진"}</blockquote>

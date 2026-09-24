@@ -3,7 +3,6 @@ import {
   CONFIG,
   OBSERVATIONS,
   RULES_VERSION,
-  TUTORIAL_ROOM,
 } from "./content";
 import { copyInstruction, getRunHistory } from "./history";
 import {
@@ -65,9 +64,7 @@ function recordTransition(
 }
 
 function pointsFor(state: RunState): ObservationId[] {
-  return state.tutorial
-    ? TUTORIAL_ROOM.points
-    : (roomsForRun(state)[state.room]?.points ?? ["clear"]);
+  return roomsForRun(state)[state.room]?.points ?? ["clear"];
 }
 
 function observationAt(state: RunState): ObservationId {
@@ -151,37 +148,6 @@ function assertValidInterpretation(interpretation: Interpretation): void {
   }
 }
 
-function assertTutorialInstruction(
-  state: RunState,
-  interpretation: Interpretation,
-): void {
-  if (!state.tutorial) return;
-  if (state.tutorialStep === 0) {
-    if (
-      interpretation.action !== "advance" ||
-      !interpretation.appliesTo.includes("clear")
-    ) {
-      throw new Error(
-        "첫 번째 줄은 평평한 길에서 전진하는 지침이어야 해요. “앞으로 전진해”처럼 적어 주세요.",
-      );
-    }
-    return;
-  }
-  if (state.tutorialStep === 2) {
-    if (
-      interpretation.action !== "jump" ||
-      !interpretation.appliesTo.includes("pit") ||
-      !interpretation.appliesTo.includes("bridge")
-    ) {
-      throw new Error(
-        "두 번째 줄은 구덩이와 끊어진 다리에서 점프하는 지침이어야 해요. “구덩이가 있으면 뛰어”처럼 적어 주세요.",
-      );
-    }
-    return;
-  }
-  throw new Error("지금은 튜토리얼 지침을 더 추가할 수 없어요.");
-}
-
 function hasSameAppliesTo(
   left: ObservationId[],
   right: ObservationId[],
@@ -192,13 +158,13 @@ function hasSameAppliesTo(
   );
 }
 
-/** Compatibility factory for pre-v2 tutorial/main journeys; new players use newChapterRun. */
-export function newRun(tutorial: boolean): RunState {
+/** One notebook from the first step through all six rooms. */
+export function newChapterRun(): RunState {
   return {
     id: createId(RUN_PREFIX),
     phase: "ready",
-    tutorial,
-    layoutVersion: 1,
+    tutorial: false,
+    layoutVersion: 3,
     tutorialStep: 0,
     instructions: [],
     room: 0,
@@ -206,7 +172,7 @@ export function newRun(tutorial: boolean): RunState {
     deaths: 0,
     penaltyDeaths: 0,
     erasers: CONFIG.initialErasers,
-    canWrite: tutorial,
+    canWrite: true,
     events: [],
     seen: [],
     lastEvent: null,
@@ -218,11 +184,6 @@ export function newRun(tutorial: boolean): RunState {
       entries: [],
     },
   };
-}
-
-/** One notebook from the first step through all six rooms; no separate practice handoff. */
-export function newChapterRun(): RunState {
-  return { ...newRun(false), layoutVersion: 3, canWrite: true };
 }
 
 /**
@@ -259,7 +220,6 @@ export function addInstruction(
   if ([...normalized].length > CONFIG.maxInstructionLength)
     throw new Error("한 줄은 80자까지 쓸 수 있어요.");
   assertValidInterpretation(interpretation);
-  assertTutorialInstruction(state, interpretation);
 
   const conflictingInstruction = state.instructions.find(
     (instruction) =>
@@ -285,20 +245,12 @@ export function addInstruction(
     },
     createdAt: nextRevision,
   };
-  const tutorialStep = state.tutorial
-    ? state.tutorialStep === 0
-      ? 1
-      : state.tutorialStep === 2
-        ? 3
-        : state.tutorialStep
-    : state.tutorialStep;
   const memory = appendMemory(state, instruction);
   return recordTransition(
     state,
     {
       instructions: memory.instructions,
       canWrite: memory.canWrite,
-      tutorialStep,
     },
     (revision) => ({
       kind: "write",
@@ -419,9 +371,6 @@ export function step(state: RunState): RunState {
         phase: "dead",
         deaths: state.deaths + 1,
         canWrite: grantMemoryWrite(state).canWrite,
-        tutorialStep: state.tutorial
-          ? Math.max(state.tutorialStep, 2)
-          : state.tutorialStep,
       },
       (revision) => ({
         kind: "action",
@@ -448,14 +397,9 @@ export function step(state: RunState): RunState {
   let room = state.room;
   let point = state.point + 1;
   let phase: RunState["phase"] = "running";
-  let tutorialStep = state.tutorialStep;
 
   if (point >= roomPoints.length || isRetiredChapterTail({ ...state, point })) {
-    if (state.tutorial) {
-      phase = "practice";
-      point = roomPoints.length;
-      tutorialStep = 5;
-    } else if (room >= roomsForRun(state).length - 1) {
+    if (room >= roomsForRun(state).length - 1) {
       phase = "cleared";
       point = roomPoints.length;
     } else {
@@ -471,7 +415,6 @@ export function step(state: RunState): RunState {
       room,
       point,
       phase,
-      tutorialStep,
       canWrite: memory.canWrite,
     },
     (revision) => ({
@@ -494,8 +437,6 @@ export function retry(state: RunState): RunState {
       room: 0,
       point: 0,
       canWrite: memory.canWrite,
-      tutorialStep:
-        state.tutorial && state.tutorialStep === 3 ? 4 : state.tutorialStep,
     },
     (revision) => ({
       kind: "revive",
@@ -505,12 +446,12 @@ export function retry(state: RunState): RunState {
   );
 }
 
-/** Deletes and charges in one immutable transition. Tutorial practice is presentation-only. */
+/** Deletes and charges in one immutable transition. */
 export function deleteInstruction(
   state: RunState,
   instructionId: string,
 ): RunState {
-  if (state.tutorial || state.phase !== "dead") return state;
+  if (state.phase !== "dead") return state;
   const index = state.instructions.findIndex(
     (instruction) => instruction.id === instructionId,
   );
@@ -545,10 +486,6 @@ export function abandon(state: RunState): RunState {
       phase: "dead",
       deaths: state.deaths + 1,
       canWrite: grantMemoryWrite(state).canWrite,
-      tutorialStep:
-        state.tutorial && state.tutorialStep === 1
-          ? 2
-          : state.tutorialStep,
     },
     (revision) => ({
       kind: "abandon",
@@ -556,58 +493,6 @@ export function abandon(state: RunState): RunState {
       life: state.deaths + 1,
     }),
   );
-}
-
-/** Completes one disposable notebook exercise without altering the real notebook or score. */
-export function practiceDeletion(state: RunState): RunState {
-  if (
-    !state.tutorial ||
-    state.phase !== "practice" ||
-    state.tutorialStep < 5 ||
-    state.tutorialStep >= 8
-  )
-    return state;
-  return bump(state, { tutorialStep: state.tutorialStep + 1 });
-}
-
-/** Skips any in-progress tutorial and starts a fresh, writable main run. */
-export function skipTutorial(tutorialState: RunState): RunState {
-  if (!tutorialState.tutorial) {
-    throw new Error("진행 중인 튜토리얼에서만 건너뛸 수 있어요.");
-  }
-  const state = newRun(false);
-  return {
-    ...state,
-    canWrite: true,
-    revision: tutorialState.revision + 1,
-  };
-}
-
-/** Starts the scored dungeon with the two instructions actually confirmed in the tutorial. */
-export function startMain(tutorialState: RunState): RunState {
-  if (
-    !tutorialState.tutorial ||
-    tutorialState.phase !== "practice" ||
-    tutorialState.instructions.length !== 2 ||
-    tutorialState.tutorialStep !== 8
-  ) {
-    throw new Error(
-      "튜토리얼 연습을 마친 뒤 두 줄의 지침을 챙겨 본편을 시작해 주세요.",
-    );
-  }
-  const state = newRun(false);
-  const instructions = tutorialState.instructions.map(copyInstruction);
-  return {
-    ...state,
-    instructions,
-    revision: tutorialState.revision + 1,
-    history: {
-      version: 1,
-      complete: true,
-      initialInstructions: instructions.map(copyInstruction),
-      entries: [],
-    },
-  };
 }
 
 export function score(state: RunState): number {

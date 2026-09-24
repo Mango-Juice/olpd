@@ -1,3 +1,4 @@
+import { newRun } from "./fixtures/legacy-run";
 import { describe, expect, it } from "vitest";
 import {
   abandon,
@@ -5,13 +6,10 @@ import {
   currentObservation,
   deleteInstruction,
   moveInstruction,
-  newRun,
+  newChapterRun,
   placeInstruction,
   retry,
   score,
-  skipTutorial,
-  startMain,
-  practiceDeletion,
   startRun,
   step,
 } from "../src/game/core";
@@ -41,164 +39,7 @@ function advanceUntilTerminal(state: RunState): RunState {
   return next;
 }
 
-describe("tutorial and main run", () => {
-  it("rejects tutorial shortcuts without consuming the writing slot", () => {
-    const initial = newRun(true);
-    expect(() =>
-      addInstruction(
-        initial,
-        "항상 뛰어",
-        interpretation("jump", ["clear", "pit", "bridge"]),
-      ),
-    ).toThrow("첫 번째 줄은 평평한 길에서 전진하는 지침이어야 해요.");
-    expect(initial.canWrite).toBe(true);
-    expect(initial.instructions).toHaveLength(0);
-
-    let state = addInstruction(
-      initial,
-      "앞으로 전진해",
-      interpretation("advance", ["clear"]),
-    );
-    state = step(step(startRun(state)));
-    expect(state.phase).toBe("blocked");
-    expect(state.deaths).toBe(0);
-    state = abandon(state);
-    expect(state.tutorialStep).toBe(2);
-    expect(() =>
-      addInstruction(state, "구덩이만 뛰어", interpretation("jump", ["pit"])),
-    ).toThrow(
-      "두 번째 줄은 구덩이와 끊어진 다리에서 점프하는 지침이어야 해요.",
-    );
-    expect(state.canWrite).toBe(true);
-    expect(state.instructions).toHaveLength(1);
-  });
-
-  it("walks, stops at the pit, explicitly abandons, and reaches practice", () => {
-    let state = newRun(true);
-    expect(state.canWrite).toBe(true);
-    state = addInstruction(
-      state,
-      "앞으로 전진해",
-      interpretation("advance", ["clear"]),
-    );
-    expect(state.tutorialStep).toBe(1);
-    state = startRun(state);
-    state = step(state);
-    expect(currentObservation(state).id).toBe("pit");
-    state = step(state);
-    expect(state.phase).toBe("blocked");
-    expect(state.tutorialStep).toBe(1);
-    expect(state.deaths).toBe(0);
-    expect(currentObservation(state).id).toBe("pit");
-    state = abandon(state);
-    expect(state.tutorialStep).toBe(2);
-    expect(state.canWrite).toBe(true);
-
-    state = addInstruction(
-      state,
-      "구덩이가 있으면 뛰어",
-      interpretation("jump", ["pit", "bridge"]),
-    );
-    expect(state.tutorialStep).toBe(3);
-    state = retry(state);
-    expect(state.tutorialStep).toBe(4);
-    state = advanceUntilTerminal(startRun(state));
-    expect(state.phase).toBe("practice");
-    expect(state.tutorialStep).toBe(5);
-
-    const beforePracticeDelete = state;
-    expect(deleteInstruction(state, state.instructions[0].id)).toBe(
-      beforePracticeDelete,
-    );
-
-    expect(() => startMain(state)).toThrow();
-    for (let i = 0; i < 3; i++) state = practiceDeletion(state);
-    expect(state.tutorialStep).toBe(8);
-    const main = startMain(state);
-    expect(main.tutorial).toBe(false);
-    expect(main.phase).toBe("ready");
-    expect(main.instructions).toHaveLength(2);
-    expect(main.deaths).toBe(0);
-    expect(main.penaltyDeaths).toBe(0);
-    expect(main.erasers).toBe(2);
-    expect(main.canWrite).toBe(false);
-    expect(main.revision).toBe(state.revision + 1);
-  });
-
-  it("lets the tutorial offer the required jump lesson again after an unused writing chance", () => {
-    let state = addInstruction(
-      newRun(true),
-      "앞으로 전진해",
-      interpretation("advance", ["clear"]),
-    );
-    state = step(step(startRun(state)));
-    expect(state.phase).toBe("blocked");
-    state = abandon(state);
-    expect(state.tutorialStep).toBe(2);
-    state = retry(state);
-    expect(state.tutorialStep).toBe(2);
-    state = step(step(startRun(state)));
-    expect(state.phase).toBe("blocked");
-    state = abandon(state);
-    expect(state.phase).toBe("dead");
-    expect(state.tutorialStep).toBe(2);
-    expect(state.canWrite).toBe(true);
-    expect(() =>
-      addInstruction(state, "구덩이만 뛰어", interpretation("jump", ["pit"])),
-    ).toThrow(
-      "두 번째 줄은 구덩이와 끊어진 다리에서 점프하는 지침이어야 해요.",
-    );
-    expect(
-      addInstruction(
-        state,
-        "구덩이가 있으면 뛰어",
-        interpretation("jump", ["pit", "bridge"]),
-      ).tutorialStep,
-    ).toBe(3);
-  });
-
-  it("starts the main dungeon only from completed tutorial practice", () => {
-    expect(() => startMain(newRun(true))).toThrow("튜토리얼 연습을 마친 뒤");
-    expect(() => startMain(newRun(false))).toThrow("튜토리얼 연습을 마친 뒤");
-  });
-
-  it("skips an in-progress tutorial into a fresh writable main run", () => {
-    let tutorial = addInstruction(
-      newRun(true),
-      "앞으로 전진해",
-      interpretation("advance", ["clear"]),
-    );
-    tutorial = advanceUntilTerminal(startRun(tutorial));
-    const main = skipTutorial(tutorial);
-
-    expect(main.id).not.toBe(tutorial.id);
-    expect(main.tutorial).toBe(false);
-    expect(main.phase).toBe("ready");
-    expect(main.room).toBe(0);
-    expect(main.point).toBe(0);
-    expect(main.instructions).toEqual([]);
-    expect(main.canWrite).toBe(true);
-    expect(main.erasers).toBe(2);
-    expect(main.deaths).toBe(0);
-    expect(main.penaltyDeaths).toBe(0);
-    expect(main.events).toEqual([]);
-    expect(main.lastEvent).toBeNull();
-    expect(main.history).toEqual({
-      version: 1,
-      complete: true,
-      initialInstructions: [],
-      entries: [],
-    });
-    expect(main.revision).toBe(tutorial.revision + 1);
-  });
-
-  it("refuses to skip after the main dungeon has started", () => {
-    const main = newRun(false);
-    expect(() => skipTutorial(main)).toThrow(
-      "진행 중인 튜토리얼에서만 건너뛸 수 있어요.",
-    );
-  });
-
+describe("chapter one core", () => {
   it("uses the highest-priority applicable instruction and includes it in repeat identity", () => {
     let state = newRun(false);
     state = { ...state, canWrite: true };
@@ -279,16 +120,18 @@ describe("scoring and committed transitions", () => {
     expect(score(stopped)).toBe(0);
 
     let afterMovement = addInstruction(
-      newRun(true),
+      newChapterRun(),
       "평평한 길에서는 앞으로 가",
       interpretation("advance", ["clear"]),
     );
     afterMovement = step(startRun(afterMovement));
-    expect(afterMovement.point).toBe(1);
+    expect(afterMovement.room).toBe(1);
+    expect(afterMovement.point).toBe(0);
     const beforeStop = afterMovement;
     afterMovement = step(afterMovement);
     expect(afterMovement.phase).toBe("blocked");
-    expect(afterMovement.point).toBe(1);
+    expect(afterMovement.room).toBe(1);
+    expect(afterMovement.point).toBe(0);
     expect(afterMovement.events).toBe(beforeStop.events);
     expect(afterMovement.lastEvent).toBe(beforeStop.lastEvent);
     expect(afterMovement.history?.entries).toBe(beforeStop.history?.entries);
@@ -569,22 +412,16 @@ describe("scoring and committed transitions", () => {
   });
 
   it("learns from explicit abandonments, applies deletion, and clears every main room", () => {
-    let tutorial = newRun(true);
-    tutorial = addInstruction(
-      tutorial,
+    let state = addInstruction(
+      { ...newRun(false), canWrite: true },
       "앞으로 전진해",
       interpretation("advance", ["clear"]),
     );
-    tutorial = step(step(startRun(tutorial)));
-    tutorial = abandon(tutorial);
-    tutorial = addInstruction(
-      tutorial,
+    state = addInstruction(
+      { ...state, canWrite: true },
       "구덩이가 있으면 뛰어",
       interpretation("jump", ["pit", "bridge"]),
     );
-    tutorial = advanceUntilTerminal(startRun(retry(tutorial)));
-    for (let i = 0; i < 3; i++) tutorial = practiceDeletion(tutorial);
-    let state = startMain(tutorial);
 
     state = advanceUntilTerminal(startRun(state));
     expect(state.phase).toBe("blocked");

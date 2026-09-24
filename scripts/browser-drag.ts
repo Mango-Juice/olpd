@@ -1,7 +1,7 @@
 import { chromium, expect, type Page } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createFirstForkDeathSave } from "./browser-fixtures";
-import { installLegacyBrowserHarness } from "./legacy-browser-harness";
+import { installChapterOneBrowserHarness } from "./chapter-one-browser-harness";
 
 const base = process.env.APP_URL ?? "http://localhost:5173";
 await mkdir("artifacts", { recursive: true });
@@ -95,7 +95,7 @@ try {
     viewport: { width: 1440, height: 1000 },
   });
   const desktop = await desktopContext.newPage();
-  await installLegacyBrowserHarness(desktop);
+  await installChapterOneBrowserHarness(desktop);
   desktop.on("pageerror", (error) => errors.push(`desktop: ${error.message}`));
   await installAndOpen(desktop);
   const desktopControls = await checkControls(desktop);
@@ -159,7 +159,7 @@ try {
     isMobile: true,
   });
   const mobile = await mobileContext.newPage();
-  await installLegacyBrowserHarness(mobile);
+  await installChapterOneBrowserHarness(mobile);
   mobile.on("pageerror", (error) => errors.push(`mobile: ${error.message}`));
   await installAndOpen(mobile);
   const mobileControls = await checkControls(mobile);

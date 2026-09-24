@@ -158,6 +158,15 @@ function validReference(value: unknown): value is CampaignRunReference {
   );
 }
 
+function retiredChapterOneState(value: unknown): boolean {
+  return isRecord(value) && typeof value.id === "string" &&
+    (value.tutorial === true || value.layoutVersion === undefined || value.layoutVersion === 1);
+}
+
+function retiredChapterOnePayload(value: unknown): boolean {
+  return isRecord(value) && value.kind === "legacy" && isRecord(value.save) && retiredChapterOneState(value.save.state);
+}
+
 function legacyWorldRun(payload: unknown): { reference: CampaignRunReference; cleared: boolean } | null {
   if (!isRecord(payload) || payload.kind !== "world") return null;
   const run = payload.run;
@@ -731,8 +740,9 @@ export class CampaignRepository<Run extends object> {
       }
     }
 
-    const applicableCurrent = currentSave;
-    if (applicableCurrent === null && legacyArchives.length === 0) {
+    const applicableCurrent = currentSave && retiredChapterOneState(currentSave.state) &&
+      (currentSave.state.tutorial || currentSave.state.phase !== "cleared") ? null : currentSave;
+    if (currentSave === null && legacyArchives.length === 0) {
       try {
         return {
           ok: true,
@@ -1216,7 +1226,54 @@ export class CampaignRepository<Run extends object> {
     return committed;
   }
 
-  async loadOrCreate(
+  /** Drop retired first-chapter active content before the current runtime can parse it. */
+  async loadOrCreate(writer: string): Promise<CampaignRepositoryResult<CampaignRepositorySnapshot<Run>>> {
+    const read = await this.store.read();
+    if (!read.ok) return read;
+    const hasRetired = (value: unknown): boolean => isRecord(value) && Array.isArray(value.activeRuns) &&
+      value.activeRuns.some((entry) => isRecord(entry) && retiredChapterOnePayload(entry.payload));
+    if (hasRetired(read.value)) {
+      const removed = await this.store.mutate((current) => {
+        if (!isRecord(current) || !Array.isArray(current.activeRuns)) return failure("conflict", "캠페인 기록이 다른 창에서 바뀌었습니다.");
+        const state = validateCampaignState(current.state);
+        if (!state.ok) return failure("corrupt", state.error.message);
+        const discarded = current.activeRuns.filter((entry) => isRecord(entry) && retiredChapterOnePayload(entry.payload));
+        for (const entry of discarded) {
+          if (!isRecord(entry) || !validReference(entry.reference) || entry.reference.stageId !== 1 ||
+            !isRecord(entry.payload) || !isRecord(entry.payload.save) || !isRecord(entry.payload.save.state) ||
+            entry.reference.runId !== entry.payload.save.state.id ||
+            !state.value.stages[0].activeRun || !sameReference(state.value.stages[0].activeRun, entry.reference)) {
+            return failure("corrupt", "이전 1장 기록의 연결을 확인하지 못했습니다.");
+          }
+        }
+        const cleaned = { ...current, activeRuns: current.activeRuns.filter((entry) => !discarded.includes(entry)),
+          state: { ...state.value, writer, revision: state.value.revision + (discarded.length ? 1 : 0),
+            stages: state.value.stages.map((stage) => stage.stageId === 1 && discarded.length ? { ...stage, activeRun: null } : stage) } };
+        const document = current.version === CAMPAIGN_DOCUMENT_VERSION ? { ok: true as const, value: cleaned as unknown as CampaignDocument }
+          : this.migrateToCurrentDocument(cleaned, writer);
+        if (!document.ok) return document;
+        const decoded = this.decodeDocument(document.value);
+        return decoded.ok ? { ok: true, value: { document: document.value, result: decoded.value } } : decoded;
+      });
+      if (!removed.ok) return removed;
+    }
+    const loaded = await this.loadOrCreateCurrent(writer);
+    if (!loaded.ok) return loaded;
+    const storage = this.resolveLegacyStorage();
+    if (storage && typeof storage.removeItem === "function") {
+      try {
+        const bytes = storage.getItem(STORAGE_KEY);
+        if (bytes !== null) {
+          const value: unknown = JSON.parse(bytes);
+          if (isRecord(value) && retiredChapterOneState(value.state) && storage.getItem(STORAGE_KEY) === bytes) storage.removeItem(STORAGE_KEY);
+        }
+        storage.removeItem("one-line-per-death:legacy-onboarding:v1");
+      } catch { /* Retry cleanup after a later successful load. */ }
+    }
+    return loaded;
+  }
+
+  private async loadOrCreateCurrent(
     writer: string,
   ): Promise<CampaignRepositoryResult<CampaignRepositorySnapshot<Run>>> {
     const read = await this.store.read();
@@ -1290,6 +1347,9 @@ export class CampaignRepository<Run extends object> {
     if (!isRecord(read.value) || read.value.version !== CAMPAIGN_DOCUMENT_VERSION) {
       return this.loadOrCreate(isRecord(read.value) && isRecord(read.value.state) &&
         typeof read.value.state.writer === "string" ? read.value.state.writer : "migration");
+    }
+    if (Array.isArray(read.value.activeRuns) && read.value.activeRuns.some((entry) => isRecord(entry) && retiredChapterOnePayload(entry.payload))) {
+      return this.loadOrCreate(isRecord(read.value.state) && typeof read.value.state.writer === "string" ? read.value.state.writer : "migration");
     }
     return this.decodeDocument(read.value);
   }

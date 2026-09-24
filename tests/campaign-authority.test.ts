@@ -1,3 +1,4 @@
+import { newRun } from "./fixtures/legacy-run";
 import { expect, it } from "vitest";
 import { campaignAuthority } from "../src/campaign/authority";
 import { createCampaignRun, createStageRun, departStage, writeStageProgram } from "../src/campaign/run";
@@ -5,7 +6,7 @@ import { parseStageRun } from "../src/campaign/run-validation";
 import { RAIN_INTRO, RAIN_PRACTICE } from "./fixtures/campaign-worlds/rain";
 import type { CampaignStageDefinition } from "../src/campaign/level";
 import { makeSave } from "../src/game/storage";
-import { newRun } from "../src/game/core";
+
 import { createCursor, stepProgram } from "../src/campaign/program";
 import type { InstructionProgram } from "../src/campaign/types";
 import { resolveStage } from "../src/campaign/registry";
@@ -100,15 +101,4 @@ it("validates saved execution positions against the corresponding instruction tr
   const undonePrefix = structuredClone(run);
   undonePrefix.execution.active!.cursor.children[0].status = "pending";
   expect(parseStageRun(undonePrefix)).toBeNull();
-});
-
-it("keeps legacy onboarding with its owning save and rejects cross-run learning records", async () => {
-  const { createOnboardingProgress } = await import("../src/game/onboarding");
-  const save = makeSave(newRun(true), { writer: "learning-test", settings: { muted: true, reducedMotion: true }, tutorialCompleted: false });
-  const onboarding = createOnboardingProgress(save.state.id);
-  const parsed = authority.parse({ kind: "legacy", save, onboarding });
-  expect(parsed?.kind).toBe("legacy");
-  if (parsed?.kind === "legacy") expect(parsed.onboarding).toEqual(onboarding);
-  expect(authority.parse({ kind: "legacy", save, onboarding: { ...onboarding, ownerRunId: "another-run" } })).toBeNull();
-  expect(authority.parse({ kind: "legacy", save })).not.toBeNull();
 });

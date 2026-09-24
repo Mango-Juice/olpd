@@ -25,7 +25,6 @@ export interface MemoryNotebookProps {
   erasers: number;
   eraserCapacity?: number;
   deletionPenalty?: number;
-  tutorial?: boolean;
   activeId?: string | null;
   animating: boolean;
   reviving: boolean;
@@ -54,7 +53,6 @@ export function MemoryNotebook({
   erasers,
   eraserCapacity = MEMORY_INITIAL_ERASERS,
   deletionPenalty = MEMORY_DELETE_PENALTY,
-  tutorial = false,
   activeId,
   animating,
   reviving,
@@ -79,7 +77,7 @@ export function MemoryNotebook({
   const [priorityNotice, setPriorityNotice] = useState("");
 
   const reorderEnabled = canReorder && !busy && !deleting;
-  const deleteEnabled = canDelete && !busy && !deleting && !tutorial;
+  const deleteEnabled = canDelete && !busy && !deleting;
   const selected = entries.find((entry) => entry.id === deleteId);
 
   const resetDrag = useCallback(() => {
@@ -202,13 +200,11 @@ export function MemoryNotebook({
         }}
       >
         <p className="memory-priority">상황이 맞으면 위쪽 메모부터 ↓</p>
-        {!tutorial && (
-          <p className="paper-note">
-            {entries.length < 2
-              ? "쓴 한 줄은 죽어도 남고, 조건이 맞을 때마다 따라요."
-              : "위에서 처음 맞는 한 줄을 따라요. 손잡이나 ··· 메뉴로 순서를 바꿔 보세요."}
-          </p>
-        )}
+        <p className="paper-note">
+          {entries.length < 2
+            ? "쓴 한 줄은 죽어도 남고, 조건이 맞을 때마다 따라요."
+            : "위에서 처음 맞는 한 줄을 따라요. 손잡이나 ··· 메뉴로 순서를 바꿔 보세요."}
+        </p>
         <span className="sr-only" role="status">
           {priorityNotice}
         </span>

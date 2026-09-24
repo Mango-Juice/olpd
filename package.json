@@ -25,7 +25,6 @@
     "test:campaign:recovery": "tsx scripts/browser-campaign-recovery.ts",
     "eval:campaign:smoke": "tsx --env-file=.env.local scripts/evaluate-shared-live.ts",
     "test:canvas": "tsx scripts/browser-canvas-pause.ts",
-    "test:onboarding:legacy": "tsx scripts/browser-legacy-onboarding.ts",
     "generate:og": "tsx scripts/generate-social-image.ts",
     "check:seo": "tsx scripts/check-public-site.ts"
   },

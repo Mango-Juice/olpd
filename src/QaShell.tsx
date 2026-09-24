@@ -12,7 +12,6 @@ import { createCampaignRun, createStageRun, type StageRun } from "./campaign/run
 import { parseProgram } from "./campaign/validation";
 import { parseStageRun } from "./campaign/run-validation";
 import { newChapterRun } from "./game/core";
-import { isOnboardingProgress, type OnboardingProgress } from "./game/onboarding";
 import { makeSave } from "./game/storage";
 import type { Settings } from "./game/types";
 import type { StageId } from "./campaign/types";
@@ -23,7 +22,7 @@ const KEY = "one-line-per-death:qa:spatial-v1";
 const qaStage = resolveStage;
 const authority = campaignAuthority(qaStage);
 const initialSettings: Settings = { muted: true, reducedMotion: true };
-type Slot = { label: string; run: CampaignStoredRun; onboarding?: OnboardingProgress };
+type Slot = { label: string; run: CampaignStoredRun };
 function load(): Record<string, Slot> {
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(KEY) ?? "{}");
@@ -41,8 +40,9 @@ function load(): Record<string, Slot> {
           run = { kind: "world", run: candidate };
         }
       }
-      const stageId = run?.kind === "world" ? run.run.stageId : run?.save.state.tutorial ? 0 : 1;
-      return run && (String(stageId) === id || ((id === "0" || id === "1") && run.kind === "legacy")) ? [[id, { label: value.label, run, ...(isOnboardingProgress(value.onboarding) ? { onboarding: value.onboarding } : {}) }]] : [];
+      if (run?.kind === "legacy" && (run.save.state.tutorial || !run.save.state.layoutVersion || run.save.state.layoutVersion === 1)) return [];
+      const stageId = run?.kind === "world" ? run.run.stageId : 1;
+      return run && (String(stageId) === id || ((id === "0" || id === "1") && run.kind === "legacy")) ? [[id, { label: value.label, run }]] : [];
     }));
   } catch { return {}; }
 }
@@ -61,11 +61,9 @@ export default function QaShell() {
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState("");
   const current = selected === null ? null : slots[selected];
-  function persist(id: string, slot: Slot, preserveLearning = true): boolean {
+  function persist(id: string, slot: Slot): boolean {
     try {
-      const currentLearning = slotsRef.current[id]?.onboarding;
-      const stored = preserveLearning && currentLearning ? { ...slot, onboarding: currentLearning } : slot;
-      const next = { ...slotsRef.current, [id]: stored };
+      const next = { ...slotsRef.current, [id]: slot };
       localStorage.setItem(KEY, JSON.stringify(next)); slotsRef.current = next; setSlots(next); setError(""); return true;
     } catch { setError("QA 기록을 저장하지 못했어요. 브라우저 저장 공간을 확인해 주세요."); return false; }
   }
@@ -80,7 +78,7 @@ export default function QaShell() {
       if (!stage) return;
       slot = { label: `${id}장 · ${stage.title}`, run: { kind: "world", run: createCampaignRun(crypto.randomUUID(), stage) } };
     }
-    if (persist(key, slot, false)) { setSelected(key); }
+    if (persist(key, slot)) { setSelected(key); }
   }
   function jumpToSegment(segmentId: string) {
     if (current?.run.kind !== "world" || selected === null) return;
@@ -97,8 +95,6 @@ export default function QaShell() {
   let content;
   if (current?.run.kind === "legacy") {
     content = <App key={current.run.save.state.id} bridge={{ initial: current.run.save, startWithStory: selected === "0",
-      loadOnboarding: () => slotsRef.current[selected!]?.onboarding ?? null,
-      saveOnboarding: async (progress) => persist(selected!, { ...slotsRef.current[selected!], onboarding: progress }, false) ? { ok: true, value: undefined } : { ok: false, error: { code: "write", message: "QA 도입 저장 실패" } },
       save: async (save) => persist(selected!, { ...slotsRef.current[selected!], run: { kind: "legacy", save } }) ? { ok: true, value: undefined } : { ok: false, error: { code: "write", message: "QA 저장 실패" } },
       onRoadmap: back, onClearedPresentation: back, bestScore: null }} />;
   } else if (current?.run.kind === "world") {

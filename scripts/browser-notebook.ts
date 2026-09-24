@@ -7,7 +7,7 @@ import {
   FIXTURE_INSTRUCTIONS,
   runUntilTerminal,
 } from "./browser-fixtures";
-import { installLegacyBrowserHarness } from "./legacy-browser-harness";
+import { installChapterOneBrowserHarness } from "./chapter-one-browser-harness";
 const base = process.env.APP_URL ?? "http://localhost:5173";
 const label = process.env.CHECK_LABEL ?? "local";
 await mkdir("artifacts", { recursive: true });
@@ -35,7 +35,7 @@ const context = await browser.newContext({
   permissions: ["clipboard-read", "clipboard-write"],
 });
 const page = await context.newPage();
-await installLegacyBrowserHarness(page);
+await installChapterOneBrowserHarness(page);
 const state = () =>
   page.evaluate(
     () => JSON.parse(localStorage.getItem("one-line-per-death:save")!).state,

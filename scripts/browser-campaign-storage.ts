@@ -10,17 +10,17 @@ try {
   await page.goto(base + '/favicon.svg');
   const evidence = await page.evaluate(async () => {
     const load = (path: string): Promise<Record<string, any>> => import(/* @vite-ignore */ path);
-    const [repositoryModule, authorityModule, core, content, storage] = await Promise.all([
+    const [repositoryModule, authorityModule, core, content, storage, legacyFixture] = await Promise.all([
       load('/src/campaign/repository.ts'), load('/src/campaign/authority.ts'),
-      load('/src/game/core.ts'), load('/src/game/chapter-layout.ts'), load('/src/game/storage.ts'),
+      load('/src/game/core.ts'), load('/src/game/chapter-layout.ts'), load('/src/game/storage.ts'), load('/tests/fixtures/legacy-run.ts'),
     ]);
     const { CampaignRepository, CAMPAIGN_DATABASE } = repositoryModule;
     const { makeSave, STORAGE_KEY } = storage;
-    const current = makeSave({ ...core.newRun(false), id: 'browser-active' }, { writer: 'old-tab', savedAt: 30 });
+    const current = makeSave({ ...legacyFixture.newRun(false), id: 'browser-active' }, { writer: 'old-tab', savedAt: 30 });
     const room = content.LEGACY_ROOMS.length - 1;
-    const completed = makeSave({ ...core.newRun(false), id: 'browser-old-clear', phase: 'cleared', room, point: content.LEGACY_ROOMS[room].points.length, deaths: 4 }, { writer: 'old-tab', savedAt: 20 });
+    const completed = makeSave({ ...legacyFixture.newRun(false), id: 'browser-old-clear', phase: 'cleared', room, point: content.LEGACY_ROOMS[room].points.length, deaths: 4 }, { writer: 'old-tab', savedAt: 20 });
     localStorage.setItem(STORAGE_KEY, JSON.stringify(current));
-    const sourceBefore = localStorage.getItem(STORAGE_KEY);
+    localStorage.setItem('one-line-per-death:legacy-onboarding:v1', JSON.stringify({ ownerRunId: current.state.id }));
     await new Promise<void>((resolve, reject) => {
       const opening = indexedDB.open('one-line-per-death:chronicles', 1);
       opening.onupgradeneeded = () => opening.result.createObjectStore('stages', { keyPath: 'id' });
@@ -42,17 +42,24 @@ try {
     const repository = new CampaignRepository(authority, { migrateLegacyRun: (save: any) => ({ kind: 'legacy', save }) });
     const migrated = await repository.loadOrCreate('browser-a');
     if (!migrated.ok) throw Error('Migration failed: ' + migrated.error.code);
-    if (migrated.value.state.stages[0].bestScore !== 4 || migrated.value.activeRuns.length !== 1 || 'archives' in migrated.value) throw Error('Migration did not preserve summary/current run');
-    const stamp = { writer: migrated.value.state.writer, revision: migrated.value.state.revision };
+    if (migrated.value.state.stages[0].bestScore !== 4 || migrated.value.activeRuns.length !== 0 || 'archives' in migrated.value) throw Error('Migration did not preserve summary and discard retired run');
+    if (localStorage.getItem(STORAGE_KEY) !== null || localStorage.getItem('one-line-per-death:legacy-onboarding:v1') !== null) throw Error('Retired local source retained');
+    const retiredSaved = await repository.saveActiveRun({ kind: 'legacy', save: current }, { writer: 'old-root', expected: migrated.value.state });
+    if (!retiredSaved.ok) throw Error('Retired root fixture failed');
+    const cleaned = await repository.loadOrCreate('browser-a');
+    if (!cleaned.ok || cleaned.value.activeRuns.length || cleaned.value.recoveries.length || cleaned.value.state.stages[0].activeRun) throw Error('Retired root active was not deleted');
+    if (cleaned.value.state.stages[0].bestScore !== 4 || cleaned.value.state.stages[1].status !== 'unlocked') throw Error('Retired cleanup lost completion summary');
+    const modern = makeSave({ ...core.newChapterRun(), id: 'browser-modern-active' }, { writer: 'browser-a' });
+    const stamp = { writer: cleaned.value.state.writer, revision: cleaned.value.state.revision };
     failSerialization = true;
-    const aborted = await repository.saveActiveRun({ kind: 'legacy', save: current }, { writer: 'browser-a', expected: stamp });
+    const aborted = await repository.saveActiveRun({ kind: 'legacy', save: modern }, { writer: 'browser-a', expected: stamp });
     failSerialization = false;
     if (aborted.ok || aborted.error.code !== 'write') throw Error('Expected real IDB clone failure');
     const afterAbort = await repository.load();
     if (!afterAbort.ok || afterAbort.value.state.revision !== stamp.revision) throw Error('Aborted transaction changed state');
-    let next = await repository.saveActiveRun({ kind: 'legacy', save: current }, { writer: 'browser-b', expected: stamp });
+    let next = await repository.saveActiveRun({ kind: 'legacy', save: modern }, { writer: 'browser-b', expected: stamp });
     if (!next.ok) throw Error('Active save failed');
-    const stale = await repository.saveActiveRun({ kind: 'legacy', save: current }, { writer: 'browser-c', expected: stamp });
+    const stale = await repository.saveActiveRun({ kind: 'legacy', save: modern }, { writer: 'browser-c', expected: stamp });
     if (stale.ok || stale.error.code !== 'conflict') throw Error('Stale write accepted');
     const readRoot = () => new Promise<any>((resolve, reject) => {
       const opening = indexedDB.open(CAMPAIGN_DATABASE);
@@ -94,7 +101,8 @@ try {
       latestRunId: next.value.state.stages[0].completion.run.runId,
       chapter2Status: next.value.state.stages[1].status,
       oldArchiveCleared: oldArchiveCount === 0,
-      activeSourcePreserved: localStorage.getItem(STORAGE_KEY) === sourceBefore,
+      retiredSourceDeleted: localStorage.getItem(STORAGE_KEY) === null,
+      retiredRootDeleted: cleaned.value.activeRuns.length === 0 && cleaned.value.recoveries.length === 0,
       completedRuns: sizes.length, firstSize: sizes[0], finalSize: sizes.at(-1), maxSize: Math.max(...sizes),
     };
   });
@@ -104,7 +112,8 @@ try {
   expect(evidence.latestRunId).toBe('replay-029');
   expect(evidence.chapter2Status).toBe('unlocked');
   expect(evidence.oldArchiveCleared).toBe(true);
-  expect(evidence.activeSourcePreserved).toBe(true);
+  expect(evidence.retiredSourceDeleted).toBe(true);
+  expect(evidence.retiredRootDeleted).toBe(true);
   expect(evidence.maxSize - evidence.firstSize).toBeLessThan(64);
   await mkdir('artifacts', { recursive: true });
   await writeFile('artifacts/browser-compact-storage.json', JSON.stringify(evidence, null, 2));
