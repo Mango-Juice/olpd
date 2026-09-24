@@ -1,9 +1,7 @@
 import {
   addInstruction,
-  newRun,
-  practiceDeletion,
+  newChapterRun,
   retry,
-  startMain,
   startRun,
   step,
 } from "../src/game/core";
@@ -81,32 +79,13 @@ export function runUntilTerminal(state: RunState): RunState {
   return next;
 }
 
-export function createCompletedTutorial(): RunState {
-  let state = newRun(true);
-  state = runUntilTerminal(
-    addInstruction(
-      state,
-      FIXTURE_INSTRUCTIONS[0].text,
-      FIXTURE_INSTRUCTIONS[0].interpretation,
-    ),
-  );
-  state = runUntilTerminal(
-    addInstruction(
-      state,
-      FIXTURE_INSTRUCTIONS[1].text,
-      FIXTURE_INSTRUCTIONS[1].interpretation,
-    ),
-  );
-  for (let index = 0; index < 3; index += 1) {
-    state = practiceDeletion(state);
-  }
-  return state;
-}
-
 export function createFirstForkDeathSave(
   writer = "browser-fixture",
 ): SaveData {
-  let state = runUntilTerminal(startMain(createCompletedTutorial()));
+  let state = newChapterRun();
+  for (const instruction of FIXTURE_INSTRUCTIONS.slice(0, 2)) {
+    state = runUntilTerminal(addInstruction(state, instruction.text, instruction.interpretation));
+  }
   state = runUntilTerminal(
     addInstruction(
       state,

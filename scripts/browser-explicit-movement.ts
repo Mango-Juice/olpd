@@ -1,7 +1,7 @@
 import { chromium, expect } from '@playwright/test';
-import { newRun } from '../src/game/core';
+import { newChapterRun } from '../src/game/core';
 import { makeSave } from '../src/game/storage';
-import { installLegacyBrowserHarness } from './legacy-browser-harness';
+import { installChapterOneBrowserHarness } from './chapter-one-browser-harness';
 
 const browser = await chromium.launch();
 let apiCalls = 0;
@@ -14,8 +14,8 @@ try {
     page.on('request', request => { if (request.method() === 'POST' && request.url().includes('/api/')) apiCalls++; });
     const key = chapter === 1 ? 'one-line-per-death:save' : 'one-line-per-death:qa:spatial-v1';
     if (chapter === 1) {
-      await installLegacyBrowserHarness(page);
-      const raw = JSON.stringify(makeSave(newRun(false), { writer: 'explicit-walking-browser', savedAt: Date.now() }));
+      await installChapterOneBrowserHarness(page);
+      const raw = JSON.stringify(makeSave({ ...newChapterRun(), canWrite: false }, { writer: 'explicit-walking-browser', savedAt: Date.now() }));
       await page.addInitScript(({ key, raw }) => { if (!localStorage.getItem(key)) localStorage.setItem(key, raw); }, { key, raw });
     }
     const enter = async () => {

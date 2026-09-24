@@ -1,4 +1,3 @@
-import { isOnboardingProgress, progressBelongsToRun, type OnboardingProgress } from "../game/onboarding";
 import { loadSave } from "../game/storage";
 import { score as legacyScore } from "../game/core";
 import type { SaveData } from "../game/types";
@@ -9,7 +8,7 @@ import { parseStageRun } from "./run-validation";
 import type { StageId } from "./types";
 
 export type CampaignStoredRun =
-  | { kind: "legacy"; save: SaveData; onboarding?: OnboardingProgress }
+  | { kind: "legacy"; save: SaveData }
   | { kind: "world"; run: StageRun };
 
 export function campaignAuthority(
@@ -22,10 +21,7 @@ export function campaignAuthority(
       if (raw.kind === "legacy") {
         const parsed = loadSave({ getItem: () => JSON.stringify(raw.save), setItem: () => undefined });
         if (!parsed.ok || !parsed.value) return null;
-        if (raw.onboarding !== undefined &&
-          (!isOnboardingProgress(raw.onboarding) || !progressBelongsToRun(raw.onboarding, parsed.value.state.id))) return null;
-        return { kind: "legacy", save: parsed.value,
-          ...(raw.onboarding !== undefined ? { onboarding: structuredClone(raw.onboarding) as OnboardingProgress } : {}) };
+        return { kind: "legacy", save: parsed.value };
       }
       if (raw.kind !== "world") return null;
       const run = parseStageRun(raw.run);

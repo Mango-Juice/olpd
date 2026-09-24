@@ -1,9 +1,10 @@
+import { newRun } from "./fixtures/legacy-run";
 import { describe, expect, it } from "vitest";
 import {
   abandon,
   addInstruction,
   moveInstruction,
-  newRun,
+  newChapterRun,
   retry,
   startRun,
   step,
@@ -188,7 +189,7 @@ describe("save validation and preservation", () => {
 
   it("saves an uneventful stop and its explicit abandonment without accepting a forged stop", () => {
     const storage = new MemoryStorage();
-    let state = addInstruction(newRun(true), "앞으로 전진해", {
+    let state = addInstruction(newChapterRun(), "앞으로 전진해", {
       ...jumpInterpretation,
       action: "advance",
       appliesTo: ["clear"],

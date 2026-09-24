@@ -1,13 +1,11 @@
+import { newRun } from "./fixtures/legacy-run";
 import { describe, expect, it } from "vitest";
 import {
   abandon,
   addInstruction,
   deleteInstruction,
   moveInstruction,
-  newRun,
-  practiceDeletion,
   retry,
-  startMain,
   startRun,
   step,
 } from "../src/game/core";
@@ -144,40 +142,6 @@ describe("run history", () => {
       life: 1,
     });
     expect(history.entries).toHaveLength(3);
-  });
-
-  it("starts main with a clean complete chronicle and the two actual tutorial notes", () => {
-    let tutorial = newRun(true);
-    tutorial = addInstruction(
-      tutorial,
-      "앞으로 전진해",
-      interpretation("advance", ["clear"]),
-    );
-    tutorial = step(step(startRun(tutorial)));
-    tutorial = abandon(tutorial);
-    tutorial = addInstruction(
-      tutorial,
-      "구덩이가 있으면 뛰어",
-      interpretation("jump", ["pit", "bridge"]),
-    );
-    tutorial = retry(tutorial);
-    tutorial = startRun(tutorial);
-    while (tutorial.phase === "running") tutorial = step(tutorial);
-    for (let index = 0; index < 3; index += 1) {
-      tutorial = practiceDeletion(tutorial);
-    }
-
-    const main = startMain(tutorial);
-    expect(main.history).toEqual({
-      version: 1,
-      complete: true,
-      initialInstructions: main.instructions,
-      entries: [],
-    });
-    expect(main.history?.initialInstructions).not.toBe(main.instructions);
-    expect(main.history?.initialInstructions.map((item) => item.id)).toEqual(
-      tutorial.instructions.map((item) => item.id),
-    );
   });
 
   it("loads old saves, reconstructs only actions, and keeps later history incomplete", () => {

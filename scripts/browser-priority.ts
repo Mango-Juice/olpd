@@ -1,7 +1,7 @@
 import { chromium, expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createFirstForkDeathSave } from "./browser-fixtures";
-import { installLegacyBrowserHarness } from "./legacy-browser-harness";
+import { installChapterOneBrowserHarness } from "./chapter-one-browser-harness";
 
 const base = process.env.APP_URL ?? "http://localhost:5173";
 const label = process.env.CHECK_LABEL ?? "v2-local";
@@ -12,7 +12,7 @@ const fixture = JSON.stringify(originalSave);
 const original = originalSave.state;
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-await installLegacyBrowserHarness(page);
+await installChapterOneBrowserHarness(page);
 const errors: string[] = [];
 page.on("pageerror", (e) => errors.push(e.message));
 const saved = () =>

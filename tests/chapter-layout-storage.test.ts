@@ -1,9 +1,10 @@
+import { newRun } from "./fixtures/legacy-run";
 import { describe, expect, it } from "vitest";
 import { campaignAuthority } from "../src/campaign/authority";
 import { resolveStage } from "../src/campaign/registry";
 import { roomsForRun, LEGACY_ROOMS } from "../src/game/chapter-layout";
 import { ROOMS } from "../src/game/content";
-import { newRun } from "../src/game/core";
+
 import { loadSave, makeSave, STORAGE_KEY } from "../src/game/storage";
 import type { SaveData } from "../src/game/types";
 

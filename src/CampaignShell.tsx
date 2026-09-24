@@ -1,6 +1,6 @@
 import { postInterpretJson } from "./services/interpret-api";
 import { useEffect, useMemo, useRef, useState } from "react";
-import App, { type LegacyStorageBridge } from "./App";
+import App, { type ChapterOneStorageBridge } from "./App";
 import { StageRoadmap } from "./components/StageRoadmap";
 import { CampaignPlay } from "./components/CampaignPlay";
 import { CampaignRepository, type CampaignRepositoryResult, type CampaignRepositorySnapshot } from "./campaign/repository";
@@ -8,7 +8,6 @@ import { campaignAuthority, type CampaignStoredRun } from "./campaign/authority"
 import { resolveStage } from "./campaign/registry";
 import { createCampaignRun, type StageRun } from "./campaign/run";
 import { parseProgram } from "./campaign/validation";
-import { loadOnboardingProgress, progressBelongsToRun, type OnboardingProgress } from "./game/onboarding";
 import { newChapterRun } from "./game/core";
 import { makeSave, type StorageResult } from "./game/storage";
 import { setAudioMuted } from "./game/audio";
@@ -38,7 +37,6 @@ export default function CampaignShell() {
   const [repository] = useState(() => new CampaignRepository(authority, { migrateLegacyRun: (save): CampaignStoredRun => ({ kind: "legacy", save }) }));
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const snapshotRef = useRef<Snapshot | null>(null);
-  const pendingLegacyLearning = useRef<OnboardingProgress | null>(null);
   const [route, setRoute] = useState<Route>({ kind: "map" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -94,13 +92,6 @@ export default function CampaignShell() {
     } finally { writing.current = false; setBusy(false); }
   }
   async function save(run: CampaignStoredRun): Promise<StorageResult<void>> {
-    if (run.kind === "legacy" && !run.onboarding) {
-      const learning = pendingLegacyLearning.current;
-      const existing = snapshotRef.current?.activeRuns.find((item) => item.reference.stageId === 1)?.run;
-      const stored = existing?.kind === "legacy" ? existing.onboarding : undefined;
-      const candidate = progressBelongsToRun(learning, run.save.state.id) ? learning : stored;
-      if (candidate && progressBelongsToRun(candidate, run.save.state.id)) run = { ...run, onboarding: candidate };
-    }
     return mutate(async (current) => {
       const id = stageId(run);
       const active = current.activeRuns.find((item) => item.reference.stageId === id)?.run;
@@ -134,20 +125,9 @@ export default function CampaignShell() {
       if ((await save({ kind: "world", run: fresh })).ok) setRoute({ kind: "world", stageId: id });
     }
   }
-  const bridge: LegacyStorageBridge | undefined = useMemo(() => route.kind !== "legacy" ? undefined : {
+  const bridge: ChapterOneStorageBridge | undefined = useMemo(() => route.kind !== "legacy" ? undefined : {
     initial: route.initial,
     save: (data) => save({ kind: "legacy", save: data }),
-    loadOnboarding: () => {
-      const active = snapshotRef.current?.activeRuns.find((item) => item.reference.stageId === 1)?.run;
-      return active?.kind === "legacy" ? active.onboarding ?? loadOnboardingProgress() : null;
-    },
-    saveOnboarding: async (progress) => {
-      const active = snapshotRef.current?.activeRuns.find((item) => item.reference.stageId === 1)?.run;
-      pendingLegacyLearning.current = progress;
-      // First boot immediately saves the matching legacy run before making the UI ready.
-      if (active?.kind !== "legacy") return { ok: true, value: undefined };
-      return save({ ...active, onboarding: progress });
-    },
     onRoadmap: map,
     onClearedPresentation: map,
     bestScore: snapshot?.state.stages[0].bestScore ?? null,

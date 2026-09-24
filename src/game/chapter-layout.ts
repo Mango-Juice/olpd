@@ -1,7 +1,7 @@
 import { ROOMS } from "./content";
 import type { Room, RunState } from "./types";
 
-/** The original eight-room route remains playable for existing saved runs. */
+/** Historical coordinates retained only for validating old completion summaries. */
 export const LEGACY_ROOMS: readonly Room[] = [
   { name: "첫 번째 기억", subtitle: "익숙한 구덩이 앞에서", points: ["pit"] },
   { name: "끊어진 약속", subtitle: "모습이 달라도, 같은 기억", points: ["bridge"] },

@@ -18,7 +18,7 @@ try {
         if (chapter === 1) await page.getByRole('button', { name: '이야기 SKIP', exact: true }).click();
         else await page.locator('.roadmap-stop').filter({ has: page.getByRole('heading', { name: '비에 잠긴 회랑', exact: true }) })
           .getByRole('button', { name: /들어가기|이어 걷기/ }).click();
-        const input = page.locator(chapter === 1 ? '#onboarding-instruction' : '#campaign-instruction');
+        const input = page.locator(chapter === 1 ? '#instruction' : '#campaign-instruction');
         await input.fill('짐상자가 보이면 점프해');
         await page.evaluate(() => document.fonts.ready);
         const submit = page.locator('.composer button[type="submit"]');

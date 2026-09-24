@@ -1,7 +1,7 @@
 import { chromium, expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createFirstForkDeathSave } from "./browser-fixtures";
-import { installLegacyBrowserHarness } from "./legacy-browser-harness";
+import { installChapterOneBrowserHarness } from "./chapter-one-browser-harness";
 const base = process.env.APP_URL ?? "http://localhost:5173";
 const label = process.env.CHECK_LABEL ?? "local";
 await mkdir("artifacts", { recursive: true });
@@ -11,7 +11,7 @@ const context = await browser.newContext({
   hasTouch: true,
 });
 const page = await context.newPage();
-await installLegacyBrowserHarness(page);
+await installChapterOneBrowserHarness(page);
 const fixtureSave = createFirstForkDeathSave("browser-errors-fixture");
 fixtureSave.settings.muted = false;
 const fixture = JSON.stringify(fixtureSave);
@@ -154,7 +154,7 @@ try {
   report.push("Quota failure retains original saved data");
   const broken = await browser.newContext();
   const bp = await broken.newPage();
-  await installLegacyBrowserHarness(bp);
+  await installChapterOneBrowserHarness(bp);
   await bp.addInitScript(() => {
     localStorage.setItem("one-line-per-death:save", "{broken");
   });

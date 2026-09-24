@@ -1,55 +1,23 @@
 import { chromium, expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import {
-  newRun,
-  addInstruction,
   startRun,
   step,
   retry,
 } from "../src/game/core";
 import { makeSave } from "../src/game/storage";
 import { createFirstForkDeathSave } from "./browser-fixtures";
-import { installLegacyBrowserHarness } from "./legacy-browser-harness";
+import { installChapterOneBrowserHarness } from "./chapter-one-browser-harness";
 const base = process.env.APP_URL ?? "http://localhost:5173";
 await mkdir("artifacts", { recursive: true });
 const original = createFirstForkDeathSave("browser-ui");
-let tutorial = newRun(true);
-const [a, b] = original.state.instructions;
-tutorial = addInstruction(tutorial, a.text, a.interpretation);
-tutorial = step(step(startRun(tutorial)));
-tutorial = addInstruction(tutorial, b.text, b.interpretation);
-tutorial = startRun(retry(tutorial));
-while (tutorial.phase === "running") tutorial = step(tutorial);
-const practice = makeSave(tutorial, {
-  writer: "layout-verification",
-  settings: { muted: true, reducedMotion: false },
-});
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-await installLegacyBrowserHarness(page);
+await installChapterOneBrowserHarness(page);
 const errors: string[] = [];
 page.on("pageerror", (e) => errors.push(e.message));
 try {
   await page.goto(base);
-  await page.evaluate(
-    (raw) => localStorage.setItem("one-line-per-death:save", raw),
-    JSON.stringify(practice),
-  );
-  await page.reload();
-  await page.getByRole("button", { name: "모험 이어하기" }).click();
-  await expect(
-    page.getByRole("button", { name: "이 연습 문장 지우기" }),
-  ).toBeVisible();
-  await page.screenshot({
-    path: "artifacts/v2-practice-desktop.png",
-    fullPage: true,
-  });
-  const colors = await page.locator(".practice").evaluate((el) => ({
-    ink: getComputedStyle(el).color,
-    paper: getComputedStyle(el).backgroundColor,
-    body: getComputedStyle(el.querySelector("p")!).color,
-  }));
-  expect(colors.ink).toBe("rgb(66, 57, 46)");
   await page.evaluate(
     (raw) => localStorage.setItem("one-line-per-death:save", raw),
     JSON.stringify(original),
@@ -142,9 +110,7 @@ try {
     JSON.stringify(
       {
         passed: true,
-        colors,
         checks: [
-          "readable practice foreground",
           "saved priority display order",
           "recorded winner badge",
           "no instruction numbering or newest badge",
@@ -163,7 +129,7 @@ try {
   );
   await writeFile(
     "artifacts/v2-ui-report.json",
-    JSON.stringify({ base, passed: true, colors, errors }, null, 2),
+    JSON.stringify({ base, passed: true, errors }, null, 2),
   );
 } finally {
   await browser.close();
