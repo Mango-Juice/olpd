@@ -24,10 +24,10 @@ export function PlayCommandComposer({ id, value, onChange, onSubmit, onCancel, p
   const count = [...value].length;
   return <PlayComposer ariaLabel={label} onSubmit={(event) => {
     event.preventDefault();
-    if (pending || disabled || !value.trim() || count > maxLength) return;
+    const text = input.current?.value ?? value;
+    if (pending || disabled || !text.trim() || [...text].length > maxLength) return;
     // Submit clicks are intentional even during IME composition; Enter is guarded below.
     // Blur only after the click lands, so the compact mobile layout cannot move its target.
-    const text = input.current?.value ?? value;
     input.current?.blur();
     void onSubmit(text);
   }}>
@@ -47,7 +47,9 @@ export function PlayCommandComposer({ id, value, onChange, onSubmit, onCancel, p
       <span className="count">{count} / {maxLength}</span>
       <div className="compose-actions">
         <span className="compose-cancel">{pending ? <button type="button" className="subtle" onClick={onCancel}>취소</button> : null}</span>
-        <button type="submit" className="primary" onPointerDown={(event) => {
+        <button type="submit" className="primary" onMouseDown={(event) => {
+          // Keep pointer/touch defaults intact so WebKit can synthesize the click.
+          // Prevent only the compatibility mouse event from stealing input focus.
           if (event.button === 0 && document.activeElement === input.current) event.preventDefault();
         }} disabled={pending || disabled || !value.trim() || count > maxLength}>
           {pending ? <><span className="pulse" />읽고 있어요…</> : <>기억하고 출발 <span aria-hidden="true">↗</span></>}

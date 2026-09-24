@@ -1,11 +1,11 @@
-import { chromium, expect } from "@playwright/test";
+import { chromium, webkit, expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
 import { createFirstForkDeathSave } from "./browser-fixtures";
 import { installChapterOneBrowserHarness } from "./chapter-one-browser-harness";
 const base = process.env.APP_URL ?? "http://localhost:5173";
 const label = process.env.CHECK_LABEL ?? "local";
 await mkdir("artifacts", { recursive: true });
-const browser = await chromium.launch();
+const browser = await (process.env.BROWSER === "webkit" ? webkit : chromium).launch();
 const context = await browser.newContext({
   viewport: { width: 390, height: 844 },
   hasTouch: true,
@@ -138,8 +138,31 @@ try {
   }
   await page.unroute("**/api/interpret");
   report.push("One touch submits once from compact keyboard layout, including composing Korean; failed request preserves draft");
-  await page.setViewportSize({ width: 390, height: 844 });
+  const launch = page.getByRole("button", { name: "기억하고 출발" });
+  const beforeDismiss = await launch.evaluate((button) => button.getBoundingClientRect().top + window.scrollY);
   await page.locator("#instruction").blur();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".shell")).toHaveClass(/keyboard-open/);
+  const afterDismiss = await launch.evaluate((button) => button.getBoundingClientRect().top + window.scrollY);
+  expect(Math.abs(afterDismiss - beforeDismiss)).toBeLessThan(2);
+  await expect(launch).toBeInViewport();
+  // Force the iOS failure order: input blurs between press and release.
+  let blurCalls = 0;
+  await page.route("**/api/interpret", route => { blurCalls += 1; return route.abort("failed"); });
+  await page.locator("#instruction").focus();
+  const target = await launch.boundingBox();
+  await page.mouse.move(target!.x + target!.width / 2, target!.y + target!.height / 2);
+  await page.mouse.down();
+  await page.locator("#instruction").blur();
+  await page.mouse.up();
+  await expect.poll(() => blurCalls).toBe(1);
+  await expect(page.locator(".error")).toBeVisible();
+  await expect(page.locator(".shell")).toHaveClass(/keyboard-open/);
+  await page.unroute("**/api/interpret");
+  await page.locator("#instruction").fill("");
+  await page.locator("#instruction").blur();
+  await expect(page.locator(".shell")).not.toHaveClass(/keyboard-open/);
+  report.push("Keyboard dismissal preserves button position; blur between press/release submits once; clearing draft restores full layout");
   // Storage denial is injected as a browser capability failure, not an AI substitute.
   await page.evaluate(() => {
     Storage.prototype.setItem = function () {

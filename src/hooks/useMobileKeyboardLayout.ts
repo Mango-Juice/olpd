@@ -1,16 +1,21 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /** Keep the scene, composer and launch button visible while the mobile keyboard is open. */
-export function useMobileKeyboardLayout(): boolean {
+export function useMobileKeyboardLayout(hasDraft: boolean): boolean {
   const [open, setOpen] = useState(false);
+  const fullHeight = useRef(window.innerHeight);
   useEffect(() => {
     const viewport = window.visualViewport;
-    let fullHeight = window.innerHeight;
     const update = () => {
-      fullHeight = Math.max(fullHeight, window.innerHeight);
-      setOpen(window.innerWidth <= 800 && document.activeElement?.tagName === "TEXTAREA"
-        && (viewport?.height ?? window.innerHeight) < fullHeight * 0.78);
+      fullHeight.current = Math.max(fullHeight.current, window.innerHeight);
+      const keyboardVisible = document.activeElement?.matches("textarea[data-play-command]")
+        && (viewport?.height ?? window.innerHeight) < fullHeight.current * 0.78;
+      // iOS can blur before delivering click. Keep the target stable through
+      // keyboard dismissal and failed requests until the draft is consumed/cleared.
+      setOpen((wasOpen) => window.innerWidth <= 800
+        && (!!keyboardVisible || (wasOpen && hasDraft)));
     };
+    update();
     viewport?.addEventListener("resize", update);
     window.addEventListener("resize", update);
     document.addEventListener("focusin", update);
@@ -21,6 +26,6 @@ export function useMobileKeyboardLayout(): boolean {
       document.removeEventListener("focusin", update);
       document.removeEventListener("focusout", update);
     };
-  }, []);
+  }, [hasDraft]);
   return open;
 }

@@ -75,7 +75,7 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
   const [sceneByScene, setSceneByScene] = useState(false);
   const [awaitingNext, setAwaitingNext] = useState(false);
   const [shareInstructions, setShareInstructions] = useState(false);
-  const keyboard = useMobileKeyboardLayout();
+  const keyboard = useMobileKeyboardLayout(draft.length > 0);
   const live = useRef(run);
   const committing = useRef(false);
   const acknowledged = useRef<string | null>(null);
