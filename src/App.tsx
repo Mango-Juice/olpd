@@ -1,5 +1,5 @@
 import { PlayFooter } from "./components/PlayFooter";
-import { chapterOneContactHint } from "./game/hints/chapter-one";
+import { chapterOneContactHint, chapterOneLearningHint } from "./game/hints/chapter-one";
 import { PlayContactHint } from "./components/PlayContactHint";
 import { postInterpretJson } from "./services/interpret-api";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -775,6 +775,7 @@ export default function App({ bridge }: AppProps = {}) {
     noMatchingInstruction || abandonedWithoutInstruction;
   const contactHint = started && !animating && !state.tutorial ? chapterOneContactHint(state, onboardingProgress) : null;
   const displayedRoom = animating && event ? event.room : state.room;
+  const learningHint = started ? chapterOneLearningHint(state, displayedRoom) : null;
   const stageNumber = Math.min(displayedRoom + 1, chapterRooms.length) +
     (legacyLayout ? ONBOARDING_STAGES.length : 0);
   const stageCount = chapterRooms.length +
@@ -1202,6 +1203,7 @@ export default function App({ bridge }: AppProps = {}) {
               ]}
             />
           )}
+          {learningHint && <p className="chapter-learning-hint" role="note">{learningHint}</p>}
           {canCompose && (
             <>
               <PlayCommandComposer
@@ -1222,6 +1224,8 @@ export default function App({ bridge }: AppProps = {}) {
                 placeholder={
                   state.tutorial && state.instructions.length === 0
                     ? "앞으로 전진해"
+                    : !legacyLayout && state.instructions.length === 0
+                      ? "앞으로 전진해"
                     : state.tutorial
                       ? "구덩이가 있으면 뛰어"
                       : "이럴 때는, 이렇게 해줘…"

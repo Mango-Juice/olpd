@@ -26,3 +26,13 @@ export function chapterOneContactHint(state: RunState, onboarding?: OnboardingPr
     return [];
   }, learned);
 }
+
+/** Visible first steps for the integrated chapter, including retries at the entrance. */
+export function chapterOneLearningHint(state: RunState, room: number): string | null {
+  if (state.tutorial || (state.layoutVersion !== 2 && state.layoutVersion !== 3) || state.phase === 'cleared') return null;
+  if (room === 0 && state.instructions.length === 0) return '먼저 “앞으로 전진해”라고 적고 Enter를 눌러 보세요. 용사는 그 말을 계속 기억해요.';
+  if (room === 0) return '메모는 다음 장면에서도 남아요. 조건이 있는 메모를 전진보다 위에 두면, 위험할 때 먼저 실행해요.';
+  if (room === 1) return '끊긴 바닥은 뛰어넘어야 해요. “구덩이가 있으면 뛰어”를 전진보다 위에 두어 보세요. 죽은 뒤 한 줄을 더 쓸 수 있어요.';
+  if (room === 2) return '천장이 낮으면 몸을 숙여야 해요. “천장이 낮으면 숙여”처럼 상황과 행동을 함께 적어 보세요.';
+  return null;
+}
