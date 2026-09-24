@@ -29,7 +29,7 @@ interface MusicRuntime {
 }
 
 const SCHEDULE_AHEAD_SECONDS = 1.25;
-const MUSIC_GAIN_MULTIPLIER = 1.3;
+const MUSIC_GAIN_MULTIPLIER = 1.5;
 const desired: MusicPlaybackState = {
   stageId: MEMORY_DUNGEON_STAGE_ID,
   playing: false,
