@@ -38,7 +38,10 @@ assert.ok(!/^Disallow:\s*\/\s*$/m.test(robots), "robots must not block the entir
 assert.ok(robots.includes("Disallow: /api/"));
 assert.ok(robots.includes("Sitemap: " + origin + "/sitemap.xml"));
 const sitemap = (await get("sitemap.xml", "xml")).toString();
-assert.deepEqual([...sitemap.matchAll(/<loc>(.*?)<\/loc>/g)].map(match => match[1]), [origin + "/"]);
+assert.deepEqual([...sitemap.matchAll(/<loc>(.*?)<\/loc>/g)].map(match => match[1]), [origin + "/", origin + "/guide/"]);
+const guide = (await get("guide/index.html", "text/html")).toString();
+assert.ok(guide.includes('rel="canonical" href="' + origin + '/guide/"'));
+assert.ok(guide.includes('property="og:url" content="' + origin + '/guide/"'));
 const image = await get("og/one-line-per-death.png", "image/png");
 assert.equal(image.subarray(1, 4).toString(), "PNG");
 assert.equal(image.readUInt32BE(16), 1200);
@@ -50,4 +53,4 @@ if (remote) {
   assert.ok(!/noindex|none/i.test(root.headers.get("x-robots-tag") ?? ""), "root blocked by response header");
   assert.ok((await root.text()).includes('name="naver-site-verification"'));
 }
-console.log("PASS " + (remote ?? "dist") + ": initial HTML verification/meta/canonical/JSON-LD, crawl access, sitemap, 1200x630 share image");
+console.log("PASS " + (remote ?? "dist") + ": initial HTML verification/meta/canonical/JSON-LD, crawl access, sitemap, guide page, 1200x630 share image");

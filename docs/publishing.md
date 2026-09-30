@@ -24,7 +24,7 @@
 - index.html 초기 head에 한국어 제목/설명, canonical, robots, Open Graph, Twitter large image, 두 검색 서비스 인증 태그와 VideoGame JSON-LD를 둔다. JavaScript를 실행하지 않는 공유 수집기도 메타 정보를 읽을 수 있다.
 - 공유 이미지: public/og/one-line-per-death.png, 1200×630 PNG. 기존 용사 스프라이트와 로컬 Gowun Batang 글꼴로 만든 표지다. npm run generate:og로 다시 만들고 육안으로 확인한다. 그림을 바꾸면 공유 서비스의 미리보기 캐시가 갱신되기까지 시간이 걸릴 수 있다.
 - 공개 페이지의 HTML 및 Vercel 전역 응답에서 이전 noindex를 제거했다. /api/ 응답은 noindex/nofollow이며 robots.txt에서도 API와 QA 쿼리를 수집하지 않도록 안내한다. robots 규칙은 접근 권한 제어 수단이 아니다.
-- 실제 독립 URL이 있는 페이지는 루트 하나다. 장 선택·게임 진행은 같은 페이지 안의 로컬 상태이므로 허구의 장 URL을 사이트맵에 넣지 않는다. sitemap.xml에는 대표 루트만 싣고 부정확한 lastmod를 자동 생성하지 않는다.
+- 실제 독립 URL이 있는 페이지는 루트와 플레이 안내(`/guide/`) 둘이다. 장 선택·게임 진행은 같은 페이지 안의 로컬 상태이므로 허구의 장 URL을 사이트맵에 넣지 않는다. sitemap.xml에는 이 두 주소만 싣고 부정확한 lastmod를 자동 생성하지 않는다.
 - Vercel 기본 Preview 배포는 플랫폼의 X-Robots-Tag: noindex를 사용한다. 별도 Preview 도메인을 붙이는 경우 예외가 있으므로 직접 응답을 확인한다. [Vercel 응답 헤더](https://vercel.com/docs/headers/response-headers)
 - canonical은 대표 URL을 알리는 신호이며 검색 결과 반영을 보장하지 않는다. [Google canonical 안내](https://developers.google.com/search/docs/crawling-indexing/consolidate-duplicate-urls), [네이버 로봇 메타 안내](https://searchadvisor.naver.com/guide/markup-structure)
 
