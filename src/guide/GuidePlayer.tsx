@@ -143,7 +143,7 @@ export function GuidePlayer() {
   const soundLabel = sound === "loading" ? "소리 준비 중" : sound === "on" ? "소리 끄기" : "소리 켜기";
   return (
     <section className="guide-player" aria-label="40초 소개 영상">
-      {failed && <p className="guide-notice" role="status">영상을 불러오지 못했어요. 아래 글로 같은 내용을 볼 수 있어요.</p>}
+      {failed && <p className="guide-notice" role="status">영상을 불러오지 못했어요. 아래 글에서 규칙을 볼 수 있어요.</p>}
       <canvas
         ref={canvasRef}
         hidden={failed}
