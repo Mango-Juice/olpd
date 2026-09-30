@@ -25,7 +25,7 @@ import Modal from "./Modal";
 import { PlayCommandComposer } from "./PlayCommandComposer";
 import { PlayHeader, PlayUtilityActions, PlayIntro, PlayLayout, PlayHints, PlayStageProgress } from "./PlayChrome";
 import { PlaySceneCaption, PlaySceneFooter, PlaySessionControls, PlayLaunchControls, PlayDeathScore, PlayClearPanel } from "./PlaySessionControls";
-import { PlayHelpDialog, PlaySettingsDialog, PlayShareDialog, PlayRestartDialog } from "./PlayDialogs";
+import { PlaySettingsDialog, PlayShareDialog, PlayRestartDialog } from "./PlayDialogs";
 import "./CampaignPlay.css";
 
 export interface CampaignPlayProps {
@@ -68,7 +68,7 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
   const [hidden, setHidden] = useState(() => typeof document !== "undefined" && document.hidden);
   const [notice, setNotice] = useState("");
   const [failedSave, setFailedSave] = useState<StageRun | null>(null);
-  const [popup, setPopup] = useState<"help" | "settings" | "share" | "new" | "ending" | null>(null);
+  const [popup, setPopup] = useState<"settings" | "share" | "new" | "ending" | null>(null);
   const [showChronicle, setShowChronicle] = useState(false);
   const [showStory, setShowStory] = useState(false);
   const [selected, setSelected] = useState<string | undefined>();
@@ -192,7 +192,7 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
   return <div className={`shell campaign-play${keyboard ? " keyboard-open" : ""}`} onPointerDownCapture={unlockAudio} onKeyDownCapture={unlockAudio}>
     <PlayHeader actions={<>
       <button type="button" className="subtle" disabled={saving} onClick={() => { cancelCommand(); onRoadmap(); }}>여정 지도</button>
-      <PlayUtilityActions muted={settings.muted} onHelp={() => setPopup("help")} onToggleSound={() => onSettingsChange?.({ ...settings, muted: !settings.muted })} onSettings={() => setPopup("settings")} />
+      <PlayUtilityActions muted={settings.muted} onToggleSound={() => onSettingsChange?.({ ...settings, muted: !settings.muted })} onSettings={() => setPopup("settings")} />
     </>} />
     <PlayIntro description={stage.objective} aside={<>{stage.title}<small>CHAPTER {String(stage.id).padStart(2, "0")}</small></>} />
     {failedSave && <aside className="error" role="alert"><p>{notice}</p><div className="action-row">
@@ -246,7 +246,6 @@ export function CampaignPlay({ run, stage, settings, onCommit, interpret, onRoad
     </PlayLayout>
     <PlayFooter onRestart={onNewChallenge ? () => setPopup("new") : undefined} disabled={saving || command.pending || !!failedSave} />
     {showChronicle && <CampaignChronicle run={run} stage={stage} settings={settings} onClose={() => setShowChronicle(false)} />}
-    {popup === "help" && <PlayHelpDialog campaign advanced onClose={() => setPopup(null)} />}
     {popup === "settings" && <PlaySettingsDialog settings={settings} onChange={(next) => onSettingsChange?.(next)} onExport={() => downloadRun(live.current)} onNew={() => setPopup("new")} onClose={() => setPopup(null)} />}
     {popup === "share" && <PlayShareDialog text={shareText} includeNotes={shareInstructions} onIncludeNotes={setShareInstructions} notice={notice} onClose={() => setPopup(null)}
       onCopy={() => { void navigator.clipboard.writeText(shareText).then(() => setNotice("모험을 복사했어요."), () => setNotice("복사하지 못했어요. 위 내용을 직접 복사해 주세요.")); }}

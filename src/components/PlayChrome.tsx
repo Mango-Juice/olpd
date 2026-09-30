@@ -254,8 +254,8 @@ function Book() {
   );
 }
 
-export function PlayUtilityActions({ muted, onHelp, onToggleSound, onSettings }: { muted: boolean; onHelp: () => void; onToggleSound: () => void; onSettings: () => void }) {
-  return <><button className="subtle" onClick={onHelp}>플레이 안내</button><button type="button" className="icon-button" aria-label={muted ? "소리 켜기" : "소리 끄기"} title={muted ? "소리 켜기" : "소리 끄기"} onClick={onToggleSound}>{muted ? <SoundOff /> : <Sound />}</button><button type="button" className="icon-button" aria-label="설정" onClick={onSettings}><Gear /></button></>;
+export function PlayUtilityActions({ muted, onToggleSound, onSettings }: { muted: boolean; onToggleSound: () => void; onSettings: () => void }) {
+  return <><a className="subtle" href="/guide/" target="_blank" rel="noopener">플레이 안내</a><button type="button" className="icon-button" aria-label={muted ? "소리 켜기" : "소리 끄기"} title={muted ? "소리 켜기" : "소리 끄기"} onClick={onToggleSound}>{muted ? <SoundOff /> : <Sound />}</button><button type="button" className="icon-button" aria-label="설정" onClick={onSettings}><Gear /></button></>;
 }
 function Sound() {
   return (
