@@ -1,8 +1,10 @@
-![죽을 때마다 한 줄 — One Line Per Death](docs/assets/readme-banner.png)
+[![죽을 때마다 한 줄 — One Line Per Death](docs/assets/readme-banner.png)](https://olpd.vercel.app/)
 
 # 죽을 때마다 한 줄 · One Line Per Death
 
 죽을 때마다 한 줄의 메모를 남겨, 작은 용사를 출구로 이끄는 자연어 퍼즐 게임입니다.
+
+[플레이하기](https://olpd.vercel.app/) · [40초 플레이 안내](https://olpd.vercel.app/guide/)
 
 “구덩이가 보이면 점프해.” 용사는 메모를 기억하고, 조건에 맞는 지시를 위에서부터 골라 행동합니다. 실패를 통해 메모를 쌓고 순서를 바꾸며 10개 장의 퍼즐을 풀어갑니다.
 
