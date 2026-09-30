@@ -1,7 +1,8 @@
 // 플레이 안내 페이지의 40초 소개 영상. 모든 그림은 시간 t(초)의 순수 함수라서 프레임 단위로 재현된다.
 const W = 1920, H = 1080;
 export const DUR = 40;
-const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+// 그릴 대상은 renderAt 을 부를 때마다 바깥에서 받는다.
+let ctx;
 const C = {
   abyss: "#090b1d", deep: "#11132f", navy: "#191b43", violet: "#292653", stone: "#35325f",
   stoneLight: "#57517b", mortar: "#201e43", moon: "#b8dcde", mint: "#80d7b6", mintDark: "#3f8f79",
@@ -563,15 +564,21 @@ function outro(t) {
   const fade = p(t, 29.5, 30); if (fade > 0) { ctx.fillStyle = `rgba(9,11,29,${fade})`; ctx.fillRect(0, 0, W, H); }
 }
 
-export function renderAt(t) {
-  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+// scale 은 1920×1080 기준 좌표를 실제 캔버스 크기에 맞추는 배율이다.
+export function renderAt(context, t, scale = 1) {
+  ctx = context; ctx.setTransform(scale, 0, 0, scale, 0, 0); ctx.globalAlpha = 1;
   background(t); title(t); game(t); tech(t); outro(t); captions(t);
   const fin = 1 - p(t, 0, 0.35); if (fin > 0) { ctx.fillStyle = `rgba(9,11,29,${fin})`; ctx.fillRect(0, 0, W, H); }
 }
 
-export async function ready(spriteUrl) {
-  sheet.src = spriteUrl; await sheet.decode();
-  // 필요한 글리프 묶음을 모두 받도록 전 구간을 미리 그린 뒤 글꼴을 기다린다.
-  for (let pass = 0; pass < 2; pass++) { for (let t = 0; t < DUR; t += 0.25) renderAt(t); await document.fonts.ready; }
-  renderAt(0);
+export async function loadSprite(url) {
+  sheet.src = url; await sheet.decode();
+}
+
+// 작은 캔버스에 전 구간을 한 번 그려, 필요한 글꼴 조각을 재생 전에 미리 요청한다.
+export async function warmFonts() {
+  const canvas = document.createElement("canvas"); canvas.width = 192; canvas.height = 108;
+  const context = canvas.getContext("2d");
+  for (let t = 0; t < DUR; t += 0.25) renderAt(context, t, 0.1);
+  await document.fonts.ready;
 }

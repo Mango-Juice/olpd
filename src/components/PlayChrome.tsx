@@ -8,15 +8,16 @@ import "./PlayChrome.css";
 
 export interface PlayHeaderProps {
   actions: ReactNode;
+  actionsLabel?: string;
 }
 
-export function PlayHeader({ actions }: PlayHeaderProps) {
+export function PlayHeader({ actions, actionsLabel = "게임 설정" }: PlayHeaderProps) {
   return (
     <header className="topbar">
       <div className="brand">
         <img src="/favicon.svg" alt="" /> ONE LINE PER DEATH
       </div>
-      <nav className="top-actions" aria-label="게임 설정">
+      <nav className="top-actions" aria-label={actionsLabel}>
         {actions}
       </nav>
     </header>
@@ -257,7 +258,7 @@ function Book() {
 export function PlayUtilityActions({ muted, onToggleSound, onSettings }: { muted: boolean; onToggleSound: () => void; onSettings: () => void }) {
   return <><a className="subtle" href="/guide/" target="_blank" rel="noopener">플레이 안내</a><button type="button" className="icon-button" aria-label={muted ? "소리 켜기" : "소리 끄기"} title={muted ? "소리 켜기" : "소리 끄기"} onClick={onToggleSound}>{muted ? <SoundOff /> : <Sound />}</button><button type="button" className="icon-button" aria-label="설정" onClick={onSettings}><Gear /></button></>;
 }
-function Sound() {
+export function Sound() {
   return (
     <svg
       width="17"
@@ -272,7 +273,7 @@ function Sound() {
     </svg>
   );
 }
-function SoundOff() {
+export function SoundOff() {
   return (
     <svg
       width="17"

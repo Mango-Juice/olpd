@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="only light" />
+    <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#171a26" />
     <meta name="robots" content="index,follow,max-image-preview:large" />
     <title>플레이 안내 — 죽을 때마다 한 줄</title>
@@ -22,70 +22,10 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="https://olpd.vercel.app/og/one-line-per-death.png" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=moru-face" />
-    <style>
-      :root { --abyss: #090b1d; --line: rgba(184, 220, 222, .18); --moon: #b8dcde; --mint: #80d7b6; --gold: #f6c76d; --cream: #f6efdc; --ink: #201b32; }
-      * { box-sizing: border-box; }
-      html { background: #171a26; }
-      body { margin: 0; color: var(--cream); font: 400 17px/1.75 "Noto Sans KR Variable", sans-serif; background: radial-gradient(ellipse at 30% 10%, #2b2c424f, transparent 65%); min-height: 100vh; }
-      .wrap { width: min(1080px, 100% - 32px); margin: 0 auto; }
-      header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; padding: 28px 0 20px; }
-      h1 { margin: 0; font: 700 26px/1.2 "Gowun Batang", serif; }
-      h1 b { color: var(--mint); }
-      h1 small { display: block; margin-top: 6px; font: 600 12px/1 "Noto Sans KR Variable", sans-serif; letter-spacing: .32em; color: var(--gold); }
-      .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 20px; border: 1px solid var(--line); border-radius: 22px; color: var(--cream); font: 600 16px/1 inherit; font-family: inherit; text-decoration: none; background: rgba(9, 11, 29, .5); cursor: pointer; }
-      .btn.primary { background: var(--mint); border-color: var(--mint); color: var(--ink); }
-      .btn:focus-visible, input:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
-      .player { border: 1px solid var(--line); border-radius: 20px; overflow: hidden; background: var(--abyss); box-shadow: 0 30px 80px rgba(0, 0, 0, .45); }
-      .player canvas { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; cursor: pointer; }
-      .controls { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--line); }
-      .controls .btn { width: 44px; padding: 0; flex: none; }
-      .controls .btn svg { width: 22px; height: 22px; fill: currentColor; }
-      .controls .btn:disabled { opacity: .5; cursor: progress; }
-      .controls input { flex: 1; min-width: 60px; accent-color: var(--mint); }
-      .controls output { font-variant-numeric: tabular-nums; color: var(--moon); font-size: 14px; white-space: nowrap; }
-      .rules { margin: 40px 0 64px; padding: 8px 32px 28px; border: 1px solid var(--line); border-radius: 20px; background: rgba(9, 11, 29, .55); }
-      .rules h2 { font: 700 25px/1.35 "Gowun Batang", serif; margin: 1.2em 0 .5em; }
-      .rules ul { padding-left: 1.2em; }
-      .rules li { margin: .45em 0; }
-      .rules p { color: var(--moon); }
-      @media (max-width: 600px) { .rules { padding: 4px 18px 18px; } .controls output { display: none; } }
-    </style>
   </head>
   <body>
-    <div class="wrap">
-      <header>
-        <h1>죽을 때마다 <b>한 줄</b><small>플레이 안내</small></h1>
-        <a class="btn primary" href="/">게임으로</a>
-      </header>
-
-      <main>
-        <section class="player" aria-label="40초 소개 영상">
-          <canvas id="c" width="1920" height="1080" role="img" aria-label="메모 한 줄을 적어 용사를 움직이고, Jev가 문장을 판단하는 과정을 보여 주는 40초 애니메이션"></canvas>
-          <div class="controls">
-            <button class="btn" id="play" type="button" aria-label="일시정지"></button>
-            <button class="btn primary" id="sound" type="button" aria-label="소리 켜기"></button>
-            <input id="seek" type="range" min="0" max="40" step="0.01" value="0" aria-label="재생 위치" />
-            <output id="time">0:00 / 0:40</output>
-          </div>
-        </section>
-
-        <section class="rules">
-          <h2>한 줄씩, 함께 배우는 모험</h2>
-          <p>용사는 남겨 둔 지시대로 움직여요. 지금 할 지시가 없으면 멈춰요. 넘어진 이유를 보고, 다음 생에 기억할 지침을 한 줄 남겨주세요.</p>
-          <ul>
-            <li>용사가 할 행동을 자연스럽게 적어요. 같은 상황에서 다시 따를 조건을 함께 적어도 좋아요.</li>
-            <li>현재 상황에 맞는 메모 중 화면 위쪽 한 줄을 따라요. 출발 전에 손잡이를 드래그하거나 ··· 메뉴의 ↑↓로 우선순위를 바꿀 수 있어요.</li>
-            <li>사망 한 번당 새 지침은 최대 한 줄. 쓰지 않고 출발하면 기회는 사라져요.</li>
-            <li>같은 상황에 서로 다른 행동을 새로 기억할 수는 없어요. 조건을 구체적으로 바꾸거나 기존 메모를 지워주세요.</li>
-            <li>지우개 <span data-erasers>2</span>개를 먼저 쓰고, 소진 후에는 삭제 한 줄마다 <span data-penalty>3</span>데스예요.</li>
-            <li>계속 걷게 하려면 전진 지침을 남겨 주세요. 그 지침을 지우면 저절로 걷지 않아요. 막히면 +1데스로 부활할 수 있어요.</li>
-            <li>이미 본 같은 행동은 3배속. 탭을 떠나면 자동으로 멈춰요.</li>
-          </ul>
-          <p>진행은 이 브라우저에 자동 저장됩니다. 다른 기기와 동기화되지 않아요.</p>
-        </section>
-      </main>
-    </div>
-    <noscript>소개 영상을 보려면 브라우저의 JavaScript를 켜 주세요.</noscript>
-    <script type="module" src="/src/guide/main.js"></script>
+    <div id="root"></div>
+    <noscript>플레이 안내를 보려면 브라우저의 JavaScript를 켜 주세요.</noscript>
+    <script type="module" src="/src/guide/main.tsx"></script>
   </body>
 </html>

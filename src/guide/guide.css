@@ -1,0 +1,70 @@
+:root {
+  color-scheme: dark;
+}
+.guide {
+  max-width: 1160px;
+}
+.guide a.primary {
+  text-decoration: none;
+}
+.guide-player {
+  border: 1px solid #ffffff16;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #090b1d;
+}
+.guide-player canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  cursor: pointer;
+}
+.guide-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-top: 1px solid #ffffff10;
+}
+.guide-player canvas[hidden],
+.guide-controls[hidden] {
+  display: none;
+}
+.guide-controls .icon-button {
+  flex: none;
+}
+.guide-controls input {
+  flex: 1;
+  min-width: 60px;
+  accent-color: var(--mint);
+}
+.guide-controls output {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.guide-notice {
+  margin: 0;
+  padding: 14px 18px;
+  color: var(--muted);
+}
+.guide-text {
+  margin: 36px 0 28px;
+  font-size: 15px;
+  line-height: 1.8;
+}
+.guide-text h2 {
+  margin: 1.6em 0 0.5em;
+  font-family: "Gowun Batang", serif;
+  font-size: 22px;
+  color: #f5f0e6;
+}
+.guide-text li {
+  margin: 0.4em 0;
+}
+@media (max-width: 600px) {
+  .guide-controls output {
+    display: none;
+  }
+}
