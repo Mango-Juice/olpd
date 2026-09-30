@@ -9,7 +9,6 @@ import { StoryPrologue } from "./components/StoryPrologue";
 import { MemoryNotebook } from "./components/MemoryNotebook";
 import { PlayCommandComposer } from "./components/PlayCommandComposer";
 import {
-  PlayHelpDialog,
   PlaySettingsDialog,
   PlayShareDialog,
   PlayRestartDialog,
@@ -74,7 +73,7 @@ import type {
 import { usePlayCommand } from "./hooks/usePlayCommand";
 import { useMobileKeyboardLayout } from "./hooks/useMobileKeyboardLayout";
 
-type Popup = "help" | "settings" | "new" | "share" | "storage" | null;
+type Popup = "settings" | "new" | "share" | "storage" | null;
 const initialSettings: Settings = {
   muted: false,
   reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
@@ -678,7 +677,6 @@ export default function App({ bridge }: AppProps = {}) {
             )}
             <PlayUtilityActions
               muted={settings.muted}
-              onHelp={() => setPopup("help")}
               onToggleSound={() => {
                 unlockAudio();
                 changeSettings({ ...settings, muted: !settings.muted });
@@ -976,12 +974,6 @@ export default function App({ bridge }: AppProps = {}) {
               ))}
           </ol>
         </Modal>
-      )}
-      {popup === "help" && (
-        <PlayHelpDialog
-          campaign={Boolean(bridge)}
-          onClose={() => setPopup(null)}
-        />
       )}
       {popup === "settings" && (
         <PlaySettingsDialog

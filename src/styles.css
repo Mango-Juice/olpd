@@ -114,6 +114,9 @@ textarea {
   letter-spacing: 0;
   padding: 0 8px;
 }
+a.subtle {
+  text-decoration: none;
+}
 .intro {
   display: flex;
   justify-content: space-between;
